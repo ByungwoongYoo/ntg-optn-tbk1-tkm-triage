@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 520" font-family="Helvetica, Arial, sans-serif">
+  <rect width="900" height="520" fill="#ffffff"/>
+  <text x="40" y="42" font-size="20" font-weight="700" fill="#1a2230">Figure 3.</text>
+  <text x="130" y="42" font-size="18" fill="#1a2230">No detectable E50K selectivity under the controlled grid</text>
+  <text x="40" y="64" font-size="12.5" fill="#5a6472" font-style="italic">On the identical-center side-chain grid, wild-type vs E50K mean-score differences (0.24–0.33 kcal/mol) fall within scoring-function noise (~1.5–2 kcal/mol).</text>
+
+  <!-- legend -->
+  <rect x="600" y="84" width="13" height="13" fill="#2e7d32"/><text x="620" y="95" font-size="12" fill="#2b3442">Wild-type</text>
+  <rect x="710" y="84" width="13" height="13" fill="#c0392b"/><text x="730" y="95" font-size="12" fill="#2b3442">E50K</text>
+
+  <!-- y axis: score 0 (top) to -7 (bottom). plot region y 120..400, x 90..560 -->
+  <!-- scale: -7 over 280px => 40px/unit; y(score)=120 + (-score)*40 -->
+  <line x1="120" y1="120" x2="120" y2="400" stroke="#9aa3b2"/>
+  <line x1="120" y1="400" x2="820" y2="400" stroke="#9aa3b2"/>
+  <g font-size="10" fill="#9aa3b2" text-anchor="end">
+    <text x="114" y="124">0</text>
+    <line x1="116" y1="200" x2="120" y2="200" stroke="#9aa3b2"/><text x="114" y="204">−2</text>
+    <line x1="116" y1="280" x2="120" y2="280" stroke="#9aa3b2"/><text x="114" y="284">−4</text>
+    <line x1="116" y1="360" x2="120" y2="360" stroke="#9aa3b2"/><text x="114" y="364">−6</text>
+  </g>
+  <text x="58" y="265" font-size="12" fill="#5a6472" transform="rotate(-90 58 265)" text-anchor="middle">Mean docking score (kcal/mol)</text>
+
+  <!-- noise band illustration around -6 -->
+  <!-- bars per ligand: WT and E50K pairs -->
+  <!-- ligand x positions -->
+  <!-- helper: y = 120 + score*-40 ... score negative so 120 + (-score)*40 -->
+  <!-- Coptisine WT -6.35 E50K -6.10 -->
+  <g>
+    <!-- WT bar -->
+    <rect x="150" y="120" width="26" height="254" fill="#2e7d32"/>
+    <rect x="180" y="120" width="26" height="244" fill="#c0392b"/>
+    <text x="178" y="392" font-size="10.5" fill="#2b3442" text-anchor="middle">Coptisine</text>
+    <text x="178" y="113" font-size="9.5" fill="#5a6472" text-anchor="middle">Δ +0.25</text>
+  </g>
+  <g>
+    <rect x="280" y="120" width="26" height="252" fill="#2e7d32"/>
+    <rect x="310" y="120" width="26" height="242" fill="#c0392b"/>
+    <text x="308" y="392" font-size="10.5" fill="#2b3442" text-anchor="middle">Cryptotan.</text>
+    <text x="308" y="113" font-size="9.5" fill="#5a6472" text-anchor="middle">Δ +0.24</text>
+  </g>
+  <g>
+    <rect x="410" y="120" width="26" height="250" fill="#2e7d32"/>
+    <rect x="440" y="120" width="26" height="238" fill="#c0392b"/>
+    <text x="438" y="392" font-size="10.5" fill="#2b3442" text-anchor="middle">Tan. IIA</text>
+    <text x="438" y="113" font-size="9.5" fill="#5a6472" text-anchor="middle">Δ +0.27</text>
+  </g>
+  <g>
+    <rect x="540" y="120" width="26" height="242" fill="#2e7d32"/>
+    <rect x="570" y="120" width="26" height="231" fill="#c0392b"/>
+    <text x="568" y="392" font-size="10.5" fill="#2b3442" text-anchor="middle">Tan. I</text>
+    <text x="568" y="113" font-size="9.5" fill="#5a6472" text-anchor="middle">Δ +0.29</text>
+  </g>
+  <g>
+    <rect x="670" y="120" width="26" height="220" fill="#2e7d32"/>
+    <rect x="700" y="120" width="26" height="207" fill="#c0392b"/>
+    <text x="698" y="392" font-size="10.5" fill="#2b3442" text-anchor="middle">Linarin</text>
+    <text x="698" y="113" font-size="9.5" fill="#5a6472" text-anchor="middle">Δ +0.33</text>
+  </g>
+
+  <!-- noise band annotation -->
+  <rect x="760" y="300" width="50" height="80" fill="#9aa3b2" opacity="0.25"/>
+  <text x="785" y="295" font-size="9.5" fill="#7a8290" text-anchor="middle">~1.5–2</text>
+  <text x="785" y="395" font-size="9.5" fill="#7a8290" text-anchor="middle">kcal/mol</text>
+  <text x="785" y="345" font-size="9" fill="#5a6472" text-anchor="middle" transform="rotate(-90 785 345)">scoring noise</text>
+
+  <!-- takeaway -->
+  <rect x="60" y="430" width="780" height="64" rx="6" fill="#eef3fb" stroke="#c2d2ea"/>
+  <text x="76" y="451" font-size="12.5" font-weight="700" fill="#1f3864">Interpretation</text>
+  <text x="76" y="470" font-size="11.5" fill="#2b3442">All wild-type-versus-E50K differences on the controlled (identical-center) grid are 0.24–0.33 kcal/mol — far below the accuracy limit of the</text>
+  <text x="76" y="485" font-size="11.5" fill="#2b3442">scoring function. We therefore report no detectable mutation-state selectivity. (Apparent trends on blind-center grids are confounded by grid offset; see Figure 2.)</text>
+</svg>
