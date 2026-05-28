@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 560" font-family="Helvetica, Arial, sans-serif">
+  <rect width="900" height="560" fill="#ffffff"/>
+  <text x="40" y="42" font-size="20" font-weight="700" fill="#1a2230">Figure 5.</text>
+  <text x="120" y="42" font-size="18" fill="#1a2230">Pose reproducibility separates the prioritized candidate from controls</text>
+  <text x="40" y="64" font-size="12.5" fill="#5a6472" font-style="italic">Fraction of receptor systems with a low-RMSD pose cluster. Coptisine alone reaches high reproducibility; controls reach zero, as expected.</text>
+
+  <!-- axis -->
+  <line x1="250" y1="100" x2="250" y2="470" stroke="#9aa3b2"/>
+  <!-- gridlines 0,25,50,75,100% : x from 250 to 790 -> 5.4 px per % -->
+  <g font-size="10" fill="#9aa3b2" text-anchor="middle">
+    <line x1="250" y1="100" x2="250" y2="470" stroke="#e3e7ee"/><text x="250" y="488">0%</text>
+    <line x1="385" y1="100" x2="385" y2="470" stroke="#e3e7ee"/><text x="385" y="488">25%</text>
+    <line x1="520" y1="100" x2="520" y2="470" stroke="#e3e7ee"/><text x="520" y="488">50%</text>
+    <line x1="655" y1="100" x2="655" y2="470" stroke="#e3e7ee"/><text x="655" y="488">75%</text>
+    <line x1="790" y1="100" x2="790" y2="470" stroke="#e3e7ee"/><text x="790" y="488">100%</text>
+  </g>
+  <text x="520" y="508" font-size="12" fill="#5a6472" text-anchor="middle" font-weight="700">Pose reproducibility (low-RMSD system fraction)</text>
+
+  <!-- bars: y start 110, each row 40px. width = pct*5.4 -->
+  <!-- Coptisine 75 -->
+  <text x="240" y="128" font-size="11.5" fill="#1a2230" text-anchor="end" font-weight="700">Coptisine</text>
+  <rect x="250" y="116" width="405" height="22" fill="#1f3864"/>
+  <text x="663" y="131" font-size="11.5" font-weight="700" fill="#1f3864">75%  · main</text>
+  <!-- Cryptotanshinone 50 -->
+  <text x="240" y="168" font-size="11.5" fill="#1a2230" text-anchor="end">Cryptotanshinone</text>
+  <rect x="250" y="156" width="270" height="22" fill="#c0651f"/>
+  <text x="528" y="171" font-size="11.5" font-weight="700" fill="#c0651f">50%  · exploratory (PAINS)</text>
+  <!-- Acacetin 50 -->
+  <text x="240" y="208" font-size="11.5" fill="#1a2230" text-anchor="end">Acacetin</text>
+  <rect x="250" y="196" width="270" height="22" fill="#9aa0a8"/>
+  <text x="528" y="211" font-size="11.5" font-weight="700" fill="#7a7f88">50%  · control</text>
+  <!-- Tanshinone I 38 -->
+  <text x="240" y="248" font-size="11.5" fill="#1a2230" text-anchor="end">Tanshinone I</text>
+  <rect x="250" y="236" width="205" height="22" fill="#d98a3c"/>
+  <text x="463" y="251" font-size="11.5" font-weight="700" fill="#c0651f">38%  · conditional (PAINS)</text>
+  <!-- Tanshinone IIA 25 -->
+  <text x="240" y="288" font-size="11.5" fill="#1a2230" text-anchor="end">Tanshinone IIA</text>
+  <rect x="250" y="276" width="135" height="22" fill="#c0651f"/>
+  <text x="393" y="291" font-size="11.5" font-weight="700" fill="#c0651f">25%  · exploratory (PAINS)</text>
+  <!-- Berberine 25 -->
+  <text x="240" y="328" font-size="11.5" fill="#1a2230" text-anchor="end">Berberine</text>
+  <rect x="250" y="316" width="135" height="22" fill="#9aa0a8"/>
+  <text x="393" y="331" font-size="11.5" font-weight="700" fill="#7a7f88">25%  · reference</text>
+  <!-- Linarin 0 -->
+  <text x="240" y="368" font-size="11.5" fill="#1a2230" text-anchor="end">Linarin</text>
+  <line x1="250" y1="327" x2="250" y2="349" stroke="#c0392b" stroke-width="3"/>
+  <text x="258" y="371" font-size="11.5" font-weight="700" fill="#c0392b">0%  · glycoside size-bias case</text>
+  <!-- Quercetin 0 -->
+  <text x="240" y="408" font-size="11.5" fill="#1a2230" text-anchor="end">Quercetin</text>
+  <line x1="250" y1="367" x2="250" y2="389" stroke="#c0392b" stroke-width="3"/>
+  <text x="258" y="411" font-size="11.5" font-weight="700" fill="#c0392b">0%  · PAINS control (expected)</text>
+  <!-- Amlexanox 0 -->
+  <text x="240" y="448" font-size="11.5" fill="#1a2230" text-anchor="end">Amlexanox</text>
+  <line x1="250" y1="407" x2="250" y2="429" stroke="#c0392b" stroke-width="3"/>
+  <text x="258" y="451" font-size="11.5" font-weight="700" fill="#c0392b">0%  · ATP-site control (expected)</text>
+
+  <!-- takeaway -->
+  <rect x="55" y="520" width="790" height="34" rx="6" fill="#eef3fb" stroke="#c2d2ea"/>
+  <text x="71" y="541" font-size="11.5" fill="#2b3442">Controls (PAINS-suspect and ATP-site reference) reach 0% reproducibility, confirming that the metric discriminates; only Coptisine reaches the high-reproducibility band.</text>
+</svg>
