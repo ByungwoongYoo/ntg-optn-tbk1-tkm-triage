@@ -19,18 +19,20 @@ jobs:
         run: pip install numpy pandas scipy scikit-learn
       - name: Download official ProteinGym resources
         run: |
-          mkdir -p data artifact/proteingym_wide_v2
-          curl -L --fail --retry 8 --retry-delay 5 -o data/zero_shot_substitutions_scores.zip \
+          mkdir -p pg_data_v2 artifact/proteingym_wide_v2
+          curl -L --fail --retry 8 --retry-delay 5 -o pg_data_v2/zero_shot_substitutions_scores.zip \
             https://marks.hms.harvard.edu/proteingym/ProteinGym_v1.3/zero_shot_substitutions_scores.zip
-          curl -L --fail --retry 8 -o data/DMS_substitutions.csv \
+          curl -L --fail --retry 8 -o pg_data_v2/DMS_substitutions.csv \
             https://raw.githubusercontent.com/OATML-Markslab/ProteinGym/main/reference_files/DMS_substitutions.csv
-          sha256sum data/* > artifact/resource_sha256.txt
-          ls -lh data
+          sha256sum \
+            pg_data_v2/zero_shot_substitutions_scores.zip \
+            pg_data_v2/DMS_substitutions.csv > artifact/resource_sha256.txt
+          ls -lh pg_data_v2
       - name: Run sealed human-protein experiment
         run: |
           python bio_open_problem/proteingym_wide_v2.py \
-            --score-zip data/zero_shot_substitutions_scores.zip \
-            --reference data/DMS_substitutions.csv \
+            --score-zip pg_data_v2/zero_shot_substitutions_scores.zip \
+            --reference pg_data_v2/DMS_substitutions.csv \
             --out-dir artifact/proteingym_wide_v2 \
             --human-only
       - name: Package results
