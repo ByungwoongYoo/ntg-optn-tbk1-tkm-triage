@@ -1,0 +1,157 @@
+name: Export herbal specificity result
+
+on:
+  push:
+    branches:
+      - herbal-specificity-audit-20260816
+    paths:
+      - '.github/workflows/export-herbal-specificity-result.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: herbal-specificity-audit-20260816
+      - name: Download completed audit artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          rm -rf downloaded
+          mkdir -p downloaded
+          gh run download 31947663832 \
+            --repo ByungwoongYoo/ntg-optn-tbk1-tkm-triage \
+            --name herbal-specificity-audit-pilot \
+            --dir downloaded
+      - name: Build compact, reviewable result export
+        run: |
+          python - <<'PY'
+          from __future__ import annotations
+          import csv
+          import hashlib
+          import json
+          import shutil
+          from pathlib import Path
+          from typing import Any
+
+          src = Path('downloaded')
+          dst = Path('herbal_specificity_audit/latest_result')
+          if dst.exists():
+              shutil.rmtree(dst)
+          dst.mkdir(parents=True)
+
+          def sha256(path: Path) -> str:
+              h = hashlib.sha256()
+              with path.open('rb') as f:
+                  for block in iter(lambda: f.read(1024 * 1024), b''):
+                      h.update(block)
+              return h.hexdigest()
+
+          def flatten(obj: Any, prefix: str = '', depth: int = 0):
+              if depth > 8:
+                  return
+              if isinstance(obj, dict):
+                  for key, value in obj.items():
+                      name = f'{prefix}.{key}' if prefix else str(key)
+                      if isinstance(value, (str, int, float, bool)) or value is None:
+                          if not isinstance(value, str) or len(value) <= 2000:
+                              yield name, value
+                      else:
+                          yield from flatten(value, name, depth + 1)
+              elif isinstance(obj, list):
+                  if len(obj) <= 50:
+                      for i, value in enumerate(obj):
+                          name = f'{prefix}[{i}]'
+                          if isinstance(value, (str, int, float, bool)) or value is None:
+                              yield name, value
+                          else:
+                              yield from flatten(value, name, depth + 1)
+                  else:
+                      yield f'{prefix}.__length__', len(obj)
+
+          files = sorted(p for p in src.rglob('*') if p.is_file())
+          lines = [
+              '# Herbal specificity audit: exported workflow result',
+              '',
+              '- Source workflow run: `31947663832`',
+              '- Source workflow head: `1d4d914fd41c4d00bb4ab36abe548b5096b3a246`',
+              '- Source artifact: `herbal-specificity-audit-pilot`',
+              '- Artifact API digest: `sha256:9ec61d463ca233e6fe95dc38245d9055ec628fce1c1ee25e2fe22d49e279ddc6`',
+              f'- Extracted file count: `{len(files)}`',
+              '',
+              '## Inventory',
+              '',
+          ]
+          inventory_rows = []
+          for path in files:
+              rel = path.relative_to(src)
+              digest = sha256(path)
+              inventory_rows.append((str(rel), path.stat().st_size, digest))
+              lines.append(f'- `{rel}` — {path.stat().st_size} bytes — `{digest}`')
+
+          with (dst / 'INVENTORY.tsv').open('w', newline='', encoding='utf-8') as f:
+              writer = csv.writer(f, delimiter='\t')
+              writer.writerow(['path', 'bytes', 'sha256'])
+              writer.writerows(inventory_rows)
+
+          for path in files:
+              rel = path.relative_to(src)
+              suffix = path.suffix.lower()
+              size = path.stat().st_size
+
+              if suffix in {'.md', '.txt', '.log', '.yaml', '.yml'} and size <= 4_000_000:
+                  text = path.read_text(encoding='utf-8', errors='replace')
+                  lines += ['', f'## Text: `{rel}`', '', '```text', text[:250_000], '```']
+
+              elif suffix == '.json' and size <= 120_000_000:
+                  try:
+                      obj = json.loads(path.read_text(encoding='utf-8'))
+                  except Exception as exc:
+                      lines += ['', f'## JSON parse failure: `{rel}`', '', f'`{exc}`']
+                      continue
+                  lines += ['', f'## JSON scalars: `{rel}`', '']
+                  scalar_count = 0
+                  for key, value in flatten(obj):
+                      lines.append(f'- `{key}` = `{value}`')
+                      scalar_count += 1
+                      if scalar_count >= 10000:
+                          lines.append('- scalar export truncated at 10,000 entries')
+                          break
+
+              elif suffix == '.csv' and size <= 120_000_000:
+                  try:
+                      with path.open(newline='', encoding='utf-8', errors='replace') as f:
+                          reader = csv.reader(f)
+                          preview = []
+                          n_rows = 0
+                          for row in reader:
+                              n_rows += 1
+                              if len(preview) < 31:
+                                  preview.append(row)
+                      lines += ['', f'## CSV: `{rel}`', '', f'- Rows including header: `{n_rows}`', '', '```csv']
+                      lines += [','.join(str(x) for x in row) for row in preview]
+                      lines.append('```')
+                  except Exception as exc:
+                      lines += ['', f'## CSV read failure: `{rel}`', '', f'`{exc}`']
+
+              # Preserve compact result-bearing files in a stable subdirectory.
+              if suffix in {'.md', '.txt', '.json', '.csv', '.yaml', '.yml'} and size <= 8_000_000:
+                  safe_name = str(rel).replace('/', '__')
+                  shutil.copy2(path, dst / safe_name)
+
+          (dst / 'SUMMARY.md').write_text('\n'.join(lines), encoding='utf-8')
+          PY
+      - name: Commit compact result export
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add herbal_specificity_audit/latest_result
+          git commit -m 'Export herbal specificity audit result [skip ci]'
+          git push origin HEAD:herbal-specificity-audit-20260816
