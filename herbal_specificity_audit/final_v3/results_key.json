@@ -1,0 +1,83 @@
+{
+  "analysis_date": "2026-08-16",
+  "mode": "held_out_full_frozen_corpus_validation",
+  "decision_code": "no_reliable_positive_specificity_signal",
+  "workflow": {
+    "run_id": 31949335813,
+    "job_id": 95170261504,
+    "run_commit": "93f099ecc0112de254f5c312783baf272b07bc7f",
+    "artifact_id": 9264344939,
+    "artifact_sha256": "8f73a70289338b6ed53392808124c95a3353c0a3359135a6e33a5c7f5678a769"
+  },
+  "flow": {
+    "query_hits": 4427,
+    "selected_for_xml": 2881,
+    "xml_downloaded": 2879,
+    "target_lists_extracted": 2152,
+    "development_metadata_n": 500,
+    "held_out_validation_target_lists": 1776,
+    "held_out_strict_lists": 519,
+    "primary_articles": 114,
+    "primary_disease_classes": 9
+  },
+  "extraction_quality": {
+    "strict_exact_author_count_share": 1.0,
+    "note": "This is an inclusion condition, not an independent accuracy estimate.",
+    "independent_official_symbol_exact_agreement_n": 505,
+    "independent_official_symbol_denominator": 519,
+    "independent_official_symbol_exact_agreement_share": 0.9730250481695568
+  },
+  "primary": {
+    "within_mean_jaccard": 0.12191156893958145,
+    "between_mean_jaccard": 0.1214275644774716,
+    "delta": 0.0004840044621098466,
+    "relative_increase": 0.003985949030287816,
+    "n_within_pairs": 722,
+    "n_between_pairs": 5719,
+    "n_permutations": 5000,
+    "p_one_sided_greater": 0.4335132973405319,
+    "p_two_sided": 0.9186162767446511,
+    "bootstrap_95_ci": [-0.012394881239684404, 0.013974302401461509]
+  },
+  "controls": {
+    "stratified_list_size_year_p_one_sided": 0.45310937812437513,
+    "frequency_preserving_null_mean": 0.004116178805160012,
+    "frequency_preserving_p_one_sided": 0.9003322259136213,
+    "dice_delta": 0.00012930621053816593,
+    "dice_p_one_sided": 0.46610677864427114,
+    "cosine_delta": -0.0009420939358034397,
+    "cosine_p_one_sided": 0.52249550089982,
+    "independent_symbol_subset_delta": -0.0006851260641766305,
+    "independent_symbol_subset_p_one_sided": 0.5242951409718056,
+    "remove_top_10_delta": 0.0018522284883966261,
+    "remove_top_10_p_one_sided": 0.303848075962019
+  },
+  "recoverability": {
+    "n_articles": 114,
+    "n_classes": 9,
+    "accuracy": 0.151699604743083,
+    "balanced_accuracy": 0.1561111111111111,
+    "macro_f1": 0.1357622254288921,
+    "balanced_accuracy_chance": 0.1111111111111111,
+    "label_permutation_p": 0.07960199004975124,
+    "after_top_10_removal_balanced_accuracy": 0.1361111111111111,
+    "after_top_10_removal_label_permutation_p": 0.2885572139303483
+  },
+  "hub_concentration": {
+    "n_articles": 519,
+    "article_gene_edges": 5016,
+    "unique_genes": 477,
+    "top_10_edge_share": 0.37699362041467305,
+    "top_20_edge_share": 0.5753588516746412,
+    "gene_frequency_gini": 0.8039205360456603,
+    "genes_in_at_least_10_percent": 23,
+    "top_genes": {
+      "AKT1": 265,
+      "TNF": 231,
+      "IL6": 226,
+      "TP53": 198,
+      "EGFR": 196
+    }
+  },
+  "bounded_conclusion": "Under the frozen corpus, extraction contract, disease labels, and prespecified null models, author-reported hub/core/key target-gene lists did not provide a reproducible disease-specific fingerprint."
+}
