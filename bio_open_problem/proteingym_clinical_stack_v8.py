@@ -22,7 +22,17 @@ def fixed_weights_per_protein_class(df):
     return w
 
 
+def fixed_oriented(df, models, signs):
+    # pandas 3 may return a read-only NumPy view; request a writable copy.
+    X = df[models].to_numpy(dtype=float, copy=True)
+    for j, model in enumerate(models):
+        if signs[model] < 0:
+            X[:, j] = 1.0 - X[:, j]
+    return X
+
+
 core.weights_per_protein_class = fixed_weights_per_protein_class
+core.oriented = fixed_oriented
 
 if __name__ == '__main__':
     core.main()
