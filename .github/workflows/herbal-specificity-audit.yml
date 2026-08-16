@@ -25,18 +25,22 @@ jobs:
           cache-dependency-path: herbal_specificity_audit/requirements.txt
       - name: Install dependencies
         run: python -m pip install -r herbal_specificity_audit/requirements.txt
-      - name: Run deterministic 500-paper pilot
+      - name: Reconstruct and validate frozen v2 source
+        run: |
+          python herbal_specificity_audit/install_v2.py
+          python -m py_compile herbal_specificity_audit/audit.py
+      - name: Run deterministic 100-paper v2 smoke test
         run: >-
           python herbal_specificity_audit/audit.py
           --out-dir artifact/herbal_specificity_audit
-          --max-xml 500
+          --max-xml 100
           --workers 8
-      - name: Upload complete audit artifact
+          --min-specific-n 5
+          --min-broad-n 10
+      - name: Upload v2 smoke-test package
         uses: actions/upload-artifact@v4
         with:
-          name: herbal-specificity-audit-pilot
-          path: |
-            artifact/herbal_specificity_audit/
-            artifact/herbal_specificity_audit_package.zip
+          name: herbal-specificity-audit-v2-smoke
+          path: artifact/herbal_specificity_audit_package.zip
           if-no-files-found: error
           retention-days: 30
