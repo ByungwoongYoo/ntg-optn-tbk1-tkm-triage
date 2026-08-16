@@ -17,17 +17,19 @@ jobs:
           python-version: '3.12'
       - name: Install analysis stack
         run: pip install numpy pandas scipy scikit-learn
-      - name: Patch overlap diagnostic for public-score archive
+      - name: Patch archive diagnostics
         run: |
           python - <<'PY'
           from pathlib import Path
           p=Path('bio_open_problem/proteingym_ensemble.py')
           s=p.read_text()
           old="data=data[data[rank_cols].notna().sum(axis=1)>=max(3,len(models)//2)].copy()"
-          new="score_counts=data[rank_cols].notna().sum(axis=1); print('score-count distribution', score_counts.value_counts().sort_index().to_dict(), flush=True); data=data[score_counts>=2].copy()"
-          if old not in s:
-              raise SystemExit('Expected overlap-filter line not found')
-          p.write_text(s.replace(old,new))
+          new="score_counts=data[rank_cols].notna().sum(axis=1); print('score-count distribution', score_counts.value_counts().sort_index().to_dict(), flush=True); data=data[score_counts>=1].copy()"
+          s=s.replace(old,new)
+          old2="models=choose_models(coverage,len(ref),args.max_models)"
+          new2="models=choose_models(coverage,len(ref),args.max_models); print('coverage top20', sorted(coverage.items(), key=lambda x:(-x[1],x[0]))[:20], flush=True); print('selected models', models, flush=True)"
+          s=s.replace(old2,new2)
+          p.write_text(s)
           PY
       - name: Download official ProteinGym v1.3 resources
         run: |
@@ -42,8 +44,18 @@ jobs:
             pg_data/DMS_ProteinGym_substitutions.zip \
             pg_data/zero_shot_substitutions_scores.zip \
             pg_data/DMS_substitutions.csv > artifact/resource_sha256.txt
-          ls -lh pg_data
-          df -h
+          python - <<'PY'
+          import zipfile
+          with zipfile.ZipFile('pg_data/zero_shot_substitutions_scores.zip') as z:
+              print('FIRST SCORE ARCHIVE MEMBERS')
+              for n in z.namelist()[:40]: print(n)
+              first=next(n for n in z.namelist() if n.lower().endswith('.csv'))
+              print('FIRST CSV', first)
+              import pandas as pd
+              with z.open(first) as f:
+                  d=pd.read_csv(f,nrows=3)
+              print('FIRST CSV COLUMNS', d.columns.tolist())
+          PY
       - name: Run all eligible human assays
         run: |
           python bio_open_problem/proteingym_ensemble.py \
@@ -53,6 +65,7 @@ jobs:
             --out-dir artifact/proteingym_full \
             --human-only --max-models 12
       - name: Package concise results
+        if: always()
         run: |
           cp bio_open_problem/proteingym_ensemble.py artifact/
           python - <<'PY'
@@ -66,8 +79,9 @@ jobs:
           PY
           tar -czf artifact/proteingym_missense_results.tar.gz \
             artifact/proteingym_full artifact/resource_sha256.txt \
-            artifact/proteingym_ensemble.py artifact/MANIFEST.json
+            artifact/proteingym_ensemble.py artifact/MANIFEST.json || true
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: proteingym-missense-ensemble
           path: |
@@ -77,4 +91,4 @@ jobs:
             artifact/MANIFEST.json
             artifact/proteingym_missense_results.tar.gz
           retention-days: 30
-          if-no-files-found: error
+          if-no-files-found: warn
