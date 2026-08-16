@@ -1,0 +1,77 @@
+name: ProteinGym missense open-problem benchmark
+on:
+  workflow_dispatch:
+  push:
+    branches: [bio-open-problem-smoke-20260817]
+    paths:
+      - 'bio_open_problem/proteingym_ensemble.py'
+      - '.github/workflows/proteingym-missense-ensemble.yml'
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install analysis stack
+        run: pip install numpy pandas scipy scikit-learn
+      - name: Show disk
+        run: df -h
+      - name: Download official ProteinGym v1.3 resources
+        run: |
+          mkdir -p data artifact/proteingym_smoke artifact/proteingym_full
+          curl -L --fail --retry 8 --retry-delay 5 -o data/DMS_ProteinGym_substitutions.zip \
+            https://marks.hms.harvard.edu/proteingym/ProteinGym_v1.3/DMS_ProteinGym_substitutions.zip
+          curl -L --fail --retry 8 --retry-delay 5 -o data/zero_shot_substitutions_scores.zip \
+            https://marks.hms.harvard.edu/proteingym/ProteinGym_v1.3/zero_shot_substitutions_scores.zip
+          curl -L --fail --retry 8 -o data/DMS_substitutions.csv \
+            https://raw.githubusercontent.com/OATML-Markslab/ProteinGym/main/reference_files/DMS_substitutions.csv
+          sha256sum data/* > artifact/resource_sha256.txt
+          ls -lh data
+          df -h
+      - name: Run 24-assay human smoke test
+        run: |
+          python bio_open_problem/proteingym_ensemble.py \
+            --dms-zip data/DMS_ProteinGym_substitutions.zip \
+            --score-zip data/zero_shot_substitutions_scores.zip \
+            --reference data/DMS_substitutions.csv \
+            --out-dir artifact/proteingym_smoke \
+            --human-only --max-assays 24 --max-models 12
+      - name: Run all eligible human assays
+        run: |
+          python bio_open_problem/proteingym_ensemble.py \
+            --dms-zip data/DMS_ProteinGym_substitutions.zip \
+            --score-zip data/zero_shot_substitutions_scores.zip \
+            --reference data/DMS_substitutions.csv \
+            --out-dir artifact/proteingym_full \
+            --human-only --max-models 12
+      - name: Package concise results
+        run: |
+          cp bio_open_problem/proteingym_ensemble.py artifact/
+          python - <<'PY'
+          import hashlib, json, pathlib
+          root=pathlib.Path('artifact')
+          man={}
+          for p in sorted(root.rglob('*')):
+              if p.is_file() and p.stat().st_size < 200_000_000:
+                  man[str(p.relative_to(root))]={'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()}
+          (root/'MANIFEST.json').write_text(json.dumps(man,indent=2))
+          PY
+          tar -czf artifact/proteingym_missense_results.tar.gz \
+            artifact/proteingym_smoke artifact/proteingym_full artifact/resource_sha256.txt \
+            artifact/proteingym_ensemble.py artifact/MANIFEST.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: proteingym-missense-ensemble
+          path: |
+            artifact/proteingym_smoke
+            artifact/proteingym_full
+            artifact/resource_sha256.txt
+            artifact/proteingym_ensemble.py
+            artifact/MANIFEST.json
+            artifact/proteingym_missense_results.tar.gz
+          retention-days: 30
+          if-no-files-found: error
