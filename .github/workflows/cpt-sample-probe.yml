@@ -1,0 +1,29 @@
+name: Probe CPT-1 sample score files
+on:
+  workflow_dispatch:
+  push:
+    branches: [bio-open-problem-smoke-20260817]
+    paths:
+      - 'bio_open_problem/cpt_sample_probe.py'
+      - '.github/workflows/cpt-sample-probe.yml'
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pandas requests remotezip
+      - run: python -m py_compile bio_open_problem/cpt_sample_probe.py
+      - name: Fetch selected CPT-1 files by HTTP range requests
+        env:
+          OUT_DIR: artifact/cpt_sample_probe
+        run: python bio_open_problem/cpt_sample_probe.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cpt-sample-probe
+          path: artifact/cpt_sample_probe
+          retention-days: 30
+          if-no-files-found: error
