@@ -25,9 +25,10 @@ jobs:
           cache-dependency-path: herbal_specificity_audit/requirements.txt
       - name: Install dependencies
         run: python -m pip install -r herbal_specificity_audit/requirements.txt
-      - name: Reconstruct and validate frozen v2 source
+      - name: Reconstruct, tighten, and validate frozen source
         run: |
           python herbal_specificity_audit/install_v2.py
+          python herbal_specificity_audit/apply_v3_patch.py
           python -m py_compile herbal_specificity_audit/audit.py
       - name: Run held-out full frozen-corpus audit
         run: >-
@@ -40,7 +41,7 @@ jobs:
       - name: Upload final reproducibility package
         uses: actions/upload-artifact@v4
         with:
-          name: herbal-specificity-audit-final
+          name: herbal-specificity-audit-final-v3
           path: artifact/herbal_specificity_audit_package.zip
           if-no-files-found: error
           retention-days: 30
