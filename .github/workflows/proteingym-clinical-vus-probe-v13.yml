@@ -1,0 +1,32 @@
+name: ProteinGym clinical VUS coverage probe v13
+on:
+  workflow_dispatch:
+  push:
+    branches: [missense-family-gating-20260817]
+    paths:
+      - 'bio_open_problem/clinical_vus_probe_v13.py'
+      - '.github/workflows/proteingym-clinical-vus-probe-v13.yml'
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pandas
+      - run: |
+          mkdir -p data_v13 artifact/vus_probe_v13
+          curl -L --fail --retry 8 --retry-delay 5 \
+            -o data_v13/zero_shot_clinical_substitutions_scores.zip \
+            https://marks.hms.harvard.edu/proteingym/ProteinGym_v1.3/zero_shot_clinical_substitutions_scores.zip
+          python bio_open_problem/clinical_vus_probe_v13.py \
+            --clinical-score-zip data_v13/zero_shot_clinical_substitutions_scores.zip \
+            --out-dir artifact/vus_probe_v13
+      - uses: actions/upload-artifact@v4
+        with:
+          name: proteingym-vus-probe-v13
+          path: artifact/vus_probe_v13
+          retention-days: 30
+          if-no-files-found: error
