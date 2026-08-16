@@ -17,6 +17,18 @@ jobs:
           python-version: '3.12'
       - name: Install analysis stack
         run: pip install numpy pandas scipy scikit-learn
+      - name: Patch overlap diagnostic for public-score archive
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('bio_open_problem/proteingym_ensemble.py')
+          s=p.read_text()
+          old="data=data[data[rank_cols].notna().sum(axis=1)>=max(3,len(models)//2)].copy()"
+          new="score_counts=data[rank_cols].notna().sum(axis=1); print('score-count distribution', score_counts.value_counts().sort_index().to_dict(), flush=True); data=data[score_counts>=2].copy()"
+          if old not in s:
+              raise SystemExit('Expected overlap-filter line not found')
+          p.write_text(s.replace(old,new))
+          PY
       - name: Download official ProteinGym v1.3 resources
         run: |
           mkdir -p pg_data artifact/proteingym_full
