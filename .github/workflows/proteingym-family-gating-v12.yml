@@ -1,0 +1,109 @@
+name: ProteinGym family-held-out dynamic gating v12
+on:
+  workflow_dispatch:
+  push:
+    branches: [missense-family-gating-20260817]
+    paths:
+      - 'bio_open_problem/clinical_family_prepare_v12.py'
+      - 'bio_open_problem/proteingym_family_gating_v12.py'
+      - '.github/workflows/proteingym-family-gating-v12.yml'
+jobs:
+  family-gating:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Python analysis stack
+        run: pip install numpy pandas scipy scikit-learn
+      - name: Install MMseqs2
+        run: |
+          set -euxo pipefail
+          if ! sudo apt-get update || ! sudo apt-get install -y mmseqs2; then
+            curl -L --fail --retry 5 -o /tmp/mmseqs.tar.gz https://mmseqs.com/latest/mmseqs-linux-avx2.tar.gz
+            tar -xzf /tmp/mmseqs.tar.gz -C /tmp
+            echo '/tmp/mmseqs/bin' >> "$GITHUB_PATH"
+          fi
+          mmseqs version
+      - name: Download official ProteinGym clinical score matrix
+        run: |
+          set -euxo pipefail
+          mkdir -p pg_family_v12 artifact/family_gating_v12/prepare artifact/family_gating_v12/mmseqs
+          curl -L --fail --retry 8 --retry-delay 5 \
+            -o pg_family_v12/zero_shot_clinical_substitutions_scores.zip \
+            https://marks.hms.harvard.edu/proteingym/ProteinGym_v1.3/zero_shot_clinical_substitutions_scores.zip
+          sha256sum pg_family_v12/zero_shot_clinical_substitutions_scores.zip > artifact/family_gating_v12/resource_sha256.txt
+      - name: Extract canonical sequences
+        run: |
+          python bio_open_problem/clinical_family_prepare_v12.py \
+            --clinical-score-zip pg_family_v12/zero_shot_clinical_substitutions_scores.zip \
+            --out-dir artifact/family_gating_v12/prepare
+      - name: Build strict global-homology connected components
+        env:
+          OMP_NUM_THREADS: '4'
+        run: |
+          set -euxo pipefail
+          mkdir -p artifact/family_gating_v12/mmseqs/tmp_global30
+          mmseqs easy-search \
+            artifact/family_gating_v12/prepare/clinical_sequences.fasta \
+            artifact/family_gating_v12/prepare/clinical_sequences.fasta \
+            artifact/family_gating_v12/mmseqs/global30_cov80.tsv \
+            artifact/family_gating_v12/mmseqs/tmp_global30 \
+            --search-type 1 --min-seq-id 0.30 -c 0.80 --cov-mode 0 \
+            -s 7.5 --max-seqs 10000 \
+            --format-output 'query,target,fident,qcov,tcov,evalue,bits'
+      - name: Build relaxed local-family proxy connected components
+        env:
+          OMP_NUM_THREADS: '4'
+        run: |
+          set -euxo pipefail
+          mkdir -p artifact/family_gating_v12/mmseqs/tmp_local20
+          mmseqs easy-search \
+            artifact/family_gating_v12/prepare/clinical_sequences.fasta \
+            artifact/family_gating_v12/prepare/clinical_sequences.fasta \
+            artifact/family_gating_v12/mmseqs/local20_cov50.tsv \
+            artifact/family_gating_v12/mmseqs/tmp_local20 \
+            --search-type 1 --min-seq-id 0.20 -c 0.50 --cov-mode 0 \
+            -s 7.5 --max-seqs 10000 \
+            --format-output 'query,target,fident,qcov,tcov,evalue,bits'
+      - name: Run complete-case family-held-out fixed and dynamic tests
+        env:
+          OMP_NUM_THREADS: '4'
+          OPENBLAS_NUM_THREADS: '4'
+          MKL_NUM_THREADS: '4'
+        run: |
+          python bio_open_problem/proteingym_family_gating_v12.py \
+            --clinical-score-zip pg_family_v12/zero_shot_clinical_substitutions_scores.zip \
+            --sequence-inventory artifact/family_gating_v12/prepare/sequence_inventory.csv \
+            --cluster-edge global30_cov80=artifact/family_gating_v12/mmseqs/global30_cov80.tsv \
+            --cluster-edge local20_cov50=artifact/family_gating_v12/mmseqs/local20_cov50.tsv \
+            --out-dir artifact/family_gating_v12/results
+      - name: Package and hash results
+        run: |
+          set -euxo pipefail
+          rm -rf artifact/family_gating_v12/mmseqs/tmp_global30 artifact/family_gating_v12/mmseqs/tmp_local20
+          cp bio_open_problem/clinical_family_prepare_v12.py artifact/family_gating_v12/
+          cp bio_open_problem/proteingym_family_gating_v12.py artifact/family_gating_v12/
+          python - <<'PY'
+          import hashlib, json, pathlib
+          root=pathlib.Path('artifact/family_gating_v12')
+          manifest={}
+          for p in sorted(root.rglob('*')):
+              if p.is_file():
+                  h=hashlib.sha256()
+                  with p.open('rb') as f:
+                      for b in iter(lambda:f.read(1<<20),b''): h.update(b)
+                  manifest[str(p.relative_to(root))]={'bytes':p.stat().st_size,'sha256':h.hexdigest()}
+          (root/'MANIFEST.json').write_text(json.dumps(manifest,indent=2))
+          PY
+          tar -czf artifact/proteingym_family_gating_v12_results.tar.gz -C artifact family_gating_v12
+      - uses: actions/upload-artifact@v4
+        with:
+          name: proteingym-family-gating-v12
+          path: |
+            artifact/family_gating_v12
+            artifact/proteingym_family_gating_v12_results.tar.gz
+          retention-days: 30
+          if-no-files-found: error
