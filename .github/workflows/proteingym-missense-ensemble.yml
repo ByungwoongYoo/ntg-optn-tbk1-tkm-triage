@@ -17,11 +17,9 @@ jobs:
           python-version: '3.12'
       - name: Install analysis stack
         run: pip install numpy pandas scipy scikit-learn
-      - name: Show disk
-        run: df -h
       - name: Download official ProteinGym v1.3 resources
         run: |
-          mkdir -p pg_data artifact/proteingym_smoke artifact/proteingym_full
+          mkdir -p pg_data artifact/proteingym_full
           curl -L --fail --retry 8 --retry-delay 5 -o pg_data/DMS_ProteinGym_substitutions.zip \
             https://marks.hms.harvard.edu/proteingym/ProteinGym_v1.3/DMS_ProteinGym_substitutions.zip
           curl -L --fail --retry 8 --retry-delay 5 -o pg_data/zero_shot_substitutions_scores.zip \
@@ -34,14 +32,6 @@ jobs:
             pg_data/DMS_substitutions.csv > artifact/resource_sha256.txt
           ls -lh pg_data
           df -h
-      - name: Run 24-assay human smoke test
-        run: |
-          python bio_open_problem/proteingym_ensemble.py \
-            --dms-zip pg_data/DMS_ProteinGym_substitutions.zip \
-            --score-zip pg_data/zero_shot_substitutions_scores.zip \
-            --reference pg_data/DMS_substitutions.csv \
-            --out-dir artifact/proteingym_smoke \
-            --human-only --max-assays 24 --max-models 12
       - name: Run all eligible human assays
         run: |
           python bio_open_problem/proteingym_ensemble.py \
@@ -63,13 +53,12 @@ jobs:
           (root/'MANIFEST.json').write_text(json.dumps(man,indent=2))
           PY
           tar -czf artifact/proteingym_missense_results.tar.gz \
-            artifact/proteingym_smoke artifact/proteingym_full artifact/resource_sha256.txt \
+            artifact/proteingym_full artifact/resource_sha256.txt \
             artifact/proteingym_ensemble.py artifact/MANIFEST.json
       - uses: actions/upload-artifact@v4
         with:
           name: proteingym-missense-ensemble
           path: |
-            artifact/proteingym_smoke
             artifact/proteingym_full
             artifact/resource_sha256.txt
             artifact/proteingym_ensemble.py
