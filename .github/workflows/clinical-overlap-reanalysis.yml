@@ -1,0 +1,75 @@
+name: Correct DMS-clinical protein overlap
+on:
+  workflow_dispatch:
+  push:
+    branches: [bio-open-problem-smoke-20260817]
+    paths:
+      - 'bio_open_problem/clinical_overlap_reanalysis.py'
+      - '.github/workflows/clinical-overlap-reanalysis.yml'
+permissions:
+  actions: read
+  contents: read
+jobs:
+  correct:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install numpy pandas
+      - run: python -m py_compile bio_open_problem/clinical_overlap_reanalysis.py
+      - name: Download frozen prior clinical-transfer artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p previous artifact/overlap_corrected refs
+          gh run download 31961002096 \
+            --repo ByungwoongYoo/ntg-optn-tbk1-tkm-triage \
+            --name proteingym-clinical-transfer \
+            --dir previous
+          find previous -maxdepth 3 -type f -printf '%P\t%s\n' | sort
+      - name: Download official reference tables
+        run: |
+          curl -L --fail --retry 8 \
+            -o refs/DMS_substitutions.csv \
+            https://raw.githubusercontent.com/OATML-Markslab/ProteinGym/main/reference_files/DMS_substitutions.csv
+          curl -L --fail --retry 8 \
+            -o refs/clinical_substitutions.csv \
+            https://raw.githubusercontent.com/OATML-Markslab/ProteinGym/main/reference_files/clinical_substitutions.csv
+          sha256sum refs/* > artifact/reference_sha256.txt
+      - name: Recompute strict unseen-protein result
+        run: |
+          python bio_open_problem/clinical_overlap_reanalysis.py \
+            --gene-aucs previous/clinical_transfer/clinical_auc_all_genes.csv \
+            --prediction-freeze previous/clinical_transfer/PREDICTION_FREEZE.json \
+            --dms-reference refs/DMS_substitutions.csv \
+            --clinical-reference refs/clinical_substitutions.csv \
+            --out-dir artifact/overlap_corrected
+      - name: Manifest and package
+        run: |
+          cp bio_open_problem/clinical_overlap_reanalysis.py artifact/
+          python - <<'PY'
+          import hashlib, json, pathlib
+          root=pathlib.Path('artifact'); manifest={}
+          for p in sorted(root.rglob('*')):
+              if p.is_file():
+                  h=hashlib.sha256(p.read_bytes()).hexdigest()
+                  manifest[str(p.relative_to(root))]={'bytes':p.stat().st_size,'sha256':h}
+          (root/'MANIFEST.json').write_text(json.dumps(manifest,indent=2))
+          PY
+          tar -czf artifact/clinical_overlap_corrected_results.tar.gz \
+            artifact/overlap_corrected artifact/reference_sha256.txt \
+            artifact/clinical_overlap_reanalysis.py artifact/MANIFEST.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: clinical-overlap-corrected
+          path: |
+            artifact/overlap_corrected
+            artifact/reference_sha256.txt
+            artifact/clinical_overlap_reanalysis.py
+            artifact/MANIFEST.json
+            artifact/clinical_overlap_corrected_results.tar.gz
+          retention-days: 30
+          if-no-files-found: error
