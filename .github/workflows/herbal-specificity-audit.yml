@@ -1,0 +1,31 @@
+name: Herbal specificity audit
+
+on:
+  push:
+    branches:
+      - herbal-specificity-audit-20260816
+    paths:
+      - 'herbal_specificity_audit/**'
+      - '.github/workflows/herbal-specificity-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run Europe PMC connectivity smoke test
+        run: python herbal_specificity_audit/smoke.py
+      - name: Upload smoke artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: herbal-specificity-smoke
+          path: artifact/
+          if-no-files-found: error
