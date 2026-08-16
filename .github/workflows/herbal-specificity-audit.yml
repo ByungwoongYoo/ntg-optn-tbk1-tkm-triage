@@ -5,9 +5,16 @@ on:
     branches:
       - herbal-specificity-audit-20260816
     paths:
-      - 'herbal_specificity_audit/**'
+      - 'herbal_specificity_audit/audit.py'
+      - 'herbal_specificity_audit/install_v2.py'
+      - 'herbal_specificity_audit/apply_v3_patch.py'
+      - 'herbal_specificity_audit/requirements.txt'
       - '.github/workflows/herbal-specificity-audit.yml'
   workflow_dispatch:
+
+concurrency:
+  group: herbal-specificity-audit-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
