@@ -1,0 +1,45 @@
+name: ProteinGym clinical stacking benchmark v7
+on:
+  workflow_dispatch:
+  push:
+    branches: [bio-open-problem-smoke-20260817]
+    paths:
+      - 'bio_open_problem/proteingym_clinical_stack_v7.py'
+      - '.github/workflows/proteingym-clinical-stack-v7.yml'
+jobs:
+  stack:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install numpy pandas scipy scikit-learn
+      - name: Download official ProteinGym clinical score matrix
+        run: |
+          mkdir -p pg_data_v7 artifact/proteingym_clinical_stack_v7
+          curl -L --fail --retry 8 --retry-delay 5 -o pg_data_v7/zero_shot_clinical_substitutions_scores.zip \
+            https://marks.hms.harvard.edu/proteingym/ProteinGym_v1.3/zero_shot_clinical_substitutions_scores.zip
+          sha256sum pg_data_v7/* > artifact/resource_sha256_v7.txt
+      - name: Run protein-held-out stack
+        run: |
+          python bio_open_problem/proteingym_clinical_stack_v7.py \
+            --clinical-score-zip pg_data_v7/zero_shot_clinical_substitutions_scores.zip \
+            --out-dir artifact/proteingym_clinical_stack_v7
+      - name: Package
+        run: |
+          cp bio_open_problem/proteingym_clinical_stack_v7.py artifact/
+          tar -czf artifact/proteingym_clinical_stack_v7_results.tar.gz \
+            artifact/proteingym_clinical_stack_v7 artifact/resource_sha256_v7.txt \
+            artifact/proteingym_clinical_stack_v7.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: proteingym-clinical-stack-v7
+          path: |
+            artifact/proteingym_clinical_stack_v7
+            artifact/resource_sha256_v7.txt
+            artifact/proteingym_clinical_stack_v7.py
+            artifact/proteingym_clinical_stack_v7_results.tar.gz
+          retention-days: 30
+          if-no-files-found: error
