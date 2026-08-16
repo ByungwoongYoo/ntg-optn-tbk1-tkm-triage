@@ -1,0 +1,36 @@
+name: ProteinGym clinical header probe
+on:
+  workflow_dispatch:
+  push:
+    branches: [bio-open-problem-smoke-20260817]
+    paths:
+      - 'bio_open_problem/clinical_header_probe.py'
+      - '.github/workflows/proteingym-clinical-header-probe.yml'
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pandas
+      - name: Download official clinical benchmark files
+        run: |
+          mkdir -p pg_clinical_probe artifact/clinical_header_probe
+          curl -L --fail --retry 8 -o pg_clinical_probe/clinical_substitutions.csv \
+            https://raw.githubusercontent.com/OATML-Markslab/ProteinGym/main/reference_files/clinical_substitutions.csv
+          curl -L --fail --retry 8 -o pg_clinical_probe/clinical_ProteinGym_substitutions.zip \
+            https://marks.hms.harvard.edu/proteingym/ProteinGym_v1.3/clinical_ProteinGym_substitutions.zip
+          curl -L --fail --retry 8 -o pg_clinical_probe/zero_shot_clinical_substitutions_scores.zip \
+            https://marks.hms.harvard.edu/proteingym/ProteinGym_v1.3/zero_shot_clinical_substitutions_scores.zip
+          ls -lh pg_clinical_probe
+      - name: Inspect schemas and linkage
+        run: python bio_open_problem/clinical_header_probe.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: proteingym-clinical-header-probe
+          path: artifact/clinical_header_probe
+          retention-days: 30
+          if-no-files-found: error
