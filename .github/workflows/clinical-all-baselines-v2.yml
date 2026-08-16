@@ -1,0 +1,83 @@
+name: Efficient all-clinical-baseline comparison
+on:
+  workflow_dispatch:
+  push:
+    branches: [bio-open-problem-smoke-20260817]
+    paths:
+      - 'bio_open_problem/clinical_all_baselines_v2.py'
+      - '.github/workflows/clinical-all-baselines-v2.yml'
+permissions:
+  actions: read
+  contents: read
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install numpy pandas scikit-learn
+      - run: python -m py_compile bio_open_problem/clinical_all_baselines_v2.py
+      - name: Download prior frozen and overlap-corrected artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p previous_transfer previous_overlap pg_data artifact/all_baselines_v2
+          gh run download 31961002096 --repo ByungwoongYoo/ntg-optn-tbk1-tkm-triage \
+            --name proteingym-clinical-transfer --dir previous_transfer
+          gh run download 31961319723 --repo ByungwoongYoo/ntg-optn-tbk1-tkm-triage \
+            --name clinical-overlap-corrected --dir previous_overlap
+      - name: Download official ProteinGym clinical scores and metadata
+        run: |
+          base=https://marks.hms.harvard.edu/proteingym/ProteinGym_v1.3
+          curl -L --fail --retry 8 --retry-delay 5 \
+            -o pg_data/zero_shot_clinical_substitutions_scores.zip \
+            $base/zero_shot_clinical_substitutions_scores.zip
+          curl -L --fail --retry 8 \
+            -o pg_data/clinical_substitutions.csv \
+            https://raw.githubusercontent.com/OATML-Markslab/ProteinGym/main/reference_files/clinical_substitutions.csv
+          curl -L --fail --retry 8 \
+            -o pg_data/config.json \
+            https://raw.githubusercontent.com/OATML-Markslab/ProteinGym/main/config.json
+          sha256sum pg_data/* > artifact/resource_sha256.txt
+      - name: Run one-pass exact-subset comparison
+        run: |
+          python bio_open_problem/clinical_all_baselines_v2.py \
+            --clinical-scores pg_data/zero_shot_clinical_substitutions_scores.zip \
+            --clinical-reference pg_data/clinical_substitutions.csv \
+            --config pg_data/config.json \
+            --frozen-variants previous_transfer/clinical_transfer/clinical_evaluated_variants.csv.gz \
+            --corrected-overlap previous_overlap/overlap_corrected/clinical_protein_overlap_map.csv \
+            --out-dir artifact/all_baselines_v2
+      - name: Manifest and package
+        if: always()
+        run: |
+          cp bio_open_problem/clinical_all_baselines_v2.py artifact/
+          python - <<'PY'
+          import hashlib, json, pathlib
+          root=pathlib.Path('artifact'); manifest={}
+          for p in sorted(root.rglob('*')):
+              if p.is_file():
+                  h=hashlib.sha256()
+                  with p.open('rb') as f:
+                      for b in iter(lambda:f.read(1<<20),b''): h.update(b)
+                  manifest[str(p.relative_to(root))]={'bytes':p.stat().st_size,'sha256':h.hexdigest()}
+          (root/'MANIFEST.json').write_text(json.dumps(manifest,indent=2))
+          PY
+          tar -czf artifact/clinical_all_baselines_v2_results.tar.gz \
+            artifact/all_baselines_v2 artifact/resource_sha256.txt \
+            artifact/clinical_all_baselines_v2.py artifact/MANIFEST.json || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: clinical-all-baselines-v2
+          path: |
+            artifact/all_baselines_v2
+            artifact/resource_sha256.txt
+            artifact/clinical_all_baselines_v2.py
+            artifact/MANIFEST.json
+            artifact/clinical_all_baselines_v2_results.tar.gz
+          retention-days: 30
+          if-no-files-found: warn
