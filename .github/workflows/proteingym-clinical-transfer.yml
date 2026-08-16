@@ -1,0 +1,87 @@
+name: ProteinGym DMS-to-clinical frozen transfer
+on:
+  workflow_dispatch:
+  push:
+    branches: [bio-open-problem-smoke-20260817]
+    paths:
+      - 'bio_open_problem/proteingym_clinical_transfer.py'
+      - '.github/workflows/proteingym-clinical-transfer.yml'
+jobs:
+  transfer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install analysis stack
+        run: pip install numpy pandas scikit-learn
+      - name: Syntax check
+        run: python -m py_compile bio_open_problem/proteingym_clinical_transfer.py
+      - name: Download official ProteinGym v1.3 DMS and clinical resources
+        run: |
+          mkdir -p pg_data artifact/clinical_transfer
+          base=https://marks.hms.harvard.edu/proteingym/ProteinGym_v1.3
+          curl -L --fail --retry 8 --retry-delay 5 \
+            -o pg_data/zero_shot_substitutions_scores.zip \
+            $base/zero_shot_substitutions_scores.zip
+          curl -L --fail --retry 8 --retry-delay 5 \
+            -o pg_data/zero_shot_clinical_substitutions_scores.zip \
+            $base/zero_shot_clinical_substitutions_scores.zip
+          curl -L --fail --retry 8 --retry-delay 5 \
+            -o pg_data/clinical_ProteinGym_substitutions.zip \
+            $base/clinical_ProteinGym_substitutions.zip
+          curl -L --fail --retry 8 \
+            -o pg_data/DMS_substitutions.csv \
+            https://raw.githubusercontent.com/OATML-Markslab/ProteinGym/main/reference_files/DMS_substitutions.csv
+          curl -L --fail --retry 8 \
+            -o pg_data/clinical_substitutions.csv \
+            https://raw.githubusercontent.com/OATML-Markslab/ProteinGym/main/reference_files/clinical_substitutions.csv
+          curl -L --fail --retry 8 \
+            -o pg_data/config.json \
+            https://raw.githubusercontent.com/OATML-Markslab/ProteinGym/main/config.json
+          sha256sum pg_data/* > artifact/resource_sha256.txt
+          ls -lh pg_data
+          df -h
+      - name: Run frozen DMS-to-clinical transfer
+        run: |
+          python bio_open_problem/proteingym_clinical_transfer.py \
+            --dms-scores pg_data/zero_shot_substitutions_scores.zip \
+            --dms-reference pg_data/DMS_substitutions.csv \
+            --clinical-scores pg_data/zero_shot_clinical_substitutions_scores.zip \
+            --clinical-labels pg_data/clinical_ProteinGym_substitutions.zip \
+            --clinical-reference pg_data/clinical_substitutions.csv \
+            --config pg_data/config.json \
+            --out-dir artifact/clinical_transfer
+      - name: Build manifest and concise archive
+        if: always()
+        run: |
+          cp bio_open_problem/proteingym_clinical_transfer.py artifact/
+          python - <<'PY'
+          import hashlib, json, pathlib
+          root=pathlib.Path('artifact')
+          manifest={}
+          for p in sorted(root.rglob('*')):
+              if p.is_file() and p.stat().st_size < 500_000_000:
+                  h=hashlib.sha256()
+                  with p.open('rb') as f:
+                      for b in iter(lambda:f.read(1<<20),b''): h.update(b)
+                  manifest[str(p.relative_to(root))]={'bytes':p.stat().st_size,'sha256':h.hexdigest()}
+          (root/'MANIFEST.json').write_text(json.dumps(manifest,indent=2))
+          PY
+          tar -czf artifact/proteingym_clinical_transfer_results.tar.gz \
+            artifact/clinical_transfer artifact/resource_sha256.txt \
+            artifact/proteingym_clinical_transfer.py artifact/MANIFEST.json || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: proteingym-clinical-transfer
+          path: |
+            artifact/clinical_transfer
+            artifact/resource_sha256.txt
+            artifact/proteingym_clinical_transfer.py
+            artifact/MANIFEST.json
+            artifact/proteingym_clinical_transfer_results.tar.gz
+          retention-days: 30
+          if-no-files-found: warn
