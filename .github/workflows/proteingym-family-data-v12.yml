@@ -1,0 +1,38 @@
+name: ProteinGym family audit reusable input bundle v12
+on:
+  workflow_dispatch:
+  push:
+    branches: [missense-family-gating-20260817]
+    paths:
+      - '.github/workflows/proteingym-family-data-v12.yml'
+jobs:
+  data:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install pandas
+      - name: Install MMseqs2
+        run: |
+          if ! sudo apt-get update || ! sudo apt-get install -y mmseqs2; then
+            curl -L --fail --retry 5 -o /tmp/mmseqs.tar.gz https://mmseqs.com/latest/mmseqs-linux-avx2.tar.gz
+            tar -xzf /tmp/mmseqs.tar.gz -C /tmp
+            echo '/tmp/mmseqs/bin' >> "$GITHUB_PATH"
+          fi
+      - name: Build reusable input bundle
+        run: |
+          mkdir -p artifact/family_data_v12/prepare artifact/family_data_v12/mmseqs/tmp1 artifact/family_data_v12/mmseqs/tmp2
+          curl -L --fail --retry 8 --retry-delay 5 -o artifact/family_data_v12/clinical_scores.zip https://marks.hms.harvard.edu/proteingym/ProteinGym_v1.3/zero_shot_clinical_substitutions_scores.zip
+          python bio_open_problem/clinical_family_prepare_v12.py --clinical-score-zip artifact/family_data_v12/clinical_scores.zip --out-dir artifact/family_data_v12/prepare
+          mmseqs easy-search artifact/family_data_v12/prepare/clinical_sequences.fasta artifact/family_data_v12/prepare/clinical_sequences.fasta artifact/family_data_v12/mmseqs/global30_cov80.tsv artifact/family_data_v12/mmseqs/tmp1 --search-type 1 --min-seq-id 0.30 -c 0.80 --cov-mode 0 -s 7.5 --max-seqs 10000 --format-output 'query,target,fident,qcov,tcov,evalue,bits'
+          mmseqs easy-search artifact/family_data_v12/prepare/clinical_sequences.fasta artifact/family_data_v12/prepare/clinical_sequences.fasta artifact/family_data_v12/mmseqs/local20_cov50.tsv artifact/family_data_v12/mmseqs/tmp2 --search-type 1 --min-seq-id 0.20 -c 0.50 --cov-mode 0 -s 7.5 --max-seqs 10000 --format-output 'query,target,fident,qcov,tcov,evalue,bits'
+          rm -rf artifact/family_data_v12/mmseqs/tmp1 artifact/family_data_v12/mmseqs/tmp2
+          sha256sum artifact/family_data_v12/clinical_scores.zip > artifact/family_data_v12/resource_sha256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: proteingym-family-data-v12
+          path: artifact/family_data_v12
+          retention-days: 30
+          if-no-files-found: error
