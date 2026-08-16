@@ -1,0 +1,45 @@
+name: ProteinGym exact-sequence clinical rank benchmark v9
+on:
+  workflow_dispatch:
+  push:
+    branches: [bio-open-problem-smoke-20260817]
+    paths:
+      - 'bio_open_problem/proteingym_clinical_rank_v9.py'
+      - '.github/workflows/proteingym-clinical-rank-v9.yml'
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install numpy pandas scipy scikit-learn
+      - name: Download official ProteinGym clinical score matrix
+        run: |
+          mkdir -p pg_data_v9 artifact/proteingym_clinical_rank_v9
+          curl -L --fail --retry 8 --retry-delay 5 -o pg_data_v9/zero_shot_clinical_substitutions_scores.zip \
+            https://marks.hms.harvard.edu/proteingym/ProteinGym_v1.3/zero_shot_clinical_substitutions_scores.zip
+          sha256sum pg_data_v9/* > artifact/resource_sha256_v9.txt
+      - name: Run exact-sequence-grouped sealed benchmark
+        run: |
+          python bio_open_problem/proteingym_clinical_rank_v9.py \
+            --clinical-score-zip pg_data_v9/zero_shot_clinical_substitutions_scores.zip \
+            --out-dir artifact/proteingym_clinical_rank_v9
+      - name: Package
+        run: |
+          cp bio_open_problem/proteingym_clinical_rank_v9.py artifact/
+          tar -czf artifact/proteingym_clinical_rank_v9_results.tar.gz \
+            artifact/proteingym_clinical_rank_v9 artifact/resource_sha256_v9.txt \
+            artifact/proteingym_clinical_rank_v9.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: proteingym-clinical-rank-v9
+          path: |
+            artifact/proteingym_clinical_rank_v9
+            artifact/resource_sha256_v9.txt
+            artifact/proteingym_clinical_rank_v9.py
+            artifact/proteingym_clinical_rank_v9_results.tar.gz
+          retention-days: 30
+          if-no-files-found: error
