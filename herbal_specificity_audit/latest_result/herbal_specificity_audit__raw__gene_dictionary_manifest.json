@@ -1,0 +1,7 @@
+{
+  "source_url": "https://ftp.ncbi.nlm.nih.gov/gene/DATA/GENE_INFO/Mammalia/Homo_sapiens.gene_info.gz",
+  "source_sha256": "2f48986b329f418af92f68b35af51600b899a5b3225899a63faf9140d93c8d09",
+  "official_symbol_count": 193708,
+  "unique_alias_count": 257067,
+  "ambiguous_alias_count": 4519
+}

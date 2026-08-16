@@ -1,0 +1,14 @@
+{
+  "query_hits": 4427,
+  "metadata_deduplicated": 4427,
+  "metadata_excluded": 1247,
+  "selected_for_xml": 500,
+  "xml_downloaded": 499,
+  "xml_failed": 1,
+  "target_lists_extracted": 375,
+  "high_confidence": 207,
+  "medium_confidence": 168,
+  "specific_disease_mapped": 220,
+  "broad_disease_mapped": 220,
+  "pilot_max_xml": 500
+}

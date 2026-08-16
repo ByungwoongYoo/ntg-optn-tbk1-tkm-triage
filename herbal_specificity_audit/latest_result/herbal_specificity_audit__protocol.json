@@ -1,0 +1,748 @@
+{
+  "snapshot_date": "2026-08-16",
+  "query": "OPEN_ACCESS:Y AND FIRST_PDATE:[2015-01-01 TO 2026-08-16] AND TITLE:\"network pharmacology\" AND (decoction OR formula OR herb OR herbal OR phytochemical OR \"traditional Chinese medicine\" OR \"traditional medicine\" OR natural OR plant)",
+  "base_seed": 20260816,
+  "max_xml": 500,
+  "full_analysis": false,
+  "min_specific_class_n": 5,
+  "min_broad_class_n": 10,
+  "title_exclusion_patterns": [
+    "\\bsystematic review\\b",
+    "\\bmeta-analysis\\b",
+    "\\bmeta analysis\\b",
+    "\\bbibliometric\\b",
+    "\\bscoping review\\b",
+    "\\bnarrative review\\b",
+    "\\breview\\b",
+    "\\beditorial\\b",
+    "\\bprotocol\\b",
+    "\\boverview\\b",
+    "\\bperspective\\b",
+    "\\bcommentary\\b",
+    "\\bretraction\\b"
+  ],
+  "anchors": [
+    {
+      "name": "hub",
+      "pattern": "\\bhub\\s+(?:genes?|targets?|proteins?|nodes?)\\b",
+      "weight": 8
+    },
+    {
+      "name": "core",
+      "pattern": "\\bcore\\s+(?:genes?|targets?|proteins?|nodes?)\\b",
+      "weight": 7
+    },
+    {
+      "name": "key",
+      "pattern": "\\bkey\\s+(?:genes?|targets?|proteins?|nodes?)\\b",
+      "weight": 6
+    },
+    {
+      "name": "central",
+      "pattern": "\\bcentral\\s+(?:genes?|targets?|proteins?|nodes?)\\b",
+      "weight": 5
+    },
+    {
+      "name": "crucial",
+      "pattern": "\\bcrucial\\s+(?:genes?|targets?|proteins?|nodes?)\\b",
+      "weight": 5
+    },
+    {
+      "name": "important",
+      "pattern": "\\bimportant\\s+(?:genes?|targets?|proteins?|nodes?)\\b",
+      "weight": 4
+    },
+    {
+      "name": "top",
+      "pattern": "\\btop\\s+\\d{0,2}\\s*(?:genes?|targets?|proteins?|nodes?)\\b",
+      "weight": 5
+    },
+    {
+      "name": "intersection",
+      "pattern": "\\bintersection\\s+(?:genes?|targets?|proteins?)\\b",
+      "weight": 4
+    },
+    {
+      "name": "overlap",
+      "pattern": "\\boverlapping\\s+(?:genes?|targets?|proteins?)\\b",
+      "weight": 4
+    },
+    {
+      "name": "candidate",
+      "pattern": "\\bcandidate\\s+(?:genes?|targets?|proteins?)\\b",
+      "weight": 3
+    },
+    {
+      "name": "potential",
+      "pattern": "\\bpotential\\s+(?:genes?|targets?|proteins?)\\b",
+      "weight": 2
+    }
+  ],
+  "disease_lexicon": [
+    {
+      "label": "breast_cancer",
+      "broad": "cancer",
+      "patterns": [
+        "\\bbreast cancer\\b",
+        "\\bbreast carcinoma\\b"
+      ]
+    },
+    {
+      "label": "lung_cancer",
+      "broad": "cancer",
+      "patterns": [
+        "\\blung cancer\\b",
+        "\\bnon[- ]small cell lung cancer\\b",
+        "\\bnsclc\\b"
+      ]
+    },
+    {
+      "label": "hepatocellular_carcinoma",
+      "broad": "cancer",
+      "patterns": [
+        "\\bhepatocellular carcinoma\\b",
+        "\\bliver cancer\\b",
+        "\\bhcc\\b"
+      ]
+    },
+    {
+      "label": "colorectal_cancer",
+      "broad": "cancer",
+      "patterns": [
+        "\\bcolorectal cancer\\b",
+        "\\bcolon cancer\\b",
+        "\\brectal cancer\\b"
+      ]
+    },
+    {
+      "label": "gastric_cancer",
+      "broad": "cancer",
+      "patterns": [
+        "\\bgastric cancer\\b",
+        "\\bstomach cancer\\b",
+        "\\bgastric carcinoma\\b"
+      ]
+    },
+    {
+      "label": "prostate_cancer",
+      "broad": "cancer",
+      "patterns": [
+        "\\bprostate cancer\\b",
+        "\\bprostatic carcinoma\\b"
+      ]
+    },
+    {
+      "label": "pancreatic_cancer",
+      "broad": "cancer",
+      "patterns": [
+        "\\bpancreatic cancer\\b",
+        "\\bpancreatic carcinoma\\b"
+      ]
+    },
+    {
+      "label": "ovarian_cancer",
+      "broad": "cancer",
+      "patterns": [
+        "\\bovarian cancer\\b",
+        "\\bovarian carcinoma\\b"
+      ]
+    },
+    {
+      "label": "cervical_cancer",
+      "broad": "cancer",
+      "patterns": [
+        "\\bcervical cancer\\b",
+        "\\bcervical carcinoma\\b"
+      ]
+    },
+    {
+      "label": "endometrial_cancer",
+      "broad": "cancer",
+      "patterns": [
+        "\\bendometrial cancer\\b",
+        "\\bendometrial carcinoma\\b"
+      ]
+    },
+    {
+      "label": "esophageal_cancer",
+      "broad": "cancer",
+      "patterns": [
+        "\\besophageal cancer\\b",
+        "\\boesophageal cancer\\b"
+      ]
+    },
+    {
+      "label": "nasopharyngeal_carcinoma",
+      "broad": "cancer",
+      "patterns": [
+        "\\bnasopharyngeal carcinoma\\b"
+      ]
+    },
+    {
+      "label": "oral_cancer",
+      "broad": "cancer",
+      "patterns": [
+        "\\boral cancer\\b",
+        "\\boral squamous cell carcinoma\\b"
+      ]
+    },
+    {
+      "label": "thyroid_cancer",
+      "broad": "cancer",
+      "patterns": [
+        "\\bthyroid cancer\\b",
+        "\\bthyroid carcinoma\\b"
+      ]
+    },
+    {
+      "label": "bladder_cancer",
+      "broad": "cancer",
+      "patterns": [
+        "\\bbladder cancer\\b",
+        "\\burothelial carcinoma\\b"
+      ]
+    },
+    {
+      "label": "renal_cell_carcinoma",
+      "broad": "cancer",
+      "patterns": [
+        "\\brenal cell carcinoma\\b",
+        "\\bkidney cancer\\b"
+      ]
+    },
+    {
+      "label": "glioma",
+      "broad": "cancer",
+      "patterns": [
+        "\\bglioblastoma\\b",
+        "\\bglioma\\b"
+      ]
+    },
+    {
+      "label": "leukemia",
+      "broad": "cancer",
+      "patterns": [
+        "\\bleukemia\\b",
+        "\\bleukaemia\\b"
+      ]
+    },
+    {
+      "label": "multiple_myeloma",
+      "broad": "cancer",
+      "patterns": [
+        "\\bmultiple myeloma\\b"
+      ]
+    },
+    {
+      "label": "lymphoma",
+      "broad": "cancer",
+      "patterns": [
+        "\\blymphoma\\b"
+      ]
+    },
+    {
+      "label": "cancer_unspecified",
+      "broad": "cancer",
+      "patterns": [
+        "\\bcancer\\b",
+        "\\bcarcinoma\\b",
+        "\\btumou?r\\b"
+      ]
+    },
+    {
+      "label": "rheumatoid_arthritis",
+      "broad": "autoimmune",
+      "patterns": [
+        "\\brheumatoid arthritis\\b"
+      ]
+    },
+    {
+      "label": "osteoarthritis",
+      "broad": "musculoskeletal",
+      "patterns": [
+        "\\bosteoarthritis\\b",
+        "\\bknee osteoarthritis\\b"
+      ]
+    },
+    {
+      "label": "gout",
+      "broad": "musculoskeletal",
+      "patterns": [
+        "\\bgout(?:y arthritis)?\\b",
+        "\\bhyperuricemia\\b"
+      ]
+    },
+    {
+      "label": "osteoporosis",
+      "broad": "musculoskeletal",
+      "patterns": [
+        "\\bosteoporosis\\b"
+      ]
+    },
+    {
+      "label": "intervertebral_disc_degeneration",
+      "broad": "musculoskeletal",
+      "patterns": [
+        "\\bintervertebral disc degeneration\\b",
+        "\\bdisc degeneration\\b"
+      ]
+    },
+    {
+      "label": "ankylosing_spondylitis",
+      "broad": "autoimmune",
+      "patterns": [
+        "\\bankylosing spondylitis\\b"
+      ]
+    },
+    {
+      "label": "fibromyalgia",
+      "broad": "musculoskeletal",
+      "patterns": [
+        "\\bfibromyalgia\\b"
+      ]
+    },
+    {
+      "label": "ulcerative_colitis",
+      "broad": "gastrointestinal",
+      "patterns": [
+        "\\bulcerative colitis\\b"
+      ]
+    },
+    {
+      "label": "crohn_disease",
+      "broad": "gastrointestinal",
+      "patterns": [
+        "\\bcrohn'?s disease\\b"
+      ]
+    },
+    {
+      "label": "irritable_bowel_syndrome",
+      "broad": "gastrointestinal",
+      "patterns": [
+        "\\birritable bowel syndrome\\b",
+        "\\bibs\\b"
+      ]
+    },
+    {
+      "label": "gastritis",
+      "broad": "gastrointestinal",
+      "patterns": [
+        "\\bchronic atrophic gastritis\\b",
+        "\\bgastritis\\b"
+      ]
+    },
+    {
+      "label": "gastric_ulcer",
+      "broad": "gastrointestinal",
+      "patterns": [
+        "\\bgastric ulcer\\b",
+        "\\bpeptic ulcer\\b"
+      ]
+    },
+    {
+      "label": "constipation",
+      "broad": "gastrointestinal",
+      "patterns": [
+        "\\bconstipation\\b"
+      ]
+    },
+    {
+      "label": "acute_pancreatitis",
+      "broad": "gastrointestinal",
+      "patterns": [
+        "\\bacute pancreatitis\\b",
+        "\\bpancreatitis\\b"
+      ]
+    },
+    {
+      "label": "inflammatory_bowel_disease",
+      "broad": "gastrointestinal",
+      "patterns": [
+        "\\binflammatory bowel disease\\b"
+      ]
+    },
+    {
+      "label": "diabetic_nephropathy",
+      "broad": "renal_metabolic",
+      "patterns": [
+        "\\bdiabetic nephropathy\\b",
+        "\\bdiabetic kidney disease\\b"
+      ]
+    },
+    {
+      "label": "type_2_diabetes",
+      "broad": "metabolic",
+      "patterns": [
+        "\\btype 2 diabetes(?: mellitus)?\\b",
+        "\\bt2dm\\b"
+      ]
+    },
+    {
+      "label": "diabetes",
+      "broad": "metabolic",
+      "patterns": [
+        "\\bdiabetes mellitus\\b",
+        "\\bdiabetes\\b"
+      ]
+    },
+    {
+      "label": "obesity",
+      "broad": "metabolic",
+      "patterns": [
+        "\\bobesity\\b"
+      ]
+    },
+    {
+      "label": "metabolic_syndrome",
+      "broad": "metabolic",
+      "patterns": [
+        "\\bmetabolic syndrome\\b"
+      ]
+    },
+    {
+      "label": "nonalcoholic_fatty_liver",
+      "broad": "hepatic_metabolic",
+      "patterns": [
+        "\\bnon[- ]alcoholic fatty liver disease\\b",
+        "\\bnafld\\b",
+        "\\bmetabolic dysfunction-associated steatotic liver disease\\b",
+        "\\bmasld\\b"
+      ]
+    },
+    {
+      "label": "liver_fibrosis",
+      "broad": "hepatic",
+      "patterns": [
+        "\\bliver fibrosis\\b",
+        "\\bhepatic fibrosis\\b"
+      ]
+    },
+    {
+      "label": "acute_liver_injury",
+      "broad": "hepatic",
+      "patterns": [
+        "\\bacute liver injury\\b",
+        "\\bliver injury\\b"
+      ]
+    },
+    {
+      "label": "chronic_kidney_disease",
+      "broad": "renal",
+      "patterns": [
+        "\\bchronic kidney disease\\b",
+        "\\brenal fibrosis\\b"
+      ]
+    },
+    {
+      "label": "alzheimer_disease",
+      "broad": "neurological",
+      "patterns": [
+        "\\balzheimer'?s disease\\b",
+        "\\balzheimer disease\\b"
+      ]
+    },
+    {
+      "label": "parkinson_disease",
+      "broad": "neurological",
+      "patterns": [
+        "\\bparkinson'?s disease\\b",
+        "\\bparkinson disease\\b"
+      ]
+    },
+    {
+      "label": "ischemic_stroke",
+      "broad": "neurological",
+      "patterns": [
+        "\\bischemic stroke\\b",
+        "\\bischaemic stroke\\b",
+        "\\bcerebral ischemia\\b",
+        "\\bcerebral ischaemia\\b"
+      ]
+    },
+    {
+      "label": "intracerebral_hemorrhage",
+      "broad": "neurological",
+      "patterns": [
+        "\\bintracerebral hemorrhage\\b",
+        "\\bcerebral hemorrhage\\b"
+      ]
+    },
+    {
+      "label": "epilepsy",
+      "broad": "neurological",
+      "patterns": [
+        "\\bepilepsy\\b"
+      ]
+    },
+    {
+      "label": "neuropathic_pain",
+      "broad": "neurological",
+      "patterns": [
+        "\\bneuropathic pain\\b"
+      ]
+    },
+    {
+      "label": "spinal_cord_injury",
+      "broad": "neurological",
+      "patterns": [
+        "\\bspinal cord injury\\b"
+      ]
+    },
+    {
+      "label": "vascular_dementia",
+      "broad": "neurological",
+      "patterns": [
+        "\\bvascular dementia\\b"
+      ]
+    },
+    {
+      "label": "depression",
+      "broad": "psychiatric",
+      "patterns": [
+        "\\bmajor depressive disorder\\b",
+        "\\bdepression\\b",
+        "\\bantidepressant\\b"
+      ]
+    },
+    {
+      "label": "anxiety",
+      "broad": "psychiatric",
+      "patterns": [
+        "\\banxiety\\b"
+      ]
+    },
+    {
+      "label": "insomnia",
+      "broad": "psychiatric",
+      "patterns": [
+        "\\binsomnia\\b"
+      ]
+    },
+    {
+      "label": "atherosclerosis",
+      "broad": "cardiovascular",
+      "patterns": [
+        "\\batherosclerosis\\b"
+      ]
+    },
+    {
+      "label": "coronary_heart_disease",
+      "broad": "cardiovascular",
+      "patterns": [
+        "\\bcoronary heart disease\\b",
+        "\\bcoronary artery disease\\b",
+        "\\bangina pectoris\\b"
+      ]
+    },
+    {
+      "label": "myocardial_infarction",
+      "broad": "cardiovascular",
+      "patterns": [
+        "\\bmyocardial infarction\\b",
+        "\\bmyocardial ischemia\\b",
+        "\\bmyocardial ischaemia\\b"
+      ]
+    },
+    {
+      "label": "heart_failure",
+      "broad": "cardiovascular",
+      "patterns": [
+        "\\bheart failure\\b"
+      ]
+    },
+    {
+      "label": "hypertension",
+      "broad": "cardiovascular",
+      "patterns": [
+        "\\bhypertension\\b"
+      ]
+    },
+    {
+      "label": "cardiac_fibrosis",
+      "broad": "cardiovascular",
+      "patterns": [
+        "\\bcardiac fibrosis\\b",
+        "\\bmyocardial fibrosis\\b"
+      ]
+    },
+    {
+      "label": "arrhythmia",
+      "broad": "cardiovascular",
+      "patterns": [
+        "\\barrhythmia\\b",
+        "\\batrial fibrillation\\b"
+      ]
+    },
+    {
+      "label": "asthma",
+      "broad": "respiratory",
+      "patterns": [
+        "\\basthma\\b"
+      ]
+    },
+    {
+      "label": "copd",
+      "broad": "respiratory",
+      "patterns": [
+        "\\bchronic obstructive pulmonary disease\\b",
+        "\\bcopd\\b"
+      ]
+    },
+    {
+      "label": "pulmonary_fibrosis",
+      "broad": "respiratory",
+      "patterns": [
+        "\\bpulmonary fibrosis\\b"
+      ]
+    },
+    {
+      "label": "acute_lung_injury",
+      "broad": "respiratory",
+      "patterns": [
+        "\\bacute lung injury\\b",
+        "\\bards\\b",
+        "\\bacute respiratory distress syndrome\\b"
+      ]
+    },
+    {
+      "label": "pneumonia",
+      "broad": "respiratory_infectious",
+      "patterns": [
+        "\\bpneumonia\\b"
+      ]
+    },
+    {
+      "label": "sepsis",
+      "broad": "infectious_inflammatory",
+      "patterns": [
+        "\\bsepsis\\b"
+      ]
+    },
+    {
+      "label": "covid_19",
+      "broad": "infectious",
+      "patterns": [
+        "\\bcovid[- ]?19\\b",
+        "\\bsars[- ]cov[- ]2\\b"
+      ]
+    },
+    {
+      "label": "influenza",
+      "broad": "infectious",
+      "patterns": [
+        "\\binfluenza\\b"
+      ]
+    },
+    {
+      "label": "psoriasis",
+      "broad": "dermatologic_autoimmune",
+      "patterns": [
+        "\\bpsoriasis\\b"
+      ]
+    },
+    {
+      "label": "atopic_dermatitis",
+      "broad": "dermatologic",
+      "patterns": [
+        "\\batopic dermatitis\\b",
+        "\\beczema\\b"
+      ]
+    },
+    {
+      "label": "acne",
+      "broad": "dermatologic",
+      "patterns": [
+        "\\bacne\\b"
+      ]
+    },
+    {
+      "label": "alopecia_areata",
+      "broad": "dermatologic_autoimmune",
+      "patterns": [
+        "\\balopecia areata\\b"
+      ]
+    },
+    {
+      "label": "vitiligo",
+      "broad": "dermatologic_autoimmune",
+      "patterns": [
+        "\\bvitiligo\\b"
+      ]
+    },
+    {
+      "label": "endometriosis",
+      "broad": "gynecologic",
+      "patterns": [
+        "\\bendometriosis\\b"
+      ]
+    },
+    {
+      "label": "polycystic_ovary_syndrome",
+      "broad": "gynecologic_metabolic",
+      "patterns": [
+        "\\bpolycystic ovar(?:y|ian) syndrome\\b",
+        "\\bpcos\\b"
+      ]
+    },
+    {
+      "label": "preeclampsia",
+      "broad": "gynecologic",
+      "patterns": [
+        "\\bpreeclampsia\\b",
+        "\\bpre-eclampsia\\b"
+      ]
+    },
+    {
+      "label": "uterine_fibroids",
+      "broad": "gynecologic",
+      "patterns": [
+        "\\buterine fibroids?\\b",
+        "\\buterine leiomyoma\\b"
+      ]
+    },
+    {
+      "label": "male_infertility",
+      "broad": "reproductive",
+      "patterns": [
+        "\\bmale infertility\\b"
+      ]
+    },
+    {
+      "label": "female_infertility",
+      "broad": "reproductive",
+      "patterns": [
+        "\\bfemale infertility\\b",
+        "\\binfertility\\b"
+      ]
+    },
+    {
+      "label": "periodontitis",
+      "broad": "oral",
+      "patterns": [
+        "\\bperiodontitis\\b"
+      ]
+    },
+    {
+      "label": "dry_eye_disease",
+      "broad": "ophthalmic",
+      "patterns": [
+        "\\bdry eye disease\\b"
+      ]
+    },
+    {
+      "label": "age_related_macular_degeneration",
+      "broad": "ophthalmic",
+      "patterns": [
+        "\\bage-related macular degeneration\\b",
+        "\\bmacular degeneration\\b"
+      ]
+    },
+    {
+      "label": "glaucoma",
+      "broad": "ophthalmic",
+      "patterns": [
+        "\\bglaucoma\\b"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "query": "OPEN_ACCESS:Y AND FIRST_PDATE:[2015-01-01 TO 2026-08-16] AND TITLE:\"network pharmacology\" AND (decoction OR formula OR herb OR herbal OR phytochemical OR \"traditional Chinese medicine\" OR \"traditional medicine\" OR natural OR plant)",
+  "snapshot_date": "2026-08-16",
+  "harvested_at_utc": "2026-08-16T12:41:04.861279+00:00",
+  "reported_hit_count": 4427,
+  "records_after_deduplication": 4427,
+  "last_cursor_mark": "AoIIP0YMHygzNzk2NTA5Mw==",
+  "endpoint": "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+}
