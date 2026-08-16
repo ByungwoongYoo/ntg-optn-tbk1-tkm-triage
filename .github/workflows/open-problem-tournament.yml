@@ -1,0 +1,35 @@
+name: Open problem tournament smoke tests
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'open_problem_tournament/**'
+      - '.github/workflows/open-problem-tournament.yml'
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: open_problem_tournament/requirements.txt
+      - name: Install dependencies
+        run: python -m pip install -r open_problem_tournament/requirements.txt
+      - name: Syntax check
+        run: python -m py_compile open_problem_tournament/smoke.py
+      - name: Run six-track smoke tournament
+        env:
+          OUT_DIR: artifact/smoke_output
+        run: python open_problem_tournament/smoke.py
+      - name: Upload smoke package
+        uses: actions/upload-artifact@v4
+        with:
+          name: open-problem-tournament-smoke
+          path: |
+            artifact/smoke_output
+            artifact/open_problem_tournament_smoke.zip
+          if-no-files-found: error
+          retention-days: 30
