@@ -1,0 +1,57 @@
+name: ProteinGym DMS-to-clinical transfer v5
+on:
+  workflow_dispatch:
+  push:
+    branches: [bio-open-problem-smoke-20260817]
+    paths:
+      - 'bio_open_problem/proteingym_clinical_v5.py'
+      - '.github/workflows/proteingym-clinical-v5.yml'
+jobs:
+  clinical:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install numpy pandas scipy scikit-learn
+      - name: Download official ProteinGym DMS and clinical resources
+        run: |
+          mkdir -p pg_data_v5 artifact/proteingym_clinical_v5
+          curl -L --fail --retry 8 --retry-delay 5 -o pg_data_v5/zero_shot_substitutions_scores.zip \
+            https://marks.hms.harvard.edu/proteingym/ProteinGym_v1.3/zero_shot_substitutions_scores.zip
+          curl -L --fail --retry 8 --retry-delay 5 -o pg_data_v5/clinical_ProteinGym_substitutions.zip \
+            https://marks.hms.harvard.edu/proteingym/ProteinGym_v1.3/clinical_ProteinGym_substitutions.zip
+          curl -L --fail --retry 8 --retry-delay 5 -o pg_data_v5/zero_shot_clinical_substitutions_scores.zip \
+            https://marks.hms.harvard.edu/proteingym/ProteinGym_v1.3/zero_shot_clinical_substitutions_scores.zip
+          curl -L --fail --retry 8 -o pg_data_v5/DMS_substitutions.csv \
+            https://raw.githubusercontent.com/OATML-Markslab/ProteinGym/main/reference_files/DMS_substitutions.csv
+          sha256sum pg_data_v5/* > artifact/resource_sha256_v5.txt
+          ls -lh pg_data_v5
+          df -h
+      - name: Run frozen DMS-to-clinical benchmark
+        run: |
+          PYTHONPATH=bio_open_problem python bio_open_problem/proteingym_clinical_v5.py \
+            --dms-score-zip pg_data_v5/zero_shot_substitutions_scores.zip \
+            --dms-reference pg_data_v5/DMS_substitutions.csv \
+            --clinical-data-zip pg_data_v5/clinical_ProteinGym_substitutions.zip \
+            --clinical-score-zip pg_data_v5/zero_shot_clinical_substitutions_scores.zip \
+            --out-dir artifact/proteingym_clinical_v5
+      - name: Package
+        run: |
+          cp bio_open_problem/proteingym_clinical_v5.py bio_open_problem/proteingym_wide_v2.py artifact/
+          tar -czf artifact/proteingym_clinical_v5_results.tar.gz \
+            artifact/proteingym_clinical_v5 artifact/resource_sha256_v5.txt \
+            artifact/proteingym_clinical_v5.py artifact/proteingym_wide_v2.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: proteingym-clinical-v5
+          path: |
+            artifact/proteingym_clinical_v5
+            artifact/resource_sha256_v5.txt
+            artifact/proteingym_clinical_v5.py
+            artifact/proteingym_wide_v2.py
+            artifact/proteingym_clinical_v5_results.tar.gz
+          retention-days: 30
+          if-no-files-found: error
