@@ -1,0 +1,67 @@
+name: ProteinGym fast family-held-out linear gate v12
+on:
+  workflow_dispatch:
+  push:
+    branches: [missense-family-gating-20260817]
+    paths:
+      - 'bio_open_problem/proteingym_family_gating_fast_v12.py'
+      - '.github/workflows/proteingym-family-gating-fast-v12.yml'
+jobs:
+  fast:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install numpy pandas scipy scikit-learn
+      - name: Install MMseqs2
+        run: |
+          if ! sudo apt-get update || ! sudo apt-get install -y mmseqs2; then
+            curl -L --fail --retry 5 -o /tmp/mmseqs.tar.gz https://mmseqs.com/latest/mmseqs-linux-avx2.tar.gz
+            tar -xzf /tmp/mmseqs.tar.gz -C /tmp
+            echo '/tmp/mmseqs/bin' >> "$GITHUB_PATH"
+          fi
+      - name: Download and prepare
+        run: |
+          mkdir -p fast_data artifact/family_gating_fast_v12/prepare artifact/family_gating_fast_v12/mmseqs/tmp
+          curl -L --fail --retry 8 --retry-delay 5 \
+            -o fast_data/clinical.zip \
+            https://marks.hms.harvard.edu/proteingym/ProteinGym_v1.3/zero_shot_clinical_substitutions_scores.zip
+          python bio_open_problem/clinical_family_prepare_v12.py \
+            --clinical-score-zip fast_data/clinical.zip \
+            --out-dir artifact/family_gating_fast_v12/prepare
+          mmseqs easy-search \
+            artifact/family_gating_fast_v12/prepare/clinical_sequences.fasta \
+            artifact/family_gating_fast_v12/prepare/clinical_sequences.fasta \
+            artifact/family_gating_fast_v12/mmseqs/global30_cov80.tsv \
+            artifact/family_gating_fast_v12/mmseqs/tmp \
+            --search-type 1 --min-seq-id 0.30 -c 0.80 --cov-mode 0 \
+            -s 7.5 --max-seqs 10000 \
+            --format-output 'query,target,fident,qcov,tcov,evalue,bits'
+      - name: Run fast sealed experiment
+        env:
+          OPENBLAS_NUM_THREADS: '4'
+          OMP_NUM_THREADS: '4'
+        run: |
+          PYTHONPATH=bio_open_problem python bio_open_problem/proteingym_family_gating_fast_v12.py \
+            --clinical-score-zip fast_data/clinical.zip \
+            --sequence-inventory artifact/family_gating_fast_v12/prepare/sequence_inventory.csv \
+            --cluster-edge global30_cov80=artifact/family_gating_fast_v12/mmseqs/global30_cov80.tsv \
+            --out-dir artifact/family_gating_fast_v12/results
+      - name: Package
+        run: |
+          rm -rf artifact/family_gating_fast_v12/mmseqs/tmp
+          cp bio_open_problem/clinical_family_prepare_v12.py \
+             bio_open_problem/proteingym_family_gating_v12.py \
+             bio_open_problem/proteingym_family_gating_fast_v12.py artifact/family_gating_fast_v12/
+          tar -czf artifact/proteingym_family_gating_fast_v12.tar.gz -C artifact family_gating_fast_v12
+      - uses: actions/upload-artifact@v4
+        with:
+          name: proteingym-family-gating-fast-v12
+          path: |
+            artifact/family_gating_fast_v12
+            artifact/proteingym_family_gating_fast_v12.tar.gz
+          retention-days: 30
+          if-no-files-found: error
