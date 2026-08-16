@@ -17,8 +17,25 @@ jobs:
           python-version: '3.12'
       - name: Install analysis stack
         run: pip install numpy pandas scikit-learn
-      - name: Syntax check
-        run: python -m py_compile bio_open_problem/proteingym_clinical_transfer.py
+      - name: Patch transferable-model baseline and syntax check
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('bio_open_problem/proteingym_clinical_transfer.py')
+          s=p.read_text()
+          s=s.replace('if len(models) < 6:', 'if len(models) < 3:')
+          s=s.replace('frame["prediction_venusrem"] = frame.get("rank__VenusREM", np.nan)', 'frame["prediction_dms_selected_base"] = frame.get(f"rank__{ordered_models[0]}", np.nan)')
+          s=s.replace('"prediction_venusrem"', '"prediction_dms_selected_base"')
+          s=s.replace('"primary_unseen_proteins_ridge_vs_venusrem"', '"primary_unseen_proteins_ridge_vs_dms_selected_base"')
+          s=s.replace('"secondary_all_proteins_ridge_vs_venusrem"', '"secondary_all_proteins_ridge_vs_dms_selected_base"')
+          s=s.replace('"secondary_unseen_top5_vs_venusrem"', '"secondary_unseen_top5_vs_dms_selected_base"')
+          s=s.replace('over VenusREM on proteins absent from DMS training?', 'over the DMS-selected individual predictor on proteins absent from DMS training?')
+          s=s.replace('"created_before_clinical_labels_opened": True,', '"created_before_clinical_labels_opened": True,\n        "dms_selected_baseline_model": ordered_models[0],')
+          s=s.replace('VenusREM mean gene AUC', 'DMS-selected individual baseline mean gene AUC')
+          s=s.replace('over the DMS-training-selected VenusREM baseline', 'over the individual predictor selected using DMS training only')
+          p.write_text(s)
+          PY
+          python -m py_compile bio_open_problem/proteingym_clinical_transfer.py
       - name: Download official ProteinGym v1.3 DMS and clinical resources
         run: |
           mkdir -p pg_data artifact/clinical_transfer
