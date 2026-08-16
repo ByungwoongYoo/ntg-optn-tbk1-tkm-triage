@@ -1,0 +1,28 @@
+name: Bio open-problem objective smoke probe
+on:
+  workflow_dispatch:
+  push:
+    branches: [bio-open-problem-smoke-20260817]
+    paths:
+      - 'bio_open_problem/**'
+      - '.github/workflows/bio-open-problem-probe.yml'
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests
+      - name: Run access and feasibility probe
+        env:
+          OUT_DIR: artifact/probe
+        run: python bio_open_problem/probe.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bio-open-problem-probe
+          path: artifact/probe
+          retention-days: 30
+          if-no-files-found: error
