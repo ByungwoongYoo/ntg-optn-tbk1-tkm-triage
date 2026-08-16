@@ -17,8 +17,63 @@ jobs:
           python-version: '3.12'
       - name: Install analysis stack
         run: pip install numpy pandas scipy scikit-learn
-      - name: Syntax check
-        run: python -m py_compile bio_open_problem/proteingym_wide_nested.py
+      - name: Apply runtime efficiency patch and syntax check
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('bio_open_problem/proteingym_wide_nested.py')
+          s=p.read_text()
+          old='''    train_scores = model_training_scores(train, models)
+    ordered = sorted(models, key=lambda m: (-np.nan_to_num(train_scores[m], nan=-999), m))
+    if method == "top3_mean":
+        return test[[f"rank__{m}" for m in ordered[:3]]].mean(axis=1, skipna=True).to_numpy(float)
+    if method == "top5_mean":
+        return test[[f"rank__{m}" for m in ordered[:5]]].mean(axis=1, skipna=True).to_numpy(float)
+    if method == "performance_weighted":
+        raw = np.asarray([max(0.0, np.nan_to_num(train_scores[m], nan=0.0)) ** 2 for m in models])
+        if raw.sum() <= 0:
+            raw = np.ones(len(models), dtype=float)
+        return row_weighted_average(test, columns, raw / raw.sum())
+    if method.startswith("ridge_"):
+        alpha = float(method.split("_", 1)[1])
+        sampled, weights = balanced_training_sample(train)
+        pipeline = make_pipeline(
+            SimpleImputer(strategy="median", add_indicator=True),
+            Ridge(alpha=alpha),
+        )
+        pipeline.fit(sampled[columns], sampled["target_rank"], ridge__sample_weight=weights)
+        return pipeline.predict(test[columns])
+'''
+          new='''    if method.startswith("ridge_"):
+        alpha = float(method.split("_", 1)[1])
+        sampled, weights = balanced_training_sample(train)
+        pipeline = make_pipeline(
+            SimpleImputer(strategy="median", add_indicator=True),
+            Ridge(alpha=alpha),
+        )
+        pipeline.fit(sampled[columns], sampled["target_rank"], ridge__sample_weight=weights)
+        return pipeline.predict(test[columns])
+
+    cache_key = "model_training_scores__" + "|".join(models)
+    if cache_key not in train.attrs:
+        train.attrs[cache_key] = model_training_scores(train, models)
+    train_scores = train.attrs[cache_key]
+    ordered = sorted(models, key=lambda m: (-np.nan_to_num(train_scores[m], nan=-999), m))
+    if method == "top3_mean":
+        return test[[f"rank__{m}" for m in ordered[:3]]].mean(axis=1, skipna=True).to_numpy(float)
+    if method == "top5_mean":
+        return test[[f"rank__{m}" for m in ordered[:5]]].mean(axis=1, skipna=True).to_numpy(float)
+    if method == "performance_weighted":
+        raw = np.asarray([max(0.0, np.nan_to_num(train_scores[m], nan=0.0)) ** 2 for m in models])
+        if raw.sum() <= 0:
+            raw = np.ones(len(models), dtype=float)
+        return row_weighted_average(test, columns, raw / raw.sum())
+'''
+          if old not in s:
+              raise SystemExit('Efficiency patch target not found')
+          p.write_text(s.replace(old,new))
+          PY
+          python -m py_compile bio_open_problem/proteingym_wide_nested.py
       - name: Download official ProteinGym v1.3 wide scores and reference
         run: |
           mkdir -p pg_data artifact/proteingym_wide_nested
