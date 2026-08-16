@@ -1,0 +1,28 @@
+name: Probe CPT-1 remote prediction archives
+on:
+  workflow_dispatch:
+  push:
+    branches: [bio-open-problem-smoke-20260817]
+    paths:
+      - 'bio_open_problem/cpt_remote_probe.py'
+      - '.github/workflows/cpt-remote-probe.yml'
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests remotezip
+      - name: Inspect remote central directories without downloading 2.4 GB
+        env:
+          OUT_DIR: artifact/cpt_probe
+        run: python bio_open_problem/cpt_remote_probe.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cpt-remote-probe
+          path: artifact/cpt_probe
+          retention-days: 30
+          if-no-files-found: error
