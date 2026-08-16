@@ -21,30 +21,33 @@ jobs:
         run: df -h
       - name: Download official ProteinGym v1.3 resources
         run: |
-          mkdir -p data artifact/proteingym_smoke artifact/proteingym_full
-          curl -L --fail --retry 8 --retry-delay 5 -o data/DMS_ProteinGym_substitutions.zip \
+          mkdir -p pg_data artifact/proteingym_smoke artifact/proteingym_full
+          curl -L --fail --retry 8 --retry-delay 5 -o pg_data/DMS_ProteinGym_substitutions.zip \
             https://marks.hms.harvard.edu/proteingym/ProteinGym_v1.3/DMS_ProteinGym_substitutions.zip
-          curl -L --fail --retry 8 --retry-delay 5 -o data/zero_shot_substitutions_scores.zip \
+          curl -L --fail --retry 8 --retry-delay 5 -o pg_data/zero_shot_substitutions_scores.zip \
             https://marks.hms.harvard.edu/proteingym/ProteinGym_v1.3/zero_shot_substitutions_scores.zip
-          curl -L --fail --retry 8 -o data/DMS_substitutions.csv \
+          curl -L --fail --retry 8 -o pg_data/DMS_substitutions.csv \
             https://raw.githubusercontent.com/OATML-Markslab/ProteinGym/main/reference_files/DMS_substitutions.csv
-          sha256sum data/* > artifact/resource_sha256.txt
-          ls -lh data
+          sha256sum \
+            pg_data/DMS_ProteinGym_substitutions.zip \
+            pg_data/zero_shot_substitutions_scores.zip \
+            pg_data/DMS_substitutions.csv > artifact/resource_sha256.txt
+          ls -lh pg_data
           df -h
       - name: Run 24-assay human smoke test
         run: |
           python bio_open_problem/proteingym_ensemble.py \
-            --dms-zip data/DMS_ProteinGym_substitutions.zip \
-            --score-zip data/zero_shot_substitutions_scores.zip \
-            --reference data/DMS_substitutions.csv \
+            --dms-zip pg_data/DMS_ProteinGym_substitutions.zip \
+            --score-zip pg_data/zero_shot_substitutions_scores.zip \
+            --reference pg_data/DMS_substitutions.csv \
             --out-dir artifact/proteingym_smoke \
             --human-only --max-assays 24 --max-models 12
       - name: Run all eligible human assays
         run: |
           python bio_open_problem/proteingym_ensemble.py \
-            --dms-zip data/DMS_ProteinGym_substitutions.zip \
-            --score-zip data/zero_shot_substitutions_scores.zip \
-            --reference data/DMS_substitutions.csv \
+            --dms-zip pg_data/DMS_ProteinGym_substitutions.zip \
+            --score-zip pg_data/zero_shot_substitutions_scores.zip \
+            --reference pg_data/DMS_substitutions.csv \
             --out-dir artifact/proteingym_full \
             --human-only --max-models 12
       - name: Package concise results
