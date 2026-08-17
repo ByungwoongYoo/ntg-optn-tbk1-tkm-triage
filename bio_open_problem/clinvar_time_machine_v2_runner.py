@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compatibility runner for ClinVar submission_summary files with pre-header metadata lines."""
+"""Compatibility runner for ClinVar submission files and family-artifact column names."""
 from __future__ import annotations
 
 import gzip
@@ -70,7 +70,31 @@ def read_submission_summary_compatible(path: Path, target_ids: set[int], chunksi
     return grouped
 
 
+_original_load_raw_and_scores = tm.load_raw_and_scores
+
+
+def load_raw_and_scores_compatible(raw_zip: Path, score_zip: Path, predictions_path: Path):
+    """Translate explicit column names from the authoritative family-held-out artifact.
+
+    That artifact stores the training-selected comparator as `best_individual_prob`.
+    All five outer folds selected PoET, so this is the frozen PoET comparator requested
+    by the protocol. The shorthand aliases are added without changing predictions.
+    """
+    merged, diagnostics = _original_load_raw_and_scores(raw_zip, score_zip, predictions_path)
+    if "base_prob" not in merged.columns and "best_individual_prob" in merged.columns:
+        merged["base_prob"] = merged["best_individual_prob"]
+    if "base" not in merged.columns and "best_individual_raw" in merged.columns:
+        merged["base"] = merged["best_individual_raw"]
+    missing = {"fixed_prob", "base_prob"} - set(merged.columns)
+    if missing:
+        raise RuntimeError(f"Frozen prediction artifact missing required columns after compatibility mapping: {sorted(missing)}")
+    diagnostics["frozen_comparator_column_source"] = "best_individual_prob"
+    diagnostics["frozen_best_individual_identity"] = "PoET in every completed family-held-out outer fold"
+    return merged, diagnostics
+
+
 tm.read_submission_summary = read_submission_summary_compatible
+tm.load_raw_and_scores = load_raw_and_scores_compatible
 
 if __name__ == "__main__":
     tm.main()
