@@ -1,0 +1,34 @@
+name: CAMI III toy longitudinal signal v1
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'bio_open_problem/cami3_toy_longitudinal_signal_v1.py'
+      - '.github/workflows/cami3-toy-longitudinal-signal-v1.yml'
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install numpy pandas
+      - name: Download official unrestricted CAMI III toy taxonomic profiles
+        run: |
+          mkdir -p data artifact/cami3_toy_longitudinal
+          curl -L --fail --retry 5 -o data/taxonomic_profiles.tar.gz https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/taxonomic_profiles.tar.gz
+          sha256sum data/taxonomic_profiles.tar.gz > artifact/cami3_toy_longitudinal/input_sha256.txt
+          ls -lh data/taxonomic_profiles.tar.gz
+      - name: Quantify prespecified paired-longitudinal signal from gold-standard profiles
+        run: |
+          python bio_open_problem/cami3_toy_longitudinal_signal_v1.py --profiles-tar data/taxonomic_profiles.tar.gz --out-dir artifact/cami3_toy_longitudinal
+          cp bio_open_problem/cami3_toy_longitudinal_signal_v1.py artifact/cami3_toy_longitudinal/
+          find artifact/cami3_toy_longitudinal -type f -print0 | sort -z | xargs -0 sha256sum > artifact/cami3_toy_longitudinal/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cami3-toy-longitudinal-signal-v1
+          path: artifact/cami3_toy_longitudinal
+          retention-days: 30
+          if-no-files-found: error
