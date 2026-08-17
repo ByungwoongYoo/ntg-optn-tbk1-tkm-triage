@@ -1,0 +1,41 @@
+name: B2 Z100 final record check 20260817
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/B2_Z100_FINAL_RESOLUTION_20260817.md'
+      - 'crossdomain/B2_Z100_FINAL_RESULTS_20260817.json'
+      - 'crossdomain/B2_Z100_VERIFY_FINAL_20260817.py'
+      - '.github/workflows/b2-z100-final-record-check-20260817.yml'
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Run independent final-record verifier
+        run: python crossdomain/B2_Z100_VERIFY_FINAL_20260817.py | tee B2_Z100_FINAL_RECORD_CHECK.log
+      - name: Hash final record and core exact-search sources
+        run: |
+          sha256sum \
+            crossdomain/B2_Z100_FINAL_RESOLUTION_20260817.md \
+            crossdomain/B2_Z100_FINAL_RESULTS_20260817.json \
+            crossdomain/B2_Z100_VERIFY_FINAL_20260817.py \
+            crossdomain/b2_gap1_u_split_v8.cpp \
+            crossdomain/b2_gap1_v_split_v10.cpp \
+            crossdomain/b2_gap_g_u_split_v9.cpp \
+            > B2_Z100_FINAL_RECORD_SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: B2-Z100-FINAL-RECORD-CHECK-20260817
+          path: |
+            B2_Z100_FINAL_RECORD_CHECK.log
+            B2_Z100_FINAL_RECORD_SHA256SUMS.txt
+            crossdomain/B2_Z100_FINAL_RESOLUTION_20260817.md
+            crossdomain/B2_Z100_FINAL_RESULTS_20260817.json
+            crossdomain/B2_Z100_VERIFY_FINAL_20260817.py
+          retention-days: 90
+          if-no-files-found: error
