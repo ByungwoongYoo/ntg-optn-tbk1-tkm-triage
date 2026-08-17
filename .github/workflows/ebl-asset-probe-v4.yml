@@ -1,0 +1,51 @@
+name: eBL top-candidate asset readiness probe v4
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["crossdomain-open-problem-tournament-20260817-doit"]
+    paths:
+      - "crossdomain/ebl_asset_probe_v4.py"
+      - ".github/workflows/ebl-asset-probe-v4.yml"
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: Download open eBL metadata and v3 survivor artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p data artifact/ebl_asset_v4
+          python - <<'PY'
+          import requests
+          m=requests.get('https://zenodo.org/api/records/10018951',timeout=60).json()
+          f=next(x for x in m['files'] if x['key']=='fragments.json')
+          r=requests.get(f['links']['self'],timeout=180); r.raise_for_status()
+          open('data/fragments.json','wb').write(r.content)
+          PY
+          curl -L --fail -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            -o data/v3.zip https://api.github.com/repos/${{ github.repository }}/actions/artifacts/9276517722/zip
+          unzip -q data/v3.zip -d data/v3
+          test -s data/v3/survivors_v3.json
+      - name: Probe image and identifier metadata
+        run: |
+          python crossdomain/ebl_asset_probe_v4.py \
+            --fragments-json data/fragments.json \
+            --survivors data/v3/survivors_v3.json \
+            --out-dir artifact/ebl_asset_v4 --top 12
+      - name: Hash outputs
+        run: |
+          cp crossdomain/ebl_asset_probe_v4.py artifact/ebl_asset_v4/
+          find artifact/ebl_asset_v4 -type f -print0 | sort -z | xargs -0 sha256sum > artifact/ebl_asset_v4/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ebl-asset-probe-v4
+          path: artifact/ebl_asset_v4
+          retention-days: 30
