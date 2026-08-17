@@ -1,0 +1,29 @@
+name: Uibangyuchwi bounded bulk source-excerpt extraction
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/shidian_uibang_bulk_extract.py'
+      - '.github/workflows/shidian-uibang-bulk-extract.yml'
+jobs:
+  extract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests beautifulsoup4
+      - name: Fetch public pages at low rate and save bounded excerpts only
+        env: {OUT_DIR: 'artifact/shidian_uibang_bulk'}
+        run: |
+          mkdir -p artifact/shidian_uibang_bulk
+          python crossdomain/shidian_uibang_bulk_extract.py
+      - run: find artifact/shidian_uibang_bulk -type f -print0 | sort -z | xargs -0 sha256sum > artifact/shidian_uibang_bulk/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shidian-uibang-bulk-extract
+          path: artifact/shidian_uibang_bulk
+          retention-days: 30
+          if-no-files-found: error
