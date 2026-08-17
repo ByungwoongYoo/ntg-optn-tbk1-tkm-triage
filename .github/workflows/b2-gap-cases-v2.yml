@@ -1,0 +1,33 @@
+name: B2 Z100 exact minimum-gap cases v2
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/b2_gap_case_v2.py'
+      - '.github/workflows/b2-gap-cases-v2.yml'
+jobs:
+  gap:
+    strategy:
+      fail-fast: false
+      matrix:
+        gap: [1,2,3,4,5,6,7]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 29
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install ortools
+      - name: Solve exact normalized gap case
+        run: |
+          mkdir -p artifact/b2_gap_${{ matrix.gap }}
+          python crossdomain/b2_gap_case_v2.py --gap ${{ matrix.gap }} --limit 1550 --out-dir artifact/b2_gap_${{ matrix.gap }}
+          cp crossdomain/b2_gap_case_v2.py artifact/b2_gap_${{ matrix.gap }}/
+          find artifact/b2_gap_${{ matrix.gap }} -type f -print0 | sort -z | xargs -0 sha256sum > artifact/b2_gap_${{ matrix.gap }}/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: b2-gap-${{ matrix.gap }}-v2
+          path: artifact/b2_gap_${{ matrix.gap }}
+          retention-days: 30
+          if-no-files-found: error
