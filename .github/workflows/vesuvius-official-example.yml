@@ -1,0 +1,30 @@
+name: Vesuvius official open-data example smoke
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - '.github/workflows/vesuvius-official-example.yml'
+jobs:
+  example:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Install exact documented dependency lower bounds without zarr pin
+        run: pip install 'zarr>=2.16.0' 'fsspec>=2023.1.0' 's3fs>=2023.1.0' 'matplotlib>=3.7.0' 'tifffile>=2023.7.0' 'numpy>=1.24.0' imagecodecs requests
+      - name: Download and run official example unchanged except noninteractive backend
+        env: {MPLBACKEND: 'Agg'}
+        run: |
+          mkdir -p artifact/vesuvius_official
+          curl -L --fail --retry 5 -o artifact/vesuvius_official/zarr_volume_access.py https://raw.githubusercontent.com/ScrollPrize/open-data/main/examples/zarr_volume_access.py
+          (cd artifact/vesuvius_official && python zarr_volume_access.py) 2>&1 | tee artifact/vesuvius_official/RUN.log
+          find artifact/vesuvius_official -type f -print0 | sort -z | xargs -0 sha256sum > artifact/vesuvius_official/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vesuvius-official-example
+          path: artifact/vesuvius_official
+          retention-days: 30
+          if-no-files-found: error
