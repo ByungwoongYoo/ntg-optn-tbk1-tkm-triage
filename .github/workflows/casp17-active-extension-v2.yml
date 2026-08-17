@@ -1,0 +1,29 @@
+name: CASP17 active E2448 E2449 blind extension v2
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/casp17_active_extension_v2.py'
+      - '.github/workflows/casp17-active-extension-v2.yml'
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests beautifulsoup4
+      - name: Locate and freeze currently active E2448 E2449 structures before truth
+        env: {OUT_DIR: 'artifact/casp17_active_v2'}
+        run: python crossdomain/casp17_active_extension_v2.py
+      - run: |
+          cp crossdomain/casp17_active_extension_v2.py artifact/casp17_active_v2/
+          find artifact/casp17_active_v2 -type f -print0 | sort -z | xargs -0 sha256sum > artifact/casp17_active_v2/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: casp17-active-extension-v2
+          path: artifact/casp17_active_v2
+          retention-days: 30
+          if-no-files-found: error
