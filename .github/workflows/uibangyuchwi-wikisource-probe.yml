@@ -1,0 +1,29 @@
+name: Uibangyuchwi lost-text public corpus probe
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/uibangyuchwi_wikisource_probe.py'
+      - '.github/workflows/uibangyuchwi-wikisource-probe.yml'
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests
+      - name: Download CC Wikisource corpus and run known-control audit
+        env: {OUT_DIR: 'artifact/uibangyuchwi'}
+        run: |
+          mkdir -p artifact/uibangyuchwi
+          python crossdomain/uibangyuchwi_wikisource_probe.py
+      - run: find artifact/uibangyuchwi -type f -print0 | sort -z | xargs -0 sha256sum > artifact/uibangyuchwi/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: uibangyuchwi-wikisource-probe
+          path: artifact/uibangyuchwi
+          retention-days: 30
+          if-no-files-found: error
