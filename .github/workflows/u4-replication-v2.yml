@@ -17,25 +17,31 @@ jobs:
       - name: Download authors' Zenodo artifact and Vampire 5.0.1
         run: |
           set -euxo pipefail
-          mkdir -p data/u4_authors data/vampire artifact/u4_replication_v2
+          mkdir -p data/u4_authors data/u4_unzip data/vampire artifact/u4_replication_v2
           curl -L --fail --retry 5 -o artifact/u4_replication_v2/zenodo_metadata.json https://zenodo.org/api/records/18747868
-          jq -r '.files[].key' artifact/u4_replication_v2/zenodo_metadata.json | tee artifact/u4_replication_v2/zenodo_file_keys.txt
+          ZIPURL=$(jq -r '.files[0].links.self' artifact/u4_replication_v2/zenodo_metadata.json)
+          curl -L --fail --retry 5 -o /tmp/u4_authors.zip "$ZIPURL"
+          unzip -q /tmp/u4_authors.zip -d data/u4_unzip
+          find data/u4_unzip -type f | sort | tee artifact/u4_replication_v2/author_artifact_files.txt
           for target in u1 u2 u3; do
-            URL=$(jq -r --arg t "$target" '.files[] | select((.key|ascii_downcase) | contains($t)) | .links.self' artifact/u4_replication_v2/zenodo_metadata.json | head -1)
-            test -n "$URL" && test "$URL" != "null"
-            curl -L --fail --retry 5 -o "data/u4_authors/${target}.p" "$URL"
+            P=$(find data/u4_unzip -type f -iname "${target}.p" | head -1)
+            test -n "$P"
+            cp "$P" "data/u4_authors/${target}.p"
           done
           test -s data/u4_authors/u1.p
           test -s data/u4_authors/u2.p
           test -s data/u4_authors/u3.p
           curl -L --fail --retry 5 -o /tmp/vampire.zip https://github.com/vprover/vampire/releases/download/v5.0.1/vampire-Linux-X64.zip
           unzip -q /tmp/vampire.zip -d data/vampire
-          VAMP=$(find data/vampire -type f \( -name vampire -o -name 'vampire*' \) | head -1)
+          VAMP=$(find data/vampire -type f \( -name vampire -o -name 'vampire*' \) -perm /111 | head -1)
+          if [ -z "$VAMP" ]; then
+            VAMP=$(find data/vampire -type f \( -name vampire -o -name 'vampire*' \) | head -1)
+          fi
           test -n "$VAMP"
           chmod +x "$VAMP"
           "$VAMP" --version | tee artifact/u4_replication_v2/vampire_version.txt || true
           cp data/u4_authors/*.p artifact/u4_replication_v2/
-          sha256sum data/u4_authors/*.p /tmp/vampire.zip > artifact/u4_replication_v2/input_sha256.txt
+          sha256sum data/u4_authors/*.p /tmp/u4_authors.zip /tmp/vampire.zip > artifact/u4_replication_v2/input_sha256.txt
           echo "$VAMP" > /tmp/vamp_path
       - name: Run published controls then frozen u4 attempts
         run: |
