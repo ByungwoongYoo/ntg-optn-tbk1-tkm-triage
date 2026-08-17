@@ -1,0 +1,42 @@
+name: Yanxia Shengxiaofang reconstruction dossier
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["crossdomain-open-problem-tournament-20260817-doit"]
+    paths:
+      - "crossdomain/yanxia_reconstruction_dossier.py"
+      - ".github/workflows/yanxia-reconstruction-dossier.yml"
+
+jobs:
+  dossier:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Download Yanxia extraction artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p data artifact/yanxia_dossier
+          curl -L --fail -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            -o data/yanxia.zip https://api.github.com/repos/${{ github.repository }}/actions/artifacts/9276558520/zip
+          unzip -q data/yanxia.zip -d data/yanxia
+          test -s data/yanxia/source_blocks.json
+      - name: Build candidate formula inventory
+        run: |
+          python crossdomain/yanxia_reconstruction_dossier.py \
+            --source-blocks data/yanxia/source_blocks.json \
+            --out-dir artifact/yanxia_dossier
+      - name: Hash outputs
+        run: |
+          cp crossdomain/yanxia_reconstruction_dossier.py artifact/yanxia_dossier/
+          find artifact/yanxia_dossier -type f -print0 | sort -z | xargs -0 sha256sum > artifact/yanxia_dossier/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yanxia-reconstruction-dossier
+          path: artifact/yanxia_dossier
+          retention-days: 30
