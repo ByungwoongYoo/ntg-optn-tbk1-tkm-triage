@@ -1,0 +1,28 @@
+name: DECRYPT record 2294 public file audit v3
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/decrypt_record2294_files_v3.py'
+      - '.github/workflows/decrypt-record2294-files-v3.yml'
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests
+      - run: |
+          mkdir -p artifact/decrypt2294
+          OUT_DIR=artifact/decrypt2294 python crossdomain/decrypt_record2294_files_v3.py
+          cp crossdomain/decrypt_record2294_files_v3.py artifact/decrypt2294/
+          find artifact/decrypt2294 -type f -print0 | sort -z | xargs -0 sha256sum > artifact/decrypt2294/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: decrypt-record2294-files-v3
+          path: artifact/decrypt2294
+          retention-days: 30
+          if-no-files-found: error
