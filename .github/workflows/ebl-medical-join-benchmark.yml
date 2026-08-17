@@ -1,0 +1,37 @@
+name: eBL medical fragment join benchmark
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/ebl_join_benchmark.py'
+      - '.github/workflows/ebl-medical-join-benchmark.yml'
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests numpy scipy scikit-learn
+      - name: Download open eBL fragment corpus
+        run: |
+          mkdir -p data artifact/ebl_join
+          python - <<'PY'
+          import requests
+          m=requests.get('https://zenodo.org/api/records/10018951',timeout=60).json()
+          f=next(x for x in m['files'] if x['key']=='fragments.json')
+          r=requests.get(f['links']['self'],timeout=180);r.raise_for_status();open('data/fragments.json','wb').write(r.content)
+          PY
+      - name: Blind known-join retrieval and candidate generation
+        run: python crossdomain/ebl_join_benchmark.py --fragments-json data/fragments.json --out-dir artifact/ebl_join
+      - run: |
+          cp crossdomain/ebl_join_benchmark.py artifact/ebl_join/
+          find artifact/ebl_join -type f -print0 | sort -z | xargs -0 sha256sum > artifact/ebl_join/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ebl-medical-join-benchmark
+          path: artifact/ebl_join
+          retention-days: 30
+          if-no-files-found: error
