@@ -1,0 +1,31 @@
+name: Vesuvius current public volume probe
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/vesuvius_current_probe.py'
+      - '.github/workflows/vesuvius-current-probe.yml'
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install 'zarr<3' fsspec s3fs numpy numcodecs
+      - name: Random-access current public OME-Zarr volume
+        env: {OUT_DIR: 'artifact/vesuvius_current'}
+        run: |
+          mkdir -p artifact/vesuvius_current
+          python crossdomain/vesuvius_current_probe.py
+      - run: |
+          cp crossdomain/vesuvius_current_probe.py artifact/vesuvius_current/
+          find artifact/vesuvius_current -type f -print0 | sort -z | xargs -0 sha256sum > artifact/vesuvius_current/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vesuvius-current-probe
+          path: artifact/vesuvius_current
+          retention-days: 30
+          if-no-files-found: error
