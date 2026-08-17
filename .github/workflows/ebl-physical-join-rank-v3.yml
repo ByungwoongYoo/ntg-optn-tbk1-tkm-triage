@@ -1,0 +1,37 @@
+name: eBL medical physical-join triage v3
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/ebl_physical_join_rank_v3.py'
+      - '.github/workflows/ebl-physical-join-rank-v3.yml'
+jobs:
+  rank:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests beautifulsoup4 numpy scipy scikit-learn
+      - name: Download current open eBL fragment corpus
+        run: |
+          mkdir -p data artifact/ebl_physical_v3
+          python - <<'PY'
+          import requests
+          m=requests.get('https://zenodo.org/api/records/10018951',timeout=60).json()
+          f=next(x for x in m['files'] if x['key']=='fragments.json')
+          r=requests.get(f['links']['self'],timeout=180);r.raise_for_status();open('data/fragments.json','wb').write(r.content)
+          PY
+      - name: Train strict direct-join control and rank unreported medical candidates
+        run: python crossdomain/ebl_physical_join_rank_v3.py --fragments-json data/fragments.json --out-dir artifact/ebl_physical_v3
+      - run: |
+          cp crossdomain/ebl_physical_join_rank_v3.py artifact/ebl_physical_v3/
+          find artifact/ebl_physical_v3 -type f -print0 | sort -z | xargs -0 sha256sum > artifact/ebl_physical_v3/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ebl-medical-physical-join-v3
+          path: artifact/ebl_physical_v3
+          retention-days: 30
+          if-no-files-found: error
