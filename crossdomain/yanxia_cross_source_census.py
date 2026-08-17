@@ -9,6 +9,7 @@ SEEDS=[('7589183229018505251','1lql41s1l5hc6'),('7589226716518678568','1lqv8opt0
 BASE='https://www.shidianguji.com/zh/book/{book}/chapter/{chapter}'
 CHAPTER_RE=re.compile(r'(?:/chapter/|chapterId[\\\"\':= ]+)([0-9a-z]{8,30})',re.I)
 PAR_RE=re.compile(r'"paragraphId":"([^"]+)","paragraphType":\d+,"content":"((?:\\.|[^"])*)".*?"inChapterOrder":(\d+)',re.S)
+YANXIA_VARIANTS={'煙霞聖效方','烟霞聖效方'}
 
 def pars(raw):
     out=[]
@@ -27,6 +28,8 @@ def source_titles(first):
             for x in re.split(r'[、，,。；;]',p['text']):
                 x=re.sub(r'[\s：:]+','',x)
                 if 1<len(x)<=16 and x not in titles: titles.append(x)
+    for x in YANXIA_VARIANTS:
+        if x not in titles: titles.append(x)
     return sorted(titles,key=lambda x:(-len(x),x))
 
 def source_start(text,titles):
@@ -34,12 +37,15 @@ def source_start(text,titles):
         if text.startswith(t): return t
     return None
 
+def canon_source(s):
+    return '煙霞聖效方' if s in YANXIA_VARIANTS else (s or 'UNKNOWN')
+
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('--inventory',required=True); ap.add_argument('--out-dir',required=True); a=ap.parse_args()
     out=Path(a.out_dir); out.mkdir(parents=True,exist_ok=True)
     inv=json.loads(Path(a.inventory).read_text(encoding='utf-8'))
     names=[x['name'] for x in inv if x.get('strong_detail')]
-    sess=requests.Session(); sess.headers.update({'User-Agent':'Mozilla/5.0 historical-medical-text-census/1.0'})
+    sess=requests.Session(); sess.headers.update({'User-Agent':'Mozilla/5.0 historical-medical-text-census/1.1'})
     front=[]; raw0=None
     for book,ch in SEEDS:
         r=sess.get(BASE.format(book=book,chapter=ch),timeout=60); r.raise_for_status(); raw0=raw0 or r.text
@@ -56,7 +62,7 @@ def main():
                 if s: current=s
                 for name in names:
                     if name in p['text']:
-                        hits[name].append({'source':current,'url':url,'paragraph_id':p['id'],'order':p['order'],'text':p['text']})
+                        hits[name].append({'source_raw':current,'source':canon_source(current),'url':url,'paragraph_id':p['id'],'order':p['order'],'text':p['text']})
             if n%30==0: print(n,len(front),'hits',sum(map(len,hits.values())),flush=True)
             time.sleep(.07)
         except Exception as e: errs.append({'book':book,'chapter':ch,'error':repr(e)})
@@ -64,9 +70,9 @@ def main():
     for name in names:
         hh=hits.get(name,[]); sc=Counter(h.get('source') or 'UNKNOWN' for h in hh)
         other={k:v for k,v in sc.items() if k!='煙霞聖效方'}
-        rows.append({'name':name,'total_occurrences':len(hh),'yanxia_occurrences':sc.get('煙霞聖效方',0),'other_source_occurrences':sum(other.values()),'other_sources':other,'only_yanxia_within_scanned_uibang':bool(hh) and not other,'hits':hh})
+        rows.append({'name':name,'total_occurrences':len(hh),'yanxia_occurrences':sc.get('煙霞聖效方',0),'other_source_occurrences':sum(other.values()),'other_sources':other,'only_yanxia_within_scanned_uibang':sc.get('煙霞聖效方',0)>0 and not other,'hits':hh})
     rows.sort(key=lambda x:(not x['only_yanxia_within_scanned_uibang'],-x['yanxia_occurrences'],x['name']))
-    res={'target':'煙霞聖效方','strong_names_input':len(names),'candidate_chapter_urls':len(front),'names_found_anywhere':sum(bool(x['total_occurrences']) for x in rows),'names_only_yanxia_within_scanned_uibang':sum(x['only_yanxia_within_scanned_uibang'] for x in rows),'names_with_other_source_occurrences':sum(bool(x['other_source_occurrences']) for x in rows),'only_yanxia_names':[x['name'] for x in rows if x['only_yanxia_within_scanned_uibang']],'cross_source_names':[{'name':x['name'],'other_sources':x['other_sources']} for x in rows if x['other_source_occurrences']],'errors':errs[:100],'claim_boundary':'Only-Yanxia means no occurrence of the same exact formula name was found under another source heading in the scanned Uibangyuchwi pages. It is not a world-literature novelty claim and does not exclude orthographic variants, OCR errors, or occurrences in other books.'}
+    res={'target':'煙霞聖效方','source_variants_canonicalized':sorted(YANXIA_VARIANTS),'strong_names_input':len(names),'candidate_chapter_urls':len(front),'names_found_anywhere':sum(bool(x['total_occurrences']) for x in rows),'names_with_yanxia_occurrence':sum(bool(x['yanxia_occurrences']) for x in rows),'names_only_yanxia_within_scanned_uibang':sum(x['only_yanxia_within_scanned_uibang'] for x in rows),'names_with_other_source_occurrences':sum(bool(x['other_source_occurrences']) for x in rows),'only_yanxia_names':[x['name'] for x in rows if x['only_yanxia_within_scanned_uibang']],'cross_source_names':[{'name':x['name'],'yanxia_occurrences':x['yanxia_occurrences'],'other_sources':x['other_sources']} for x in rows if x['yanxia_occurrences'] and x['other_source_occurrences']],'errors':errs[:100],'claim_boundary':'Only-Yanxia means no occurrence of the same exact formula name was found under another source heading in the scanned Uibangyuchwi pages after canonicalizing 煙/烟 in the Yanxia source title. It is not a world-literature novelty claim and does not exclude orthographic variants, OCR errors, or occurrences in other books.'}
     (out/'RESULT.json').write_text(json.dumps(res,ensure_ascii=False,indent=2),encoding='utf-8')
     (out/'formula_source_census.json').write_text(json.dumps(rows,ensure_ascii=False,indent=2),encoding='utf-8')
     print(json.dumps(res,ensure_ascii=False,indent=2))
