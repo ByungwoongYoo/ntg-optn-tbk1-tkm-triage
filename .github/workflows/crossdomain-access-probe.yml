@@ -1,0 +1,31 @@
+name: Cross-domain open-problem access probe
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/probe_all.py'
+      - '.github/workflows/crossdomain-access-probe.yml'
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests
+      - name: Run public-data and legal-gate probes
+        run: |
+          mkdir -p artifact/crossdomain_probe
+          python crossdomain/probe_all.py --out-dir artifact/crossdomain_probe
+      - name: Hash outputs
+        run: |
+          find artifact/crossdomain_probe -type f -print0 | sort -z | xargs -0 sha256sum > artifact/crossdomain_probe/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: crossdomain-access-probe
+          path: artifact/crossdomain_probe
+          retention-days: 30
+          if-no-files-found: error
