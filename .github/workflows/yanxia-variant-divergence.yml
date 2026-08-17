@@ -1,0 +1,42 @@
+name: Yanxia same-name prescription divergence triage
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["crossdomain-open-problem-tournament-20260817-doit"]
+    paths:
+      - "crossdomain/yanxia_variant_divergence.py"
+      - ".github/workflows/yanxia-variant-divergence.yml"
+
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Download Yanxia cross-source census
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p data artifact/yanxia_variant_divergence
+          curl -L --fail -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            -o data/census.zip https://api.github.com/repos/${{ github.repository }}/actions/artifacts/9276780147/zip
+          unzip -q data/census.zip -d data/census
+          test -s data/census/formula_source_census.json
+      - name: Rank divergent same-name text witnesses
+        run: |
+          python crossdomain/yanxia_variant_divergence.py \
+            --census data/census/formula_source_census.json \
+            --out-dir artifact/yanxia_variant_divergence
+      - name: Hash outputs
+        run: |
+          cp crossdomain/yanxia_variant_divergence.py artifact/yanxia_variant_divergence/
+          find artifact/yanxia_variant_divergence -type f -print0 | sort -z | xargs -0 sha256sum > artifact/yanxia_variant_divergence/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yanxia-variant-divergence
+          path: artifact/yanxia_variant_divergence
+          retention-days: 30
