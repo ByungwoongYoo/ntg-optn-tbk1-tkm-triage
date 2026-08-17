@@ -1,0 +1,31 @@
+name: Uibangyuchwi source inventory v2
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/uibang_source_inventory_v2.py'
+      - '.github/workflows/uibang-source-inventory-v2.yml'
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests
+      - name: Parse public Uibangyuchwi paragraphs and source prefixes
+        env: {OUT_DIR: 'artifact/uibang_source_inventory_v2'}
+        run: |
+          mkdir -p artifact/uibang_source_inventory_v2
+          python crossdomain/uibang_source_inventory_v2.py
+      - run: |
+          cp crossdomain/uibang_source_inventory_v2.py artifact/uibang_source_inventory_v2/
+          find artifact/uibang_source_inventory_v2 -type f -print0 | sort -z | xargs -0 sha256sum > artifact/uibang_source_inventory_v2/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: uibang-source-inventory-v2
+          path: artifact/uibang_source_inventory_v2
+          retention-days: 30
+          if-no-files-found: error
