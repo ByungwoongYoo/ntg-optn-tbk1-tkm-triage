@@ -1,0 +1,31 @@
+name: Gangibang source-block reconstruction control
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/gangibang_block_reconstruction.py'
+      - '.github/workflows/gangibang-block-reconstruction.yml'
+jobs:
+  reconstruct:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests
+      - name: Extract only Gangibang-attributed source blocks from public Uibangyuchwi pages
+        env: {OUT_DIR: 'artifact/gangibang_blocks'}
+        run: |
+          mkdir -p artifact/gangibang_blocks
+          python crossdomain/gangibang_block_reconstruction.py
+      - run: |
+          cp crossdomain/gangibang_block_reconstruction.py artifact/gangibang_blocks/
+          find artifact/gangibang_blocks -type f -print0 | sort -z | xargs -0 sha256sum > artifact/gangibang_blocks/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gangibang-block-reconstruction
+          path: artifact/gangibang_blocks
+          retention-days: 30
+          if-no-files-found: error
