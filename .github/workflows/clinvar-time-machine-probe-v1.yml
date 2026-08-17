@@ -1,0 +1,39 @@
+name: ClinVar time-machine mapping probe v1
+on:
+  workflow_dispatch:
+  push:
+    branches: [clinvar-time-machine-20260817]
+    paths:
+      - 'bio_open_problem/time_machine_probe_v1.py'
+      - '.github/workflows/clinvar-time-machine-probe-v1.yml'
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pandas
+      - name: Download official ProteinGym raw and score files
+        run: |
+          mkdir -p probe_data artifact/time_machine_probe_v1
+          curl -L --fail --retry 8 --retry-delay 5 -o probe_data/raw_clinical.zip \
+            https://marks.hms.harvard.edu/proteingym/ProteinGym_v1.3/substitutions_raw_clinical.zip
+          curl -L --fail --retry 8 --retry-delay 5 -o probe_data/score_clinical.zip \
+            https://marks.hms.harvard.edu/proteingym/ProteinGym_v1.3/zero_shot_clinical_substitutions_scores.zip
+          sha256sum probe_data/* > artifact/time_machine_probe_v1/resource_sha256.txt
+          ls -lh probe_data
+      - name: Inspect mapping fields
+        run: |
+          python bio_open_problem/time_machine_probe_v1.py \
+            --raw-clinical-zip probe_data/raw_clinical.zip \
+            --score-zip probe_data/score_clinical.zip \
+            --out-dir artifact/time_machine_probe_v1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: clinvar-time-machine-probe-v1
+          path: artifact/time_machine_probe_v1
+          retention-days: 30
+          if-no-files-found: error
