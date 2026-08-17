@@ -1,0 +1,29 @@
+name: DECRYPT public unsolved target probe
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/decrypt_public_target_probe.py'
+      - '.github/workflows/decrypt-public-target-probe.yml'
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests beautifulsoup4
+      - name: Enumerate only public non-decrypted/partial record pages
+        env: {OUT_DIR: 'artifact/decrypt_targets'}
+        run: |
+          mkdir -p artifact/decrypt_targets
+          python crossdomain/decrypt_public_target_probe.py
+      - run: find artifact/decrypt_targets -type f -print0 | sort -z | xargs -0 sha256sum > artifact/decrypt_targets/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: decrypt-public-target-probe
+          path: artifact/decrypt_targets
+          retention-days: 30
+          if-no-files-found: error
