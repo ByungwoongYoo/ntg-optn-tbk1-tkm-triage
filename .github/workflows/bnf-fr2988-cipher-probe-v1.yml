@@ -1,0 +1,29 @@
+name: BnF Francais 2988 cipher image audit v1
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/bnf_fr2988_cipher_probe_v1.py'
+      - '.github/workflows/bnf-fr2988-cipher-probe-v1.yml'
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests pillow
+      - name: Acquire public Gallica IIIF manifest and first 35 views
+        run: |
+          mkdir -p artifact/bnf_fr2988
+          OUT_DIR=artifact/bnf_fr2988 python crossdomain/bnf_fr2988_cipher_probe_v1.py
+          cp crossdomain/bnf_fr2988_cipher_probe_v1.py artifact/bnf_fr2988/
+          find artifact/bnf_fr2988 -type f -print0 | sort -z | xargs -0 sha256sum > artifact/bnf_fr2988/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bnf-fr2988-cipher-probe-v1
+          path: artifact/bnf_fr2988
+          retention-days: 30
+          if-no-files-found: error
