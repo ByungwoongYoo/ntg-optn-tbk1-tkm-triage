@@ -1,0 +1,44 @@
+name: Uibangyuchwi lost-source reconstruction tournament
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["crossdomain-open-problem-tournament-20260817-doit"]
+    paths:
+      - "crossdomain/uibang_lost_source_reconstruct.py"
+      - ".github/workflows/uibang-lost-source-tournament.yml"
+
+jobs:
+  extract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: gangibang_control
+            source: 簡奇方
+          - id: yanxia_shengxiaofang
+            source: 煙霞聖效方
+          - id: xinxiaofang
+            source: 新效方
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: Extract source-attributed blocks
+        env:
+          TARGET_SOURCE: ${{ matrix.source }}
+          OUT_DIR: artifact/uibang_${{ matrix.id }}
+        run: python crossdomain/uibang_lost_source_reconstruct.py
+      - name: Hash outputs
+        run: |
+          cp crossdomain/uibang_lost_source_reconstruct.py artifact/uibang_${{ matrix.id }}/
+          find artifact/uibang_${{ matrix.id }} -type f -print0 | sort -z | xargs -0 sha256sum > artifact/uibang_${{ matrix.id }}/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: uibang-${{ matrix.id }}
+          path: artifact/uibang_${{ matrix.id }}
+          retention-days: 30
