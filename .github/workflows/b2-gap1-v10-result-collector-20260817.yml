@@ -1,0 +1,84 @@
+name: B2 gap1 v10 result collector 20260817
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - '.github/workflows/b2-gap1-v10-result-collector-20260817.yml'
+permissions:
+  actions: read
+  contents: read
+jobs:
+  collect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      SOURCE_RUN_ID: '32040699080'
+    steps:
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Wait, download, and aggregate all 256 exact branch artifacts
+        shell: python
+        run: |
+          import csv,io,json,os,re,time,urllib.request,zipfile
+          from pathlib import Path
+          repo=os.environ['REPO'];run=int(os.environ['SOURCE_RUN_ID']);tok=os.environ['GH_TOKEN']
+          H={'Authorization':f'Bearer {tok}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'b2-gap1-v10-collector'}
+          def js(url):
+              with urllib.request.urlopen(urllib.request.Request(url,headers=H),timeout=120) as r:return json.load(r)
+          class NoRedirect(urllib.request.HTTPErrorProcessor):
+              def http_response(self,request,response):return response
+              https_response=http_response
+          op=urllib.request.build_opener(NoRedirect)
+          def dl(url):
+              r=op.open(urllib.request.Request(url,headers=H),timeout=120);loc=r.headers.get('Location')
+              if not loc:raise RuntimeError('no redirect')
+              with urllib.request.urlopen(urllib.request.Request(loc,headers={'User-Agent':'b2-gap1-v10-collector'}),timeout=120) as q:return q.read()
+          deadline=time.time()+5*3600
+          while True:
+              meta=js(f'https://api.github.com/repos/{repo}/actions/runs/{run}')
+              count=js(f'https://api.github.com/repos/{repo}/actions/runs/{run}/artifacts?per_page=1').get('total_count',0)
+              print('source',meta.get('status'),meta.get('conclusion'),'artifacts',count,flush=True)
+              if count>=256 or meta.get('status')=='completed' or time.time()>deadline:break
+              time.sleep(60)
+          arts=[];p=1
+          while True:
+              d=js(f'https://api.github.com/repos/{repo}/actions/runs/{run}/artifacts?per_page=100&page={p}');arts+=d.get('artifacts',[])
+              if len(d.get('artifacts',[]))<100:break
+              p+=1
+          rows=[]
+          for a in arts:
+              m=re.fullmatch(r'b2-gap1-t(\d+)-u(\d+)-v-split-v10',a['name'])
+              if not m:continue
+              with zipfile.ZipFile(io.BytesIO(dl(a['archive_download_url']))) as z:
+                  status=z.read(next(n for n in z.namelist() if n.endswith('STATUS.txt'))).decode().strip()
+                  r=json.loads(z.read(next(n for n in z.namelist() if n.endswith('RESULT.json'))))
+                  audit=json.loads(z.read(next(n for n in z.namelist() if n.endswith('INDEPENDENT_AUDIT.json'))))
+              t,u=map(int,m.groups())
+              rows.append({'third':t,'fourth':u,'control':audit.get('control',False),'status':status,'completed_exhaustively':r['completed_exhaustively'],'timed_out':r['timed_out'],'witness_found':r['witness_found'],'witness_verified':r['witness_verified'],'aggregate_nodes':r['aggregate_nodes_including_fourth_root'],'wall_seconds':r['wall_seconds'],'artifact_id':a['id'],'artifact_digest':a.get('digest'),'audit_status':audit['status'],'coverage_ok':audit['coverage_ok']})
+          rows.sort(key=lambda x:(x['third'],x['fourth']))
+          expected={(t,u) for t in (2,3,4) for u in range(t+1,92-t)}|{(7,8)}
+          observed={(r['third'],r['fourth']) for r in rows}
+          assert observed==expected,(len(expected),len(observed),sorted(expected-observed)[:20],sorted(observed-expected)[:20])
+          for r in rows:
+              assert r['coverage_ok'] and r['status']==r['audit_status']
+              if r['status']=='EXHAUSTED_NO_WITNESS':assert r['completed_exhaustively'] and not r['witness_found']
+              if r['status']=='VERIFIED_WITNESS':assert r['witness_verified']
+          counts={}
+          for r in rows:counts[r['status']]=counts.get(r['status'],0)+1
+          hard=[r for r in rows if not r['control']]
+          out=Path('artifact/b2_gap1_v10_summary');out.mkdir(parents=True,exist_ok=True)
+          summary={'source_run':run,'expected_artifacts':256,'observed_artifacts':len(rows),'hard_branch_count':len(hard),'counts':counts,'verified_witnesses':[r for r in hard if r['status']=='VERIFIED_WITNESS'],'incomplete':[r for r in hard if r['status']=='INCOMPLETE_TIMEOUT'],'all_hard_exhausted_no_witness':all(r['status']=='EXHAUSTED_NO_WITNESS' for r in hard),'rows':rows}
+          (out/'SUMMARY.json').write_text(json.dumps(summary,indent=2),encoding='utf-8')
+          with (out/'SUMMARY.csv').open('w',newline='',encoding='utf-8') as f:
+              w=csv.DictWriter(f,fieldnames=rows[0].keys());w.writeheader();w.writerows(rows)
+          (out/'SUMMARY.md').write_text('# B2 gap1 v10 aggregate\n\n'+f'Counts: `{counts}`\n\nAll 255 hard branches exhausted without witness: **{summary["all_hard_exhausted_no_witness"]}**\n\nVerified witnesses: {len(summary["verified_witnesses"])}\n\nIncomplete: {[(r["third"],r["fourth"]) for r in summary["incomplete"]]}\n',encoding='utf-8')
+          print(json.dumps({'counts':counts,'all_hard_exhausted_no_witness':summary['all_hard_exhausted_no_witness'],'witnesses':len(summary['verified_witnesses']),'incomplete':[(r['third'],r['fourth']) for r in summary['incomplete']]},indent=2))
+      - uses: actions/upload-artifact@v4
+        with:
+          name: b2-gap1-v10-result-collector-20260817
+          path: artifact/b2_gap1_v10_summary
+          retention-days: 30
+          if-no-files-found: error
