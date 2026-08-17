@@ -1,0 +1,48 @@
+name: Positive implication u4 exact artifact replication v2
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/u4_replication_v2.py'
+      - '.github/workflows/u4-replication-v2.yml'
+jobs:
+  prove:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 42
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Download authors' Zenodo artifact and Vampire 5.0.1
+        run: |
+          set -euxo pipefail
+          mkdir -p data/u4_authors data/vampire artifact/u4_replication_v2
+          python - <<'PY'
+          import requests, pathlib
+          m=requests.get('https://zenodo.org/api/records/18747868',timeout=60);m.raise_for_status();j=m.json()
+          for f in j['files']:
+              if f['key'] in {'u1.p','u2.p','u3.p'}:
+                  r=requests.get(f['links']['self'],timeout=60);r.raise_for_status();pathlib.Path('data/u4_authors',f['key']).write_bytes(r.content)
+          PY
+          test -f data/u4_authors/u1.p && test -f data/u4_authors/u2.p && test -f data/u4_authors/u3.p
+          curl -L --fail --retry 5 -o /tmp/vampire.zip https://github.com/vprover/vampire/releases/download/v5.0.1/vampire-Linux-X64.zip
+          unzip -q /tmp/vampire.zip -d data/vampire
+          VAMP=$(find data/vampire -type f -name vampire -o -name 'vampire*' | head -1)
+          chmod +x "$VAMP"
+          cp data/u4_authors/*.p artifact/u4_replication_v2/
+          sha256sum data/u4_authors/*.p /tmp/vampire.zip > artifact/u4_replication_v2/input_sha256.txt
+          echo "$VAMP" > /tmp/vamp_path
+      - name: Run published controls then frozen u4 attempts
+        run: |
+          VAMP=$(cat /tmp/vamp_path)
+          python crossdomain/u4_replication_v2.py --vampire "$VAMP" --u1 data/u4_authors/u1.p --u2 data/u4_authors/u2.p --u3 data/u4_authors/u3.p --out-dir artifact/u4_replication_v2
+      - run: |
+          cp crossdomain/u4_replication_v2.py artifact/u4_replication_v2/
+          find artifact/u4_replication_v2 -type f -print0 | sort -z | xargs -0 sha256sum > artifact/u4_replication_v2/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: u4-replication-v2
+          path: artifact/u4_replication_v2
+          retention-days: 30
+          if-no-files-found: error
