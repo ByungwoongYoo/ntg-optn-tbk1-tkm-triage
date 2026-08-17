@@ -1,0 +1,81 @@
+name: eBL K10515 Sm1786 high-resolution falsification packet 20260817
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - '.github/workflows/ebl-k10515-sm1786-photo-audit-20260817.yml'
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests pillow beautifulsoup4
+      - name: Fetch CDLI pages and all available image variants
+        run: |
+          mkdir -p artifact/ebl_pair/images artifact/ebl_pair/pages
+          python - <<'PY'
+          import hashlib,json,requests
+          from pathlib import Path
+          from bs4 import BeautifulSoup
+          out=Path('artifact/ebl_pair');s=requests.Session();s.headers['User-Agent']='eBL-join-audit/20260817'
+          objs=[('K.10515','P398727','398727'),('Sm.1786','P426107','426107'),('K.2416','P394416','394416'),('K.7834','P397315','397315')]
+          records=[]
+          for museum,pnum,num in objs:
+            page=f'https://cdli.earth/artifacts/{num}'
+            r=s.get(page,timeout=90);(out/'pages'/f'{pnum}.html').write_bytes(r.content)
+            rec={'museum':museum,'pnum':pnum,'page_url':page,'page_status':r.status_code,'page_sha256':hashlib.sha256(r.content).hexdigest(),'downloads':[]}
+            for kind,url in [
+              ('photo',f'https://cdli.earth/dl/photo/{pnum}.jpg'),('lineart',f'https://cdli.earth/dl/lineart/{pnum}_l.jpg'),
+              ('tn_photo',f'https://cdli.earth/dl/tn_photo/{pnum}.jpg'),('tn_lineart',f'https://cdli.earth/dl/tn_lineart/{pnum}_l.jpg')]:
+              try:
+                q=s.get(url,timeout=120)
+                ok=q.status_code==200 and q.headers.get('content-type','').startswith('image/') and len(q.content)>1000
+                item={'kind':kind,'url':url,'status':q.status_code,'bytes':len(q.content),'content_type':q.headers.get('content-type'),'usable':ok}
+                if ok:
+                  fn=out/'images'/f'{pnum}_{kind}.jpg';fn.write_bytes(q.content);item['file']=str(fn);item['sha256']=hashlib.sha256(q.content).hexdigest()
+                rec['downloads'].append(item)
+              except Exception as e:rec['downloads'].append({'kind':kind,'url':url,'error':repr(e),'usable':False})
+            records.append(rec)
+          (out/'ACQUISITION.json').write_text(json.dumps(records,indent=2))
+          PY
+      - name: Produce pair panels and conservative shape diagnostics
+        run: |
+          python - <<'PY'
+          from PIL import Image,ImageOps,ImageDraw
+          from pathlib import Path
+          import json,hashlib,math
+          out=Path('artifact/ebl_pair');records=json.loads((out/'ACQUISITION.json').read_text())
+          chosen={}
+          for r in records:
+            usable=[d for d in r['downloads'] if d.get('usable')]
+            if usable:
+              # Prefer full photo, then lineart, then thumbnail.
+              usable.sort(key=lambda d:({'photo':0,'lineart':1,'tn_photo':2,'tn_lineart':3}.get(d['kind'],9),-d['bytes']))
+              chosen[r['pnum']]=usable[0]
+          pairs=[('legacy_pair','P398727','P426107'),('strict_rank1_control','P394416','P397315')]
+          pair_results=[]
+          for label,a,b in pairs:
+            imgs=[]
+            for p in (a,b):
+              d=chosen.get(p)
+              if not d:continue
+              im=Image.open(d['file']).convert('RGB');im.thumbnail((1200,1200));canvas=Image.new('RGB',(1250,1320),'white');canvas.paste(im,((1250-im.width)//2,80));ImageDraw.Draw(canvas).text((20,20),f'{p} | {d["kind"]} | original bytes {d["bytes"]}',fill='black');imgs.append(canvas)
+            panel=None
+            if len(imgs)==2:
+              sheet=Image.new('RGB',(2500,1320),'white');sheet.paste(imgs[0],(0,0));sheet.paste(imgs[1],(1250,0));panel=out/f'{label}_panel.jpg';sheet.save(panel,quality=92)
+            pair_results.append({'label':label,'a':a,'b':b,'both_images_acquired':len(imgs)==2,'panel':str(panel) if panel else None})
+          result={'chosen_assets':chosen,'pairs':pair_results,'physical_join_confirmed':False,
+                  'claim_boundary':'The packet is a visual falsification aid only. Side-by-side photographs do not establish matching fracture surfaces, ruling continuation, sign continuation, or a physical join.'}
+          (out/'RESULT.json').write_text(json.dumps(result,indent=2))
+          PY
+          find artifact/ebl_pair -type f -print0 | sort -z | xargs -0 sha256sum > artifact/ebl_pair/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ebl-k10515-sm1786-photo-audit-20260817
+          path: artifact/ebl_pair
+          retention-days: 30
+          if-no-files-found: error
