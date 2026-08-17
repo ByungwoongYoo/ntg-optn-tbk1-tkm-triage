@@ -1,0 +1,42 @@
+name: eBL medical join candidate filter v2
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/ebl_candidate_filter_v2.py'
+      - '.github/workflows/ebl-medical-join-filter-v2.yml'
+jobs:
+  filter:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Download open eBL corpus and previous benchmark artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p data artifact/ebl_filter_v2
+          python - <<'PY'
+          import requests
+          m=requests.get('https://zenodo.org/api/records/10018951',timeout=60).json();f=next(x for x in m['files'] if x['key']=='fragments.json')
+          r=requests.get(f['links']['self'],timeout=180);r.raise_for_status();open('data/fragments.json','wb').write(r.content)
+          PY
+          curl -L --fail -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" -o data/bench.zip https://api.github.com/repos/ByungwoongYoo/ntg-optn-tbk1-tkm-triage/actions/artifacts/9275163577/zip
+          unzip -q data/bench.zip -d data/bench
+          CAND=$(find data/bench -name medical_join_candidates.json | head -1)
+          test -n "$CAND"
+          cp "$CAND" data/medical_join_candidates.json
+      - name: Apply publication/geometry triage
+        run: python crossdomain/ebl_candidate_filter_v2.py --fragments-json data/fragments.json --candidates data/medical_join_candidates.json --out-dir artifact/ebl_filter_v2
+      - run: |
+          cp crossdomain/ebl_candidate_filter_v2.py artifact/ebl_filter_v2/
+          find artifact/ebl_filter_v2 -type f -print0 | sort -z | xargs -0 sha256sum > artifact/ebl_filter_v2/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ebl-medical-join-filter-v2
+          path: artifact/ebl_filter_v2
+          retention-days: 30
+          if-no-files-found: error
