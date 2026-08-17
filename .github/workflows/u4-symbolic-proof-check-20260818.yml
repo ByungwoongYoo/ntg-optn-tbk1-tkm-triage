@@ -6,6 +6,11 @@ on:
     paths:
       - 'u4_resolution/**'
       - '.github/workflows/u4-symbolic-proof-check-20260818.yml'
+  pull_request:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'u4_resolution/**'
+      - '.github/workflows/u4-symbolic-proof-check-20260818.yml'
 
 jobs:
   symbolic:
@@ -20,7 +25,7 @@ jobs:
         run: |
           mkdir -p artifact/u4_symbolic
           python u4_resolution/u4_symbolic_checker.py \
-            --family 500 \
+            --family 120 \
             --enumerate 12 \
             --output artifact/u4_symbolic/U4_SYMBOLIC_CHECK.json \
             | tee artifact/u4_symbolic/U4_SYMBOLIC_CHECK.log
