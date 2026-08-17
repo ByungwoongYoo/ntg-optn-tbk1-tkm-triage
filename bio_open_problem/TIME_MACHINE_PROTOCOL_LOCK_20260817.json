@@ -1,0 +1,71 @@
+{
+  "protocol_version": "1.0.0",
+  "freeze_date": "2026-08-17",
+  "question": "Do fixed missense-predictor ensembles distinguish variants that were pure VUS in historical ClinVar releases but were independently resolved by the 2026-08 release?",
+  "historical_cutoffs": [
+    {"release": "2021-08", "role": "primary"},
+    {"release": "2022-08", "role": "temporal_replication_1"},
+    {"release": "2023-08", "role": "temporal_replication_2"}
+  ],
+  "outcome_release": "2026-08",
+  "historical_test_eligibility": [
+    "ProteinGym clinical missense SNV with all five component scores and an existing frozen family-held-out out-of-fold prediction",
+    "historical aggregate germline classification is Uncertain significance",
+    "historical submission-level records include at least one VUS and no Pathogenic/Likely pathogenic or Benign/Likely benign submission",
+    "current 2026-08 aggregate classification is one-sided Pathogenic/Likely pathogenic or Benign/Likely benign",
+    "current submission-level records contain no opposing pathogenic-versus-benign classification",
+    "current ProteinGym binary label agrees with the 2026-08 resolved side"
+  ],
+  "truth_tiers": {
+    "primary_high_confidence": [
+      "practice guideline",
+      "reviewed by expert panel",
+      "criteria provided, multiple submitters, no conflicts"
+    ],
+    "secondary_one_star_or_higher": [
+      "primary_high_confidence",
+      "criteria provided, single submitter"
+    ],
+    "secondary_all_resolved": "all nonconflicting resolved P/LP or B/LB aggregate classifications"
+  },
+  "primary_models": {
+    "frozen_existing_ensemble": "family-held-out fixed_prob from the completed global30 ProteinGym experiment",
+    "frozen_existing_comparator": "family-held-out PoET base_prob from the same completed experiment",
+    "temporal_clean_recipe": "weighted5_p1 using PoET, TranceptEVE_L, GEMME, EVE, and ESM1b; score orientation, performance weights and one-dimensional calibration estimated only from variants already resolved at the historical cutoff",
+    "temporal_clean_comparator": "PoET calibrated using only variants already resolved at the historical cutoff"
+  },
+  "primary_endpoints": [
+    "Brier score difference (PoET minus ensemble)",
+    "log-loss difference (PoET minus ensemble)"
+  ],
+  "secondary_endpoints": [
+    "AUROC",
+    "AUPRC",
+    "calibration intercept and slope",
+    "coverage-risk at 100, 90, 80, 70 and 50 percent coverage"
+  ],
+  "uncertainty_unit": "MMseqs global30 homology component, resampled with replacement",
+  "minimum_success_criteria": [
+    "at least 100 primary high-confidence resolved historical VUS in the primary cutoff, preferably 200",
+    "ensemble improves at least one proper scoring rule with a cluster-bootstrap confidence interval above zero and does not worsen the other proper scoring rule",
+    "AUROC difference confidence interval above zero or clear proper-score superiority",
+    "same directional result in at least two historical cutoffs",
+    "direction retained in the high-confidence truth tier",
+    "direction retained after excluding current submission conflicts"
+  ],
+  "failure_criteria": [
+    "ensemble superiority disappears in historical VUS",
+    "direction differs across cutoffs",
+    "effect disappears in the high-confidence truth tier",
+    "proper scoring rules deteriorate",
+    "effect is driven by a small number of homology clusters",
+    "temporal-clean recipe fails even if the retrospective frozen prediction appears positive"
+  ],
+  "forbidden_actions": [
+    "retune ensemble architecture or thresholds using historical VUS outcomes",
+    "select a cutoff because it gives the strongest result",
+    "treat unresolved VUS as benign",
+    "combine clinical and functional truth into one endpoint",
+    "claim novelty of temporal VUS validation without direct literature comparison"
+  ]
+}
