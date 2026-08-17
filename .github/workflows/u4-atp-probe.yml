@@ -1,0 +1,45 @@
+name: Positive implication u4 ATP probe
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/u4_probe.py'
+      - '.github/workflows/u4-atp-probe.yml'
+jobs:
+  prove:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install E prover and build Vampire
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y eprover cmake build-essential git
+          git clone --depth 1 https://github.com/vprover/vampire.git /tmp/vampire-src
+          cmake -S /tmp/vampire-src -B /tmp/vampire-build -DCMAKE_BUILD_TYPE=Release -DCMAKE_DISABLE_FIND_PACKAGE_Z3=ON
+          cmake --build /tmp/vampire-build -j2
+          VAMP=$(find /tmp/vampire-build -maxdepth 3 -type f -name vampire -perm -111 | head -1)
+          test -n "$VAMP"
+          sudo cp "$VAMP" /usr/local/bin/vampire
+          vampire --version || true
+          eprover --version || true
+      - name: Run published-control and u4 prespecified attempts
+        env:
+          OUT_DIR: artifact/u4_probe
+        run: |
+          mkdir -p artifact/u4_probe
+          python crossdomain/u4_probe.py
+      - name: Hash outputs
+        run: |
+          find artifact/u4_probe -type f -print0 | sort -z | xargs -0 sha256sum > artifact/u4_probe/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: u4-atp-probe
+          path: artifact/u4_probe
+          retention-days: 30
+          if-no-files-found: error
