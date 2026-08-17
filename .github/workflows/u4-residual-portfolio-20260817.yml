@@ -1,0 +1,120 @@
+name: Ulrich u4 residual proof and countermodel portfolio 20260817
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - '.github/workflows/u4-residual-portfolio-20260817.yml'
+      - 'crossdomain/u4_finite_model_z3_20260817.py'
+
+jobs:
+  finite_model:
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        include:
+          - n: 4
+            seconds: 600
+          - n: 5
+            seconds: 900
+          - n: 6
+            seconds: 1200
+    runs-on: ubuntu-24.04
+    timeout-minutes: 28
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install z3-solver
+      - name: Exact finite-algebra countermodel search
+        run: |
+          mkdir -p artifact/u4_finite_n${{ matrix.n }}
+          python crossdomain/u4_finite_model_z3_20260817.py \
+            --n ${{ matrix.n }} --seconds ${{ matrix.seconds }} \
+            --out-dir artifact/u4_finite_n${{ matrix.n }} \
+            | tee artifact/u4_finite_n${{ matrix.n }}/RUN.log
+          cp crossdomain/u4_finite_model_z3_20260817.py artifact/u4_finite_n${{ matrix.n }}/
+          find artifact/u4_finite_n${{ matrix.n }} -type f -print0 | sort -z | xargs -0 sha256sum > artifact/u4_finite_n${{ matrix.n }}/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: u4-finite-n${{ matrix.n }}-20260817
+          path: artifact/u4_finite_n${{ matrix.n }}
+          retention-days: 30
+          if-no-files-found: error
+
+  vampire:
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        strategy: [documented, casc, casc_sat]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 26
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Fetch authors' frozen input and Vampire 5.0.1
+        run: |
+          set -euxo pipefail
+          mkdir -p data/u4_unzip data/vampire artifact/u4_${{ matrix.strategy }}
+          curl -L --fail --retry 5 -o artifact/u4_${{ matrix.strategy }}/zenodo_metadata.json https://zenodo.org/api/records/18747868
+          ZIPURL=$(jq -r '.files[0].links.self' artifact/u4_${{ matrix.strategy }}/zenodo_metadata.json)
+          curl -L --fail --retry 5 -o /tmp/u4_authors.zip "$ZIPURL"
+          unzip -q /tmp/u4_authors.zip -d data/u4_unzip
+          U1=$(find data/u4_unzip -type f -iname 'u1.p' | head -1); test -n "$U1"
+          cp "$U1" artifact/u4_${{ matrix.strategy }}/u1.p
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('artifact/u4_${{ matrix.strategy }}/u1.p')
+          text=p.read_text()
+          text=re.sub(r'\s*fof\(u1\s*,\s*axiom\s*,.*?\)\.\s*', '\nfof(u4,axiom, ![X,Y,Z,U]: p(i(i(i(X,Y),Z),i(i(Y,i(Z,U)),i(Y,U))))).\n', text, count=1, flags=re.S)
+          text=text.replace('candidate u1','candidate u4').replace('u1.p','u4.p')
+          Path('artifact/u4_${{ matrix.strategy }}/u4.p').write_text(text)
+          PY
+          curl -L --fail --retry 5 -o /tmp/vampire.zip https://github.com/vprover/vampire/releases/download/v5.0.1/vampire-Linux-X64.zip
+          unzip -q /tmp/vampire.zip -d data/vampire
+          VAMP=$(find data/vampire -type f -name 'vampire*' | head -1); chmod +x "$VAMP"; echo "$VAMP" > /tmp/vamp_path
+          "$VAMP" --version | tee artifact/u4_${{ matrix.strategy }}/VERSION.log
+          sha256sum /tmp/u4_authors.zip /tmp/vampire.zip artifact/u4_${{ matrix.strategy }}/u1.p artifact/u4_${{ matrix.strategy }}/u4.p > artifact/u4_${{ matrix.strategy }}/INPUT_SHA256.txt
+      - name: Positive control and extended u4 attack
+        run: |
+          set +e
+          VAMP=$(cat /tmp/vamp_path)
+          D=artifact/u4_${{ matrix.strategy }}
+          "$VAMP" --mode portfolio --schedule casc_sat --saturation_algorithm lrs --time_limit 120 "$D/u1.p" > "$D/POSITIVE_CONTROL.log" 2>&1
+          pc=$?
+          echo $pc > "$D/POSITIVE_CONTROL_EXIT.txt"
+          case '${{ matrix.strategy }}' in
+            documented) timeout 1300 "$VAMP" --mode portfolio --schedule casc_sat --saturation_algorithm lrs --time_limit 1200 "$D/u4.p" > "$D/U4.log" 2>&1 ;;
+            casc)       timeout 1300 "$VAMP" --mode casc --time_limit 1200 "$D/u4.p" > "$D/U4.log" 2>&1 ;;
+            casc_sat)   timeout 1300 "$VAMP" --mode casc_sat --time_limit 1200 "$D/u4.p" > "$D/U4.log" 2>&1 ;;
+          esac
+          rc=$?
+          echo $rc > "$D/U4_EXIT.txt"
+          python - <<'PY'
+          import json,re
+          from pathlib import Path
+          d=Path('artifact/u4_${{ matrix.strategy }}')
+          pc=(d/'POSITIVE_CONTROL.log').read_text(errors='replace')
+          u=(d/'U4.log').read_text(errors='replace')
+          statuses=lambda x:re.findall(r'%\s*SZS status\s+(\w+)',x)
+          decisive={'Theorem','Unsatisfiable','Satisfiable','CounterSatisfiable'}
+          ps=statuses(pc); us=statuses(u)
+          result={'strategy':'${{ matrix.strategy }}','positive_control_statuses':ps,'u4_statuses':us,
+                  'positive_control_reproduced':any(s in {'Satisfiable','CounterSatisfiable'} for s in ps),
+                  'u4_decisive':any(s in decisive for s in us),
+                  'claim_boundary':'Timeout/Unknown is no result; any decisive u4 result still requires an independent proof/model checker.'}
+          (d/'RESULT.json').write_text(json.dumps(result,indent=2))
+          print(json.dumps(result,indent=2))
+          PY
+          find "$D" -type f -print0 | sort -z | xargs -0 sha256sum > "$D/SHA256SUMS.txt"
+          exit 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: u4-vampire-${{ matrix.strategy }}-20260817
+          path: artifact/u4_${{ matrix.strategy }}
+          retention-days: 30
+          if-no-files-found: error
