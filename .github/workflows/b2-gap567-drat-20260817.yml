@@ -1,0 +1,69 @@
+name: B2 Z100 gap 5 6 7 DRAT certificates 20260817
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - '.github/workflows/b2-gap567-drat-20260817.yml'
+
+jobs:
+  proof:
+    strategy:
+      fail-fast: false
+      matrix:
+        gap: [5, 6, 7]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 58
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install python-sat
+      - name: Generate exact normalized gap CNF
+        run: |
+          g=${{ matrix.gap }}; d=artifact/gap${g}; mkdir -p "$d"
+          python - <<'PY'
+          import os,sys,json
+          from pathlib import Path
+          sys.path.insert(0,'.')
+          from crossdomain.b2_gap_sat_v4 import build
+          g=int(os.environ['GAP']); d=Path(f'artifact/gap{g}')
+          cnf,_,_=build(g); cnf.to_file(d/f'gap{g}.cnf')
+          (d/'METADATA.json').write_text(json.dumps({'gap':g,'cnf_vars':cnf.nv,'cnf_clauses':len(cnf.clauses),'coverage':'minimum cyclic gap exactly g after rotation to {0,g}'},indent=2),encoding='utf-8')
+          print(g,cnf.nv,len(cnf.clauses))
+          PY
+        env:
+          GAP: ${{ matrix.gap }}
+      - name: Build CaDiCaL and DRAT-trim
+        run: |
+          git clone --depth 1 https://github.com/arminbiere/cadical.git /tmp/cadical
+          cd /tmp/cadical && ./configure && make -j2
+          git clone --depth 1 https://github.com/marijnheule/drat-trim.git /tmp/drat-trim
+          cd /tmp/drat-trim && make -j2
+      - name: Solve and verify certificate
+        run: |
+          g=${{ matrix.gap }}; d=artifact/gap${g}; cnf="$d/gap${g}.cnf"; proof="$d/gap${g}.drat"
+          set +e
+          timeout 3150 /tmp/cadical/build/cadical "$cnf" "$proof" > "$d/cadical.log" 2>&1
+          rc=$?
+          set -e
+          echo "$rc" > "$d/cadical_exit_code.txt"
+          if [ "$rc" -eq 20 ]; then
+            /tmp/drat-trim/drat-trim "$cnf" "$proof" > "$d/drat_check.log" 2>&1
+            grep -q 'VERIFIED' "$d/drat_check.log"
+            echo VERIFIED_UNSAT > "$d/STATUS.txt"
+          elif [ "$rc" -eq 10 ]; then
+            echo SAT > "$d/STATUS.txt"
+            grep '^v ' "$d/cadical.log" > "$d/MODEL.txt" || true
+          else
+            echo UNKNOWN_OR_TIMEOUT > "$d/STATUS.txt"
+          fi
+          cp crossdomain/b2_gap_sat_v4.py "$d/"
+          find "$d" -type f -print0 | sort -z | xargs -0 sha256sum > "$d/SHA256SUMS.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: b2-gap${{ matrix.gap }}-drat-20260817
+          path: artifact/gap${{ matrix.gap }}
+          retention-days: 30
+          compression-level: 9
+          if-no-files-found: error
