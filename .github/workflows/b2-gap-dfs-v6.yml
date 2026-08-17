@@ -1,0 +1,33 @@
+name: B2 Z100 quotient-pruned exact DFS v6
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/b2_gap_dfs_v6.cpp'
+      - '.github/workflows/b2-gap-dfs-v6.yml'
+jobs:
+  dfs:
+    strategy:
+      fail-fast: false
+      matrix:
+        gap: [1,2,3]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile exact DFS with quotient pruning
+        run: g++ -std=c++20 -O3 -march=native -DNDEBUG crossdomain/b2_gap_dfs_v6.cpp -o b2dfsv6
+      - name: Exhaustive hard-gap search
+        run: |
+          mkdir -p artifact/b2_gap_dfsv6_${{ matrix.gap }}
+          ./b2dfsv6 ${{ matrix.gap }} 3000 artifact/b2_gap_dfsv6_${{ matrix.gap }}/RESULT.json
+          cp crossdomain/b2_gap_dfs_v6.cpp artifact/b2_gap_dfsv6_${{ matrix.gap }}/
+          sha256sum b2dfsv6 > artifact/b2_gap_dfsv6_${{ matrix.gap }}/BINARY_SHA256.txt
+          find artifact/b2_gap_dfsv6_${{ matrix.gap }} -type f -print0 | sort -z | xargs -0 sha256sum > artifact/b2_gap_dfsv6_${{ matrix.gap }}/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: b2-gap-dfsv6-${{ matrix.gap }}
+          path: artifact/b2_gap_dfsv6_${{ matrix.gap }}
+          retention-days: 30
+          if-no-files-found: error
