@@ -1,0 +1,29 @@
+name: Yanxia Shengxiaofang formula curation v3
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/yanxia_formula_curate_v3.py'
+      - '.github/workflows/yanxia-formula-curate-v3.yml'
+jobs:
+  curate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests
+      - name: Curate high-precision source-attributed formula witnesses
+        run: |
+          mkdir -p artifact/yanxia_formula_v3
+          OUT_DIR=artifact/yanxia_formula_v3 python crossdomain/yanxia_formula_curate_v3.py
+          cp crossdomain/yanxia_formula_curate_v3.py artifact/yanxia_formula_v3/
+          find artifact/yanxia_formula_v3 -type f -print0 | sort -z | xargs -0 sha256sum > artifact/yanxia_formula_v3/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yanxia-formula-curation-v3
+          path: artifact/yanxia_formula_v3
+          retention-days: 30
+          if-no-files-found: error
