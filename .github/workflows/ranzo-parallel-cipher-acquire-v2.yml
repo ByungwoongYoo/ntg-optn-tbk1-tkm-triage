@@ -1,0 +1,28 @@
+name: Hieronimo Ranzo parallel cipher witness acquisition v2
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/ranzo_parallel_cipher_acquire_v2.py'
+      - '.github/workflows/ranzo-parallel-cipher-acquire-v2.yml'
+jobs:
+  acquire:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests pillow
+      - run: |
+          mkdir -p artifact/ranzo_parallel
+          OUT_DIR=artifact/ranzo_parallel python crossdomain/ranzo_parallel_cipher_acquire_v2.py
+          cp crossdomain/ranzo_parallel_cipher_acquire_v2.py artifact/ranzo_parallel/
+          find artifact/ranzo_parallel -type f -print0 | sort -z | xargs -0 sha256sum > artifact/ranzo_parallel/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ranzo-parallel-cipher-witnesses-v2
+          path: artifact/ranzo_parallel
+          retention-days: 30
+          if-no-files-found: error
