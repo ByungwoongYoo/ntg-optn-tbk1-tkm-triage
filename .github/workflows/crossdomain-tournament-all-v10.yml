@@ -1,0 +1,180 @@
+name: Cross-domain all-track tournament v10
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - '.github/workflows/crossdomain-tournament-all-v10.yml'
+      - 'crossdomain/tournament_rank_v1.py'
+      - 'crossdomain/yanxia_block_reconstruction.py'
+      - 'crossdomain_tournament/TOURNAMENT_ADDENDUM_YANXIA_AND_SCORING_20260817.md'
+
+jobs:
+  textual_history:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests beautifulsoup4 numpy scipy scikit-learn
+      - name: T1 eBL/Nineveh blind known-join benchmark and candidate generation
+        run: |
+          set +e
+          mkdir -p artifact/T1_ebl data
+          python - <<'PY'
+          import requests
+          m=requests.get('https://zenodo.org/api/records/10018951',timeout=60).json()
+          f=next(x for x in m['files'] if x['key']=='fragments.json')
+          r=requests.get(f['links']['self'],timeout=240);r.raise_for_status();open('data/fragments.json','wb').write(r.content)
+          PY
+          python crossdomain/ebl_join_benchmark.py --fragments-json data/fragments.json --out-dir artifact/T1_ebl
+          cp artifact/T1_ebl/RESULT.json artifact/T1_EBL_RESULT.json 2>/dev/null || true
+      - name: T2 Jianqifang positive control and Yanxia Shengxiaofang subtrack
+        run: |
+          set +e
+          mkdir -p artifact/T2_gangibang artifact/T2_yanxia
+          OUT_DIR=artifact/T2_gangibang python crossdomain/gangibang_block_reconstruction.py
+          cp artifact/T2_gangibang/RESULT.json artifact/T2_GANGIBANG_RESULT.json 2>/dev/null || true
+          OUT_DIR=artifact/T2_yanxia python crossdomain/yanxia_block_reconstruction.py
+          cp artifact/T2_yanxia/RESULT.json artifact/T2_YANXIA_RESULT.json 2>/dev/null || true
+      - name: T3 DECRYPT public unsolved/partial medical-alchemical target triage
+        run: |
+          set +e
+          mkdir -p artifact/T3_decrypt
+          OUT_DIR=artifact/T3_decrypt python crossdomain/decrypt_public_target_probe.py
+          cp artifact/T3_decrypt/RESULT.json artifact/T3_DECRYPT_RESULT.json 2>/dev/null || true
+      - name: Preserve code and checksums
+        run: |
+          cp crossdomain/ebl_join_benchmark.py crossdomain/gangibang_block_reconstruction.py crossdomain/yanxia_block_reconstruction.py crossdomain/decrypt_public_target_probe.py artifact/ || true
+          find artifact -type f -print0 | sort -z | xargs -0 sha256sum > artifact/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tournament-textual-history
+          path: artifact
+          retention-days: 30
+          if-no-files-found: error
+
+  logic_u4:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Fetch authors' exact controls and Vampire
+        run: |
+          set -euxo pipefail
+          mkdir -p data/u4_authors data/u4_unzip data/vampire artifact/T4_u4
+          curl -L --fail --retry 5 -o artifact/T4_u4/zenodo_metadata.json https://zenodo.org/api/records/18747868
+          ZIPURL=$(jq -r '.files[0].links.self' artifact/T4_u4/zenodo_metadata.json)
+          curl -L --fail --retry 5 -o /tmp/u4_authors.zip "$ZIPURL"
+          unzip -q /tmp/u4_authors.zip -d data/u4_unzip
+          for target in u1 u2 u3; do
+            P=$(find data/u4_unzip -type f -iname "${target}.p" | head -1); test -n "$P"; cp "$P" "data/u4_authors/${target}.p"
+          done
+          curl -L --fail --retry 5 -o /tmp/vampire.zip https://github.com/vprover/vampire/releases/download/v5.0.1/vampire-Linux-X64.zip
+          unzip -q /tmp/vampire.zip -d data/vampire
+          VAMP=$(find data/vampire -type f \( -name vampire -o -name 'vampire*' \) | head -1); chmod +x "$VAMP"; echo "$VAMP" > /tmp/vamp_path
+          sha256sum data/u4_authors/*.p /tmp/u4_authors.zip /tmp/vampire.zip > artifact/T4_u4/input_sha256.txt
+      - name: T4 reproduce u1-u3 and attack frozen u4
+        run: |
+          set +e
+          VAMP=$(cat /tmp/vamp_path)
+          python crossdomain/u4_replication_v2.py --vampire "$VAMP" --u1 data/u4_authors/u1.p --u2 data/u4_authors/u2.p --u3 data/u4_authors/u3.p --out-dir artifact/T4_u4
+          cp artifact/T4_u4/RESULT.json artifact/T4_U4_RESULT.json 2>/dev/null || true
+          cp crossdomain/u4_replication_v2.py artifact/T4_u4/
+          find artifact -type f -print0 | sort -z | xargs -0 sha256sum > artifact/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tournament-logic-u4
+          path: artifact
+          retention-days: 30
+          if-no-files-found: error
+
+  image_bio_and_gates:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests beautifulsoup4 'zarr<3' fsspec s3fs numpy numcodecs
+      - name: T5 RePAIR legal gate plus general access audit
+        run: |
+          set +e
+          mkdir -p artifact/T0_access
+          python crossdomain/probe_all.py --out-dir artifact/T0_access
+          cp artifact/T0_access/PROBE_RESULT.json artifact/T0_ACCESS_RESULT.json 2>/dev/null || true
+      - name: T6 Vesuvius current public OME-Zarr random access
+        run: |
+          set +e
+          mkdir -p artifact/T6_vesuvius
+          OUT_DIR=artifact/T6_vesuvius python crossdomain/vesuvius_current_probe.py
+          cp artifact/T6_vesuvius/RESULT.json artifact/T6_VESUVIUS_RESULT.json 2>/dev/null || true
+      - name: T7 CASP17 freeze public blind candidate inventory
+        run: |
+          set +e
+          mkdir -p artifact/T7_casp
+          OUT_DIR=artifact/T7_casp python crossdomain/casp17_blind_freeze_probe.py
+          cp artifact/T7_casp/RESULT.json artifact/T7_CASP_RESULT.json 2>/dev/null || true
+      - run: |
+          cp crossdomain/probe_all.py crossdomain/vesuvius_current_probe.py crossdomain/casp17_blind_freeze_probe.py artifact/ || true
+          find artifact -type f -print0 | sort -z | xargs -0 sha256sum > artifact/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tournament-image-bio-gates
+          path: artifact
+          retention-days: 30
+          if-no-files-found: error
+
+  exact_b2:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 28
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install ortools
+      - name: T8 exact CP-SAT plus frozen local search for 14-set witness
+        run: |
+          set +e
+          mkdir -p artifact/T8_b2
+          OUT_DIR=artifact/T8_b2 python crossdomain/b2_z100_probe.py
+          cp artifact/T8_b2/RESULT.json artifact/T8_B2_RESULT.json 2>/dev/null || true
+          cp crossdomain/b2_z100_probe.py artifact/T8_b2/
+          find artifact -type f -print0 | sort -z | xargs -0 sha256sum > artifact/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tournament-exact-b2
+          path: artifact
+          retention-days: 30
+          if-no-files-found: error
+
+  rank:
+    if: always()
+    needs: [textual_history, logic_u4, image_bio_and_gates, exact_b2]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: tournament-*
+          path: collected
+          merge-multiple: true
+      - name: Frozen tournament ranking
+        run: |
+          mkdir -p final_tournament
+          python crossdomain/tournament_rank_v1.py --root collected --out-dir final_tournament
+          cp crossdomain_tournament/TOURNAMENT_PROTOCOL_20260817.md final_tournament/
+          cp crossdomain_tournament/TOURNAMENT_ADDENDUM_YANXIA_AND_SCORING_20260817.md final_tournament/
+          cp crossdomain/tournament_rank_v1.py final_tournament/
+          find collected -type f | sort > final_tournament/COLLECTED_FILE_MANIFEST.txt
+          find final_tournament -type f -print0 | sort -z | xargs -0 sha256sum > final_tournament/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: crossdomain-tournament-final-v10
+          path: final_tournament
+          retention-days: 30
+          if-no-files-found: error
