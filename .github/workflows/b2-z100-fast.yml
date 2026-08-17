@@ -1,0 +1,27 @@
+name: B2[2] Z100 optimized witness search
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/b2_z100_fast.cpp'
+      - '.github/workflows/b2-z100-fast.yml'
+jobs:
+  search:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 28
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and run optimized search
+        run: |
+          mkdir -p artifact/b2_z100_fast
+          g++ -O3 -std=c++20 -pthread crossdomain/b2_z100_fast.cpp -o artifact/b2_z100_fast/search
+          artifact/b2_z100_fast/search 1200 8 2>&1 | tee artifact/b2_z100_fast/RESULT.txt
+          cp crossdomain/b2_z100_fast.cpp artifact/b2_z100_fast/
+          sha256sum artifact/b2_z100_fast/* > artifact/b2_z100_fast/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: b2-z100-fast
+          path: artifact/b2_z100_fast
+          retention-days: 30
+          if-no-files-found: error
