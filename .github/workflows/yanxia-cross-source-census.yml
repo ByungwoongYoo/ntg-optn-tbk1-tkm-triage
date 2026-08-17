@@ -1,0 +1,43 @@
+name: Yanxia formula cross-source census
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["crossdomain-open-problem-tournament-20260817-doit"]
+    paths:
+      - "crossdomain/yanxia_cross_source_census.py"
+      - ".github/workflows/yanxia-cross-source-census.yml"
+
+jobs:
+  census:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: Download corrected Yanxia dossier
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p data artifact/yanxia_cross_source
+          curl -L --fail -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            -o data/dossier.zip https://api.github.com/repos/${{ github.repository }}/actions/artifacts/9276653445/zip
+          unzip -q data/dossier.zip -d data/dossier
+          test -s data/dossier/formula_inventory.json
+      - name: Census exact names across source headings
+        run: |
+          python crossdomain/yanxia_cross_source_census.py \
+            --inventory data/dossier/formula_inventory.json \
+            --out-dir artifact/yanxia_cross_source
+      - name: Hash outputs
+        run: |
+          cp crossdomain/yanxia_cross_source_census.py artifact/yanxia_cross_source/
+          find artifact/yanxia_cross_source -type f -print0 | sort -z | xargs -0 sha256sum > artifact/yanxia_cross_source/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yanxia-cross-source-census
+          path: artifact/yanxia_cross_source
+          retention-days: 30
