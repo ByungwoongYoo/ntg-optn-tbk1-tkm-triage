@@ -1,0 +1,29 @@
+name: Uibangyuchwi three lost medical sources v4
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/uibang_three_lost_sources_v4.py'
+      - '.github/workflows/uibang-three-lost-sources-v4.yml'
+jobs:
+  reconstruct:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests
+      - name: Extract explicit corpora for three historically lost medical sources
+        env: {OUT_DIR: 'artifact/uibang_three_lost_v4'}
+        run: python crossdomain/uibang_three_lost_sources_v4.py
+      - run: |
+          cp crossdomain/uibang_three_lost_sources_v4.py artifact/uibang_three_lost_v4/
+          find artifact/uibang_three_lost_v4 -type f -print0 | sort -z | xargs -0 sha256sum > artifact/uibang_three_lost_v4/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: uibang-three-lost-sources-v4
+          path: artifact/uibang_three_lost_v4
+          retention-days: 30
+          if-no-files-found: error
