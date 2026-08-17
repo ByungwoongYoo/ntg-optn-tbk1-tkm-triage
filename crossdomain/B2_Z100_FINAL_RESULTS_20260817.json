@@ -1,0 +1,46 @@
+{
+  "problem": "A 14-element B_2[2] set in Z/100Z",
+  "official_problem_url": "https://theoremdb.org/statements/b2-two-set-z100/",
+  "answer": "NO",
+  "maximum_size": 13,
+  "status": "COMPUTATIONAL_RESOLUTION_PENDING_EXTERNAL_REVIEW",
+  "upper_bound_argument": {
+    "unit_difference_lemma": true,
+    "normalization": "Every hypothetical 14-set is affinely equivalent to one containing {0,1}.",
+    "normalized_third_range": [2, 45],
+    "third_branches_exhausted": 44,
+    "all_no_witness": true,
+    "t2_t4_fixed_fourth_subbranches": 255
+  },
+  "lower_bound_witness": [0, 5, 7, 31, 58, 61, 62, 63, 72, 80, 84, 91, 97],
+  "witness_max_ordered_difference_multiplicity": 2,
+  "redundant_checks": {
+    "gap2_gap3_exact_branches": 67,
+    "gap2_gap3_all_no_witness": true,
+    "gap4_gap7_drat_verified": true
+  },
+  "source_runs": {
+    "g1_t2_t4_v10": 32040699080,
+    "g1_t5_t10_v8": 32038183046,
+    "g1_t10_t45_v7": 32004571194,
+    "g2_g3_v9": 32040180627,
+    "g1_v10_collector": 32041254402,
+    "g2_g3_collector": 32041212984
+  },
+  "summary_artifacts": {
+    "g1_t2_t4": {
+      "artifact_id": 9292041311,
+      "digest": "sha256:65db7de24a569e7f0a3947240e89fffec9e1fe9ac29e338fee135c8fcd60ae50",
+      "counts": {"EXHAUSTED_NO_WITNESS": 256},
+      "hard_branches": 255,
+      "all_hard_exhausted_no_witness": true
+    },
+    "g2_g3": {
+      "artifact_id": 9291987535,
+      "digest": "sha256:4188055162c8c95ce579ebf23ceedf80e55fee0228acab733bb049bf0f340ba8",
+      "counts": {"EXHAUSTED_NO_WITNESS": 67},
+      "all_exhausted_no_witness": true
+    }
+  },
+  "claim_boundary": "The mathematical conclusion is supported by an elementary affine reduction plus exhaustive exact computation. It has not yet been externally peer reviewed or formally verified in Lean."
+}
