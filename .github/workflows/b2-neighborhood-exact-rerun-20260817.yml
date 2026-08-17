@@ -1,0 +1,55 @@
+name: B2 exact radius-7 neighborhood rerun 20260817
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - '.github/workflows/b2-neighborhood-exact-rerun-20260817.yml'
+      - 'crossdomain/b2_neighborhood_exact_20260817.cpp'
+jobs:
+  radius_k1_k6:
+    strategy:
+      fail-fast: false
+      matrix:
+        near: [1,2]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: g++ -O3 -std=c++20 -DNDEBUG crossdomain/b2_neighborhood_exact_20260817.cpp -o b2near
+      - name: Exhaust complete remove-k/add-k neighborhoods k1 through k6
+        run: |
+          mkdir -p artifact/N${{ matrix.near }}_k1_k6
+          for k in 1 2 3 4 5 6; do ./b2near ${{ matrix.near }} $k -1 600 artifact/N${{ matrix.near }}_k1_k6/k${k}.json | tee -a artifact/N${{ matrix.near }}_k1_k6/RUN.log; done
+          cp crossdomain/b2_neighborhood_exact_20260817.cpp artifact/N${{ matrix.near }}_k1_k6/
+          find artifact/N${{ matrix.near }}_k1_k6 -type f -print0 | sort -z | xargs -0 sha256sum > artifact/N${{ matrix.near }}_k1_k6/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: b2-N${{ matrix.near }}-k1-k6-rerun-20260817
+          path: artifact/N${{ matrix.near }}_k1_k6
+          retention-days: 30
+          if-no-files-found: error
+  radius_k7:
+    strategy:
+      fail-fast: false
+      max-parallel: 16
+      matrix:
+        near: [1,2]
+        first: [0,1,2,3,4,5,6,7]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: g++ -O3 -std=c++20 -DNDEBUG crossdomain/b2_neighborhood_exact_20260817.cpp -o b2near
+      - name: Exhaust one disjoint k7 removal chunk
+        run: |
+          mkdir -p artifact/N${{ matrix.near }}_k7_first${{ matrix.first }}
+          ./b2near ${{ matrix.near }} 7 ${{ matrix.first }} 600 artifact/N${{ matrix.near }}_k7_first${{ matrix.first }}/RESULT.json | tee artifact/N${{ matrix.near }}_k7_first${{ matrix.first }}/RUN.log
+          cp crossdomain/b2_neighborhood_exact_20260817.cpp artifact/N${{ matrix.near }}_k7_first${{ matrix.first }}/
+          find artifact/N${{ matrix.near }}_k7_first${{ matrix.first }} -type f -print0 | sort -z | xargs -0 sha256sum > artifact/N${{ matrix.near }}_k7_first${{ matrix.first }}/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: b2-N${{ matrix.near }}-k7-first${{ matrix.first }}-20260817
+          path: artifact/N${{ matrix.near }}_k7_first${{ matrix.first }}
+          retention-days: 30
+          if-no-files-found: error
