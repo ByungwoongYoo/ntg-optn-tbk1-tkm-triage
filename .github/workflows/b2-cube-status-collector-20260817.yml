@@ -19,11 +19,12 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
     steps:
-      - name: Wait for source cube run and collect exact branch status
+      - name: Collect exact branch status from ZIP central directories
         shell: python
         run: |
-          import csv, io, json, os, re, struct, time, urllib.request, zlib
+          import csv, json, os, re, struct, urllib.request, zlib
           from pathlib import Path
+          from datetime import datetime
 
           repo=os.environ['REPO']; run_id=int(os.environ['SOURCE_RUN_ID']); token=os.environ['GH_TOKEN']
           api='https://api.github.com'
@@ -31,20 +32,11 @@ jobs:
           out=Path('artifact/b2_cube_status'); out.mkdir(parents=True,exist_ok=True)
 
           def request_json(url):
-              req=urllib.request.Request(url,headers=headers)
-              with urllib.request.urlopen(req,timeout=120) as r:
+              with urllib.request.urlopen(urllib.request.Request(url,headers=headers),timeout=120) as r:
                   return json.load(r)
 
-          # Wait until the source run reaches a terminal state, but preserve a snapshot if it outlives this job.
-          deadline=time.time()+5*3600
-          while True:
-              run=request_json(f'{api}/repos/{repo}/actions/runs/{run_id}')
-              print('source status',run.get('status'),run.get('conclusion'),flush=True)
-              if run.get('status')=='completed' or time.time()>deadline: break
-              time.sleep(60)
-
-          jobs=[]
-          page=1
+          run=request_json(f'{api}/repos/{repo}/actions/runs/{run_id}')
+          jobs=[]; page=1
           while True:
               j=request_json(f'{api}/repos/{repo}/actions/runs/{run_id}/jobs?per_page=100&page={page}')
               jobs.extend(j.get('jobs',[]))
@@ -58,36 +50,32 @@ jobs:
               page+=1
           art_by_name={a['name']:a for a in arts}
 
-          def final_blob_url(archive_url):
-              req=urllib.request.Request(archive_url,headers=headers)
-              opener=urllib.request.build_opener(urllib.request.HTTPRedirectHandler())
-              with opener.open(req,timeout=120) as r:
-                  return r.geturl(), dict(r.headers)
+          class NoRedirect(urllib.request.HTTPErrorProcessor):
+              def http_response(self,request,response): return response
+              https_response=http_response
+          no_redirect=urllib.request.build_opener(NoRedirect)
 
-          def range_get(url,start,end=None):
+          def range_get(url,start=None,end=None,suffix=None):
               h={'User-Agent':'b2-status-collector'}
-              h['Range']=f'bytes={start}-' if end is None else f'bytes={start}-{end}'
-              req=urllib.request.Request(url,headers=h)
-              with urllib.request.urlopen(req,timeout=180) as r:
+              if suffix is not None:
+                  h['Range']=f'bytes=-{suffix}'
+              elif end is None:
+                  h['Range']=f'bytes={start}-'
+              else:
+                  h['Range']=f'bytes={start}-{end}'
+              with urllib.request.urlopen(urllib.request.Request(url,headers=h),timeout=240) as r:
                   return r.read(),dict(r.headers),r.status
 
           def zip_member_via_ranges(archive_url,wanted):
-              # Resolve the authenticated API redirect first.
-              api_req=urllib.request.Request(archive_url,headers=headers)
-              class NoRedirect(urllib.request.HTTPErrorProcessor):
-                  def http_response(self,request,response): return response
-                  https_response=http_response
-              op=urllib.request.build_opener(NoRedirect)
-              resp=op.open(api_req,timeout=120)
+              resp=no_redirect.open(urllib.request.Request(archive_url,headers=headers),timeout=120)
               loc=resp.headers.get('Location')
               if not loc: return None,'no_redirect_location'
-              # Get tail and total length.
-              tail,hh,status=range_get(loc,-131072)
+              tail,hh,status=range_get(loc,suffix=262144)
               cr=hh.get('Content-Range','')
-              m=re.search(r'/([0-9]+)$',cr)
+              m=re.search(r'bytes\s+(\d+)-(\d+)/(\d+)',cr)
               if not m: return None,f'no_content_range:{status}:{cr}'
-              total=int(m.group(1)); tail_start=total-len(tail)
-              sig=b'PK\x05\x06'; pos=tail.rfind(sig)
+              tail_start=int(m.group(1)); total=int(m.group(3))
+              pos=tail.rfind(b'PK\x05\x06')
               if pos<0: return None,'eocd_not_found'
               eocd=tail[pos:pos+22]
               if len(eocd)<22: return None,'short_eocd'
@@ -100,8 +88,7 @@ jobs:
                   vals=struct.unpack('<4s6H3L5H2L',cd[p:p+46])
                   method=vals[4]; csize=vals[8]; usize=vals[9]; fnlen=vals[10]; extralen=vals[11]; comlen=vals[12]; lhoff=vals[16]
                   name=cd[p+46:p+46+fnlen].decode('utf-8','replace')
-                  if name.endswith(wanted):
-                      entry=(method,csize,usize,lhoff,name); break
+                  if name.endswith(wanted): entry=(method,csize,usize,lhoff,name); break
                   p+=46+fnlen+extralen+comlen
               if not entry: return None,'member_not_found'
               method,csize,usize,lhoff,name=entry
@@ -123,7 +110,6 @@ jobs:
               step=next((s for s in job.get('steps',[]) if s.get('number')==7),{})
               dur=None
               if step.get('started_at') and step.get('completed_at'):
-                  from datetime import datetime
                   dur=(datetime.fromisoformat(step['completed_at'].replace('Z','+00:00'))-datetime.fromisoformat(step['started_at'].replace('Z','+00:00'))).total_seconds()
               name=f'b2-cube-g{g}-t{t}-20260817'; art=art_by_name.get(name)
               status_txt=None; err=None
@@ -146,11 +132,11 @@ jobs:
               for k,v in sorted(summary['counts'].items()): f.write(f'|{k}|{v}|\n')
               f.write('\n## Unresolved branches\n\n')
               for r in rows:
-                  if r['classification']!='VERIFIED_UNSAT': f.write(f"- g={r['gap']}, t={r['third']}: {r['classification']} (step={r['solver_step_seconds']}, job={r['job_conclusion']})\n")
+                  if r['classification']!='VERIFIED_UNSAT': f.write(f"- g={r['gap']}, t={r['third']}: {r['classification']} (step={r['solver_step_seconds']}, job={r['job_conclusion']}, err={r['status_read_error']})\n")
           print(json.dumps(summary['counts'],indent=2),flush=True)
       - uses: actions/upload-artifact@v4
         with:
-          name: b2-cube-status-collector-20260817
+          name: b2-cube-status-collector-20260817-v2
           path: artifact/b2_cube_status
           retention-days: 30
           if-no-files-found: error
