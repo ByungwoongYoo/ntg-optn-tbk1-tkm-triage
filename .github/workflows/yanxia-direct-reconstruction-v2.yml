@@ -1,0 +1,29 @@
+name: Yanxia Shengxiaofang direct-location reconstruction v2
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/yanxia_direct_seed_reconstruction_v2.py'
+      - '.github/workflows/yanxia-direct-reconstruction-v2.yml'
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests
+      - name: Extract source-attributed Yanxia blocks from independently located Uibangyuchwi chapters
+        env: {OUT_DIR: 'artifact/yanxia_v2'}
+        run: python crossdomain/yanxia_direct_seed_reconstruction_v2.py
+      - run: |
+          cp crossdomain/yanxia_direct_seed_reconstruction_v2.py artifact/yanxia_v2/
+          find artifact/yanxia_v2 -type f -print0 | sort -z | xargs -0 sha256sum > artifact/yanxia_v2/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yanxia-direct-reconstruction-v2
+          path: artifact/yanxia_v2
+          retention-days: 30
+          if-no-files-found: error
