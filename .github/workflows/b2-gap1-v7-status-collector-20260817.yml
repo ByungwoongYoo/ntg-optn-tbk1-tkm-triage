@@ -1,0 +1,59 @@
+name: B2 gap1 v7 exact DFS status collector 20260817
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - '.github/workflows/b2-gap1-v7-status-collector-20260817.yml'
+permissions:
+  actions: read
+  contents: read
+jobs:
+  collect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      SOURCE_RUN_ID: '32004571194'
+    steps:
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Download tiny branch artifacts and summarize RESULT.json
+        shell: python
+        run: |
+          import csv,io,json,os,re,urllib.request,zipfile
+          from pathlib import Path
+          repo=os.environ['REPO']; run=int(os.environ['SOURCE_RUN_ID']); tok=os.environ['GH_TOKEN']
+          H={'Authorization':f'Bearer {tok}','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'b2-v7-collector'}
+          def js(url):
+              with urllib.request.urlopen(urllib.request.Request(url,headers=H),timeout=120) as r:return json.load(r)
+          arts=[];p=1
+          while True:
+              d=js(f'https://api.github.com/repos/{repo}/actions/runs/{run}/artifacts?per_page=100&page={p}')
+              arts+=d.get('artifacts',[])
+              if len(d.get('artifacts',[]))<100:break
+              p+=1
+          rows=[]
+          for a in arts:
+              m=re.fullmatch(r'b2-gap1-a2-(\d+)-v7',a['name'])
+              if not m:continue
+              req=urllib.request.Request(a['archive_download_url'],headers=H)
+              with urllib.request.urlopen(req,timeout=120) as r: raw=r.read()
+              with zipfile.ZipFile(io.BytesIO(raw)) as z:
+                  n=next(n for n in z.namelist() if n.endswith('RESULT.json'))
+                  d=json.loads(z.read(n))
+              rows.append({'third':int(m.group(1)),'completed_exhaustively':d.get('completed_exhaustively'),'timed_out':d.get('timed_out'),'witness_found':d.get('witness_found'),'witness_verified':d.get('witness_verified'),'nodes':d.get('nodes'),'wall_seconds':d.get('wall_seconds'),'artifact_id':a['id'],'digest':a.get('digest')})
+          rows.sort(key=lambda r:r['third']); out=Path('artifact/b2_gap1_v7_status');out.mkdir(parents=True,exist_ok=True)
+          summary={'source_run':run,'observed':len(rows),'complete':[r['third'] for r in rows if r['completed_exhaustively']],'timeouts':[r['third'] for r in rows if r['timed_out']],'witnesses':[r for r in rows if r['witness_verified']],'rows':rows}
+          (out/'SUMMARY.json').write_text(json.dumps(summary,indent=2),encoding='utf-8')
+          with (out/'SUMMARY.csv').open('w',newline='',encoding='utf-8') as f:
+              w=csv.DictWriter(f,fieldnames=rows[0].keys());w.writeheader();w.writerows(rows)
+          (out/'SUMMARY.md').write_text('# B2 gap1 v7 status\n\n'+f"Complete: {summary['complete']}\n\nTimeouts: {summary['timeouts']}\n\nVerified witnesses: {len(summary['witnesses'])}\n",encoding='utf-8')
+          print(json.dumps({k:summary[k] for k in ['observed','complete','timeouts','witnesses']},indent=2))
+      - uses: actions/upload-artifact@v4
+        with:
+          name: b2-gap1-v7-status-collector-20260817
+          path: artifact/b2_gap1_v7_status
+          retention-days: 30
+          if-no-files-found: error
