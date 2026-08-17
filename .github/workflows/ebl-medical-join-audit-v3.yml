@@ -1,0 +1,51 @@
+name: eBL medical join candidate audit v3
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["crossdomain-open-problem-tournament-20260817-doit"]
+    paths:
+      - "crossdomain/ebl_candidate_audit_v3.py"
+      - ".github/workflows/ebl-medical-join-audit-v3.yml"
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: Download current open eBL metadata and v2 candidate artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p data artifact/ebl_audit_v3
+          python - <<'PY'
+          import requests
+          m=requests.get('https://zenodo.org/api/records/10018951',timeout=60).json()
+          f=next(x for x in m['files'] if x['key']=='fragments.json')
+          r=requests.get(f['links']['self'],timeout=180); r.raise_for_status()
+          open('data/fragments.json','wb').write(r.content)
+          PY
+          curl -L --fail -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            -o data/v2.zip https://api.github.com/repos/${{ github.repository }}/actions/artifacts/9275573824/zip
+          unzip -q data/v2.zip -d data/v2
+          test -s data/v2/ranked_candidates_v2.json
+      - name: Re-audit candidates
+        run: |
+          python crossdomain/ebl_candidate_audit_v3.py \
+            --fragments-json data/fragments.json \
+            --ranked-v2 data/v2/ranked_candidates_v2.json \
+            --out-dir artifact/ebl_audit_v3
+      - name: Hash outputs
+        run: |
+          cp crossdomain/ebl_candidate_audit_v3.py artifact/ebl_audit_v3/
+          find artifact/ebl_audit_v3 -type f -print0 | sort -z | xargs -0 sha256sum > artifact/ebl_audit_v3/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ebl-medical-join-audit-v3
+          path: artifact/ebl_audit_v3
+          retention-days: 30
