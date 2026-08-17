@@ -5,6 +5,7 @@ on:
     branches: [clinvar-time-machine-20260817]
     paths:
       - 'bio_open_problem/clinvar_time_machine_v2.py'
+      - 'bio_open_problem/clinvar_time_machine_v2_runner.py'
       - 'bio_open_problem/TIME_MACHINE_PROTOCOL_LOCK_20260817.json'
       - '.github/workflows/clinvar-time-machine-v2.yml'
 jobs:
@@ -75,7 +76,7 @@ jobs:
           OMP_NUM_THREADS: '4'
           MPLBACKEND: Agg
         run: |
-          python bio_open_problem/clinvar_time_machine_v2.py \
+          python bio_open_problem/clinvar_time_machine_v2_runner.py \
             --raw-clinical-zip input/proteingym/raw_clinical.zip \
             --score-zip input/proteingym/score_clinical.zip \
             --frozen-predictions input/family/frozen_global30_predictions.csv.gz \
@@ -92,12 +93,11 @@ jobs:
       - name: Independently recompute headline values from the saved cohort
         run: |
           python - <<'PY'
-          import gzip, hashlib, json, pathlib
-          import numpy as np, pandas as pd
+          import hashlib, json, pathlib
+          import pandas as pd
           from sklearn.metrics import brier_score_loss, log_loss, roc_auc_score
           root=pathlib.Path('artifact/time_machine_v2/results')
           cohort=pd.read_csv(root/'historical_vus_cohorts.csv.gz')
-          summary=pd.read_csv(root/'time_machine_summary.csv')
           rows=[]
           for cutoff in ['2021-08','2022-08','2023-08']:
             q=cohort[(cohort.cutoff==cutoff)&(cohort.truth_tier=='primary_high_confidence')].drop_duplicates(['VariationID','cutoff'])
@@ -112,6 +112,7 @@ jobs:
         run: |
           set -euxo pipefail
           cp bio_open_problem/clinvar_time_machine_v2.py artifact/time_machine_v2/
+          cp bio_open_problem/clinvar_time_machine_v2_runner.py artifact/time_machine_v2/
           cp bio_open_problem/TIME_MACHINE_PROTOCOL_LOCK_20260817.json artifact/time_machine_v2/
           python - <<'PY'
           import hashlib, json, pathlib
