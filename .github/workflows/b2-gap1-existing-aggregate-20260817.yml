@@ -1,0 +1,43 @@
+name: Aggregate existing B2 gap1 44-branch search 20260817
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - '.github/workflows/b2-gap1-existing-aggregate-20260817.yml'
+permissions:
+  actions: read
+  contents: read
+jobs:
+  aggregate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all artifacts from prior 44-branch run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p prior artifacts
+          gh run download 32004571194 --repo "$GITHUB_REPOSITORY" --dir prior
+          find prior -type f | sort > artifacts/FILES.txt
+      - name: Aggregate exact branch statuses
+        run: |
+          python - <<'PY'
+          import json,glob,hashlib
+          from pathlib import Path
+          rows=[]
+          for p in glob.glob('prior/**/RESULT.json',recursive=True):
+            d=json.load(open(p)); d['file']=p; rows.append(d)
+          rows.sort(key=lambda x:x['fixed_third_element'])
+          out={'source_run_id':32004571194,'branch_count':len(rows),'complete_count':sum(x['completed_exhaustively'] for x in rows),'timed_out_count':sum(x['timed_out'] for x in rows),'witness_count':sum(x['witness_verified'] for x in rows),'rows':rows}
+          Path('artifacts/RESULT.json').write_text(json.dumps(out,indent=2))
+          Path('artifacts/RESULT.md').write_text('# B2 gap1 prior 44-branch aggregation\n\n'+f"- branches: {len(rows)}\n- complete: {out['complete_count']}\n- timed out: {out['timed_out_count']}\n- verified witnesses: {out['witness_count']}\n\n|a2|complete|timeout|nodes|wall s|\n|---:|---:|---:|---:|---:|\n"+'\n'.join(f"|{x['fixed_third_element']}|{x['completed_exhaustively']}|{x['timed_out']}|{x['nodes']}|{x['wall_seconds']:.3f}|" for x in rows))
+          PY
+          find artifacts -type f -print0 | sort -z | xargs -0 sha256sum > artifacts/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: b2-gap1-existing-aggregate-20260817
+          path: artifacts
+          retention-days: 30
+          if-no-files-found: error
