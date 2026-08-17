@@ -1,0 +1,29 @@
+name: QuantiPhy NeurIPS 2026 validation smoke v1
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/quantiphy_validation_smoke_v1.py'
+      - '.github/workflows/quantiphy-validation-smoke-v1.yml'
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install datasets pandas numpy scikit-learn pyarrow
+      - name: Evaluate free deterministic no-video baselines on official 159-example validation set
+        run: |
+          mkdir -p artifact/quantiphy_v1
+          OUT_DIR=artifact/quantiphy_v1 python crossdomain/quantiphy_validation_smoke_v1.py
+          cp crossdomain/quantiphy_validation_smoke_v1.py artifact/quantiphy_v1/
+          find artifact/quantiphy_v1 -type f -print0 | sort -z | xargs -0 sha256sum > artifact/quantiphy_v1/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: quantiphy-validation-smoke-v1
+          path: artifact/quantiphy_v1
+          retention-days: 30
+          if-no-files-found: error
