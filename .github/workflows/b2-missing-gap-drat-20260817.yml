@@ -1,0 +1,66 @@
+name: B2 Z100 missing normalized gaps DRAT 20260817
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - '.github/workflows/b2-missing-gap-drat-20260817.yml'
+jobs:
+  proof:
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        gap: [1,2,3,5,6,7]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Install CNF generator dependency
+        run: pip install python-sat
+      - name: Generate exact normalized-gap CNF
+        run: |
+          mkdir -p artifact/b2_gap_${{ matrix.gap }}_drat
+          python - <<'PY'
+          import sys
+          sys.path.insert(0,'.')
+          from crossdomain.b2_gap_sat_v4 import build
+          g=${{ matrix.gap }}
+          cnf,_,_=build(g)
+          out=f'artifact/b2_gap_{g}_drat/gap{g}.cnf'
+          cnf.to_file(out)
+          print('gap',g,'vars',cnf.nv,'clauses',len(cnf.clauses))
+          PY
+      - name: Build CaDiCaL and DRAT-trim
+        run: |
+          git clone --depth 1 https://github.com/arminbiere/cadical.git /tmp/cadical
+          cd /tmp/cadical && ./configure && make -j2
+          git clone --depth 1 https://github.com/marijnheule/drat-trim.git /tmp/drat-trim
+          cd /tmp/drat-trim && make -j2
+      - name: Solve and verify proof when UNSAT
+        run: |
+          g=${{ matrix.gap }}
+          d=artifact/b2_gap_${g}_drat
+          set +e
+          timeout 3000 /tmp/cadical/build/cadical "$d/gap${g}.cnf" "$d/gap${g}.drat" > "$d/cadical.log" 2>&1
+          rc=$?
+          set -e
+          echo "$rc" > "$d/cadical_exit_code.txt"
+          if [ "$rc" -eq 20 ]; then
+            /tmp/drat-trim/drat-trim "$d/gap${g}.cnf" "$d/gap${g}.drat" > "$d/drat_check.log" 2>&1
+            grep -q 'VERIFIED' "$d/drat_check.log"
+            echo VERIFIED > "$d/STATUS.txt"
+          elif [ "$rc" -eq 10 ]; then
+            echo SAT > "$d/STATUS.txt"
+          else
+            echo UNKNOWN_OR_TIMEOUT > "$d/STATUS.txt"
+          fi
+          sha256sum "$d"/* > "$d/SHA256SUMS.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: b2-gap-${{ matrix.gap }}-drat-20260817
+          path: artifact/b2_gap_${{ matrix.gap }}_drat
+          retention-days: 30
+          if-no-files-found: error
