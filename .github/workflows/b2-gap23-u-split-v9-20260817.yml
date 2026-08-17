@@ -1,0 +1,84 @@
+name: B2 Z100 gap 2 and 3 exact u-split v9
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/b2_gap_g_u_split_v9.cpp'
+      - '.github/workflows/b2-gap23-u-split-v9-20260817.yml'
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+    steps:
+      - id: m
+        shell: python
+        run: |
+          import json,os
+          inc=[]
+          for g in (2,3):
+              for t in range(2*g,50-5*g+1): inc.append({'gap':g,'third':t})
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f:f.write('matrix='+json.dumps({'include':inc},separators=(',',':'))+'\n')
+          print('branches',len(inc))
+
+  exact:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      max-parallel: 40
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 58
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile generic exact split solver
+        run: g++ -std=c++20 -O3 -march=native -pthread -DNDEBUG crossdomain/b2_gap_g_u_split_v9.cpp -o b2split
+      - name: Exhaust all fourth-element branches
+        run: |
+          g=${{ matrix.gap }}; t=${{ matrix.third }}; d=artifact/b2_g${g}_t${t}_v9; mkdir -p "$d"
+          set +e
+          ./b2split "$g" "$t" 3150 "$(nproc)" "$d/RESULT.json" "$d/BRANCHES.tsv" > "$d/solver.stdout.log" 2> "$d/solver.stderr.log"
+          rc=$?
+          set -e
+          echo "$rc" > "$d/solver_exit_code.txt"
+          test "$rc" -eq 0 -o "$rc" -eq 10 -o "$rc" -eq 124
+          cp crossdomain/b2_gap_g_u_split_v9.cpp "$d/"
+          sha256sum b2split > "$d/BINARY_SHA256.txt"
+      - name: Independent coverage and witness audit
+        env:
+          GAP: ${{ matrix.gap }}
+          THIRD: ${{ matrix.third }}
+        run: |
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          g=int(os.environ['GAP']);t=int(os.environ['THIRD']);d=Path(f'artifact/b2_g{g}_t{t}_v9');r=json.loads((d/'RESULT.json').read_text())
+          umin=t+g;umax=100-(t-g)-10*g;expected=list(range(umin,umax+1));observed=[x['fourth'] for x in r['branches']]
+          assert r['gap']==g and r['third']==t
+          assert r['expected_fourth_branches']==len(expected)
+          assert r['observed_fourth_branches']==len(expected) and observed==expected
+          verified=False;detail={}
+          if r['witness_found']:
+              A=r['witness'];assert len(A)==14 and len(set(A))==14 and A[0]==0 and A[1]==g and A[2]==t
+              assert all(A[i]-A[i-1]>=g for i in range(1,14)) and 100-A[-1]>=g and t-g<=100-A[-1]
+              counts={x:0 for x in range(1,100)}
+              for a in A:
+                  for b in A:
+                      if a!=b:counts[(a-b)%100]+=1
+              verified=max(counts.values())<=2;assert verified and r['witness_verified']
+              detail={'witness':A,'max_ordered_difference_multiplicity':max(counts.values()),'difference_counts':counts}
+          status='VERIFIED_WITNESS' if verified else ('EXHAUSTED_NO_WITNESS' if r['completed_exhaustively'] else 'INCOMPLETE_TIMEOUT')
+          audit={'gap':g,'third':t,'status':status,'coverage_ok':True,'independent_witness_verifier':verified,'detail':detail}
+          (d/'INDEPENDENT_AUDIT.json').write_text(json.dumps(audit,indent=2),encoding='utf-8');(d/'STATUS.txt').write_text(status+'\n',encoding='utf-8')
+          print(json.dumps(audit,indent=2))
+          PY
+          g=${{ matrix.gap }}; t=${{ matrix.third }}; d=artifact/b2_g${g}_t${t}_v9
+          find "$d" -type f -print0 | sort -z | xargs -0 sha256sum > "$d/SHA256SUMS.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: b2-g${{ matrix.gap }}-t${{ matrix.third }}-u-split-v9
+          path: artifact/b2_g${{ matrix.gap }}_t${{ matrix.third }}_v9
+          retention-days: 30
+          if-no-files-found: error
