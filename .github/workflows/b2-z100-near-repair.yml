@@ -1,0 +1,41 @@
+name: B2[2] Z100 exact near-witness repair
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["crossdomain-open-problem-tournament-20260817-doit"]
+    paths:
+      - "crossdomain/b2_z100_near_repair.py"
+      - ".github/workflows/b2-z100-near-repair.yml"
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        replacements: [1,2,3,4,5,6]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ortools
+      - name: Exact repair search
+        run: |
+          mkdir -p artifact/b2_repair_r${{ matrix.replacements }}
+          python crossdomain/b2_z100_near_repair.py \
+            --max-replacements ${{ matrix.replacements }} \
+            --seconds 300 \
+            --out-dir artifact/b2_repair_r${{ matrix.replacements }}
+      - name: Hash outputs
+        run: |
+          cp crossdomain/b2_z100_near_repair.py artifact/b2_repair_r${{ matrix.replacements }}/
+          find artifact/b2_repair_r${{ matrix.replacements }} -type f -print0 | sort -z | xargs -0 sha256sum > artifact/b2_repair_r${{ matrix.replacements }}/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: b2-repair-r${{ matrix.replacements }}
+          path: artifact/b2_repair_r${{ matrix.replacements }}
+          retention-days: 30
