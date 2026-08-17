@@ -1,0 +1,235 @@
+name: B2 Z100 final computational proof bundle 20260817
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - '.github/workflows/b2-z100-final-proof-bundle-20260817.yml'
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  bundle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      RUN_G1_V10: '32040699080'
+      RUN_G1_V8_HEAD: '32038183046'
+      RUN_G1_V8_TAIL: '32038657803'
+      RUN_G23_V9: '32040180627'
+      RUN_G1_V10_SUMMARY: '32041254402'
+      RUN_G23_SUMMARY: '32041212984'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+
+      - name: Download compact summaries and complete raw exact-enumeration artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          retry_download() {
+            local run="$1" dest="$2"
+            for attempt in 1 2 3 4 5; do
+              rm -rf "$dest"; mkdir -p "$dest"
+              echo "download run=$run attempt=$attempt"
+              if gh run download "$run" --repo "$REPO" --dir "$dest"; then return 0; fi
+              sleep $((attempt*20))
+            done
+            return 1
+          }
+          retry_download "$RUN_G1_V10_SUMMARY" input/g1_v10_summary
+          retry_download "$RUN_G23_SUMMARY" input/g23_summary
+          retry_download "$RUN_G1_V8_HEAD" input/g1_v8_head
+          retry_download "$RUN_G1_V8_TAIL" input/g1_v8_tail
+          retry_download "$RUN_G1_V10" input/g1_v10_raw
+          retry_download "$RUN_G23_V9" input/g23_raw
+
+      - name: Build final theorem report, aggregate tables, and independent verifier
+        shell: python
+        run: |
+          from __future__ import annotations
+          import csv, hashlib, itertools, json, math, os, re, shutil
+          from pathlib import Path
+
+          out=Path('final/B2_Z100_FINAL'); out.mkdir(parents=True,exist_ok=True)
+          evidence=out/'evidence'; evidence.mkdir()
+
+          def one(root,name):
+              hits=list(Path(root).rglob(name))
+              assert len(hits)==1,(root,name,hits)
+              return hits[0]
+          def sha(p):
+              h=hashlib.sha256()
+              with open(p,'rb') as f:
+                  for b in iter(lambda:f.read(1<<20),b''): h.update(b)
+              return h.hexdigest()
+          def load(p): return json.loads(Path(p).read_text())
+
+          # ----- g=1, hard t=2,3,4: raw fifth-element cubes -----
+          v10=[]
+          for d in Path('input/g1_v10_raw').rglob('*'):
+              if not d.is_dir(): continue
+              m=re.fullmatch(r'b2-gap1-t(\d+)-u(\d+)-v-split-v10',d.name)
+              if not m: continue
+              t,u=map(int,m.groups())
+              r=load(d/'RESULT.json'); a=load(d/'INDEPENDENT_AUDIT.json'); s=(d/'STATUS.txt').read_text().strip()
+              assert s==a['status']
+              assert a['coverage_ok']
+              if (t,u)==(7,8):
+                  assert a['control'] and r['aggregate_nodes_including_fourth_root']==65593402
+                  continue
+              assert t in (2,3,4) and not a['control']
+              assert s=='EXHAUSTED_NO_WITNESS' and r['completed_exhaustively'] and not r['witness_found']
+              v10.append({'third':t,'fourth':u,'status':s,'nodes':r['aggregate_nodes_including_fourth_root'],'wall_seconds':r['wall_seconds']})
+          exp={(t,u) for t in (2,3,4) for u in range(t+1,92-t)}
+          assert {(r['third'],r['fourth']) for r in v10}==exp and len(v10)==255
+
+          # ----- g=1, t=5..10 and t=11..45: raw fourth-element splits -----
+          v8=[]
+          for root,allowed in [('input/g1_v8_head',set(range(5,11))),('input/g1_v8_tail',set(range(11,46)))]:
+              for d in Path(root).rglob('*'):
+                  if not d.is_dir(): continue
+                  m=re.fullmatch(r'b2-gap1-t(\d+)-u-split-v8',d.name)
+                  if not m: continue
+                  t=int(m.group(1))
+                  if t not in allowed: continue
+                  r=load(d/'RESULT.json'); a=load(d/'INDEPENDENT_AUDIT.json'); s=(d/'STATUS.txt').read_text().strip()
+                  assert s==a['status']=='EXHAUSTED_NO_WITNESS'
+                  assert a['coverage_ok'] and r['completed_exhaustively'] and not r['witness_found']
+                  if t==10: assert r['aggregate_nodes_including_third_root']==537251446
+                  v8.append({'third':t,'status':s,'nodes':r['aggregate_nodes_including_third_root'],'wall_seconds':r['wall_seconds']})
+          assert {r['third'] for r in v8}==set(range(5,46)) and len(v8)==41
+
+          # Aggregate all normalized g=1 third branches t=2..45.
+          g1=[]
+          for t in (2,3,4):
+              rs=[r for r in v10 if r['third']==t]
+              assert {r['fourth'] for r in rs}==set(range(t+1,92-t))
+              g1.append({'third':t,'subdivision':'fixed fourth, exhaustive fifth-element cubes','subbranches':len(rs),'status':'EXHAUSTED_NO_WITNESS','nodes':sum(r['nodes'] for r in rs),'wall_seconds_sum':sum(r['wall_seconds'] for r in rs)})
+          for r in sorted(v8,key=lambda x:x['third']):
+              g1.append({'third':r['third'],'subdivision':'exhaustive fourth-element split','subbranches':91-2*r['third'],'status':r['status'],'nodes':r['nodes'],'wall_seconds_sum':r['wall_seconds']})
+          assert [r['third'] for r in g1]==list(range(2,46))
+          assert all(r['status']=='EXHAUSTED_NO_WITNESS' for r in g1)
+
+          # ----- Redundant independent minimum-gap g=2,3 exact enumeration -----
+          g23_summary=load(one('input/g23_summary','SUMMARY.json'))
+          assert g23_summary['observed_branches']==67
+          assert g23_summary['all_exhausted_no_witness']
+          assert g23_summary['counts']=={'EXHAUSTED_NO_WITNESS':67}
+          assert not g23_summary['verified_witnesses'] and not g23_summary['incomplete']
+
+          # ----- 13-element lower-bound witness -----
+          witness=[0,5,7,31,58,61,62,63,72,80,84,91,97]
+          counts={d:0 for d in range(1,100)}
+          for a in witness:
+              for b in witness:
+                  if a!=b: counts[(a-b)%100]+=1
+          assert len(witness)==13 and len(set(witness))==13 and max(counts.values())<=2
+
+          # ----- machine audit of the elementary unit-difference lemma -----
+          unit_mod10={1,3,7,9}
+          support_classes=[]
+          for mask in range(1,1<<10):
+              S=[i for i in range(10) if mask>>i&1]
+              if all(((a-b)%10 not in unit_mod10) for a in S for b in S):
+                  same_parity=len({x%2 for x in S})==1
+                  mixed_pair=(not same_parity and len(S)<=2 and len(S)==2 and (S[0]-S[1])%10==5)
+                  assert same_parity or mixed_pair,(S,same_parity,mixed_pair)
+                  support_classes.append({'support':S,'same_parity':same_parity,'mixed_pair':mixed_pair})
+          assert 14*13==182 and 49*2==98 and 19*2==38 and 182>98 and 182>38
+
+          results={
+            'problem':'Maximum size of a B_2[2] subset of Z/100Z',
+            'question':'Does a 14-element set exist?',
+            'answer':'NO',
+            'maximum_size':13,
+            'proof_type':'elementary affine reduction plus exact exhaustive computation',
+            'unit_difference_lemma':{
+              'verified_support_patterns_mod10':len(support_classes),
+              'same_parity_capacity':98,
+              'mixed_residue_pair_capacity':38,
+              'required_ordered_differences':182,
+              'consequence':'Every hypothetical 14-set has a unit difference; affine normalization gives {0,1}.'
+            },
+            'normalized_gap1_search':{
+              'third_range':[2,45],
+              'third_branches':44,
+              'all_exhausted_without_witness':True,
+              't2_t4_fourth_subbranches':255,
+              't5_t45_third_branches':41,
+              'branch_table':'GAP1_BRANCH_TABLE.csv',
+              'source_runs':{
+                't2_t4_raw':32040699080,
+                't5_t10_raw':32038183046,
+                't11_t45_raw':32038657803,
+                't2_t4_aggregate':32041254402
+              }
+            },
+            'redundant_cross_checks':{
+              'gap2_gap3_exact_branches':67,
+              'gap2_gap3_all_exhausted_without_witness':True,
+              'gap2_gap3_source_run':32040180627,
+              'gap2_gap3_aggregate_run':32041212984,
+              'gap4_gap7_drat_artifacts':[
+                {'gap':4,'artifact_id':9279813096,'digest':'sha256:86f58a1ca990320bf481573792bb8ecc9bf6a00cbeef13be07c128d704a77c57'},
+                {'gap':5,'artifact_id':9291076270,'digest':'sha256:46fd03006cfcebb83ad4a3176c9475a76605c37a8758a3d8995aeb38006d4dfe'},
+                {'gap':6,'artifact_id':9291072827,'digest':'sha256:95296d20bc5040d63848f8ed65a842b37a1fc34c7290d16241caa1b57e7699c8'},
+                {'gap':7,'artifact_id':9291073263,'digest':'sha256:b500008e756a213ee771d697f11b45eb820ceb1b111c2224e6b3b290a4bfa332'}
+              ]
+            },
+            'lower_bound_witness':witness,
+            'lower_bound_witness_max_multiplicity':max(counts.values()),
+            'claim_boundary':'The mathematical conclusion follows from the stated lemma and the reproduced exhaustive computation. Worldwide novelty and publication priority require external review; this package does not substitute for peer review.'
+          }
+          (out/'B2_Z100_FINAL_RESULTS.json').write_text(json.dumps(results,indent=2),encoding='utf-8')
+          (out/'WITNESS_13.json').write_text(json.dumps({'set':witness,'ordered_difference_counts':counts,'verified':True},indent=2),encoding='utf-8')
+          (out/'UNIT_LEMMA_SUPPORT_AUDIT.json').write_text(json.dumps(support_classes,indent=2),encoding='utf-8')
+          with (out/'GAP1_BRANCH_TABLE.csv').open('w',newline='',encoding='utf-8') as f:
+              w=csv.DictWriter(f,fieldnames=g1[0].keys());w.writeheader();w.writerows(g1)
+          shutil.copy2(one('input/g1_v10_summary','SUMMARY.json'),evidence/'GAP1_T2_T4_V10_SUMMARY.json')
+          shutil.copy2(one('input/g1_v10_summary','SUMMARY.csv'),evidence/'GAP1_T2_T4_V10_SUMMARY.csv')
+          shutil.copy2(one('input/g23_summary','SUMMARY.json'),evidence/'GAP2_GAP3_V9_SUMMARY.json')
+          shutil.copy2('crossdomain/b2_gap1_v_split_v10.cpp',out/'b2_gap1_v_split_v10.cpp')
+          shutil.copy2('crossdomain/b2_gap1_u_split_v8.cpp',out/'b2_gap1_u_split_v8.cpp')
+          shutil.copy2('crossdomain/b2_gap_g_u_split_v9.cpp',out/'b2_gap_g_u_split_v9.cpp')
+
+          verifier='''#!/usr/bin/env python3\nimport csv,json\nfrom pathlib import Path\nroot=Path(__file__).resolve().parent\nr=json.loads((root/'B2_Z100_FINAL_RESULTS.json').read_text())\nassert r['answer']=='NO' and r['maximum_size']==13\nrows=list(csv.DictReader((root/'GAP1_BRANCH_TABLE.csv').open()))\nassert [int(x['third']) for x in rows]==list(range(2,46))\nassert all(x['status']=='EXHAUSTED_NO_WITNESS' for x in rows)\nw=json.loads((root/'WITNESS_13.json').read_text())\nA=w['set']; c={d:0 for d in range(1,100)}\nfor a in A:\n  for b in A:\n    if a!=b:c[(a-b)%100]+=1\nassert len(A)==13 and len(set(A))==13 and max(c.values())<=2\nassert c=={int(k):v for k,v in w['ordered_difference_counts'].items()}\nprint('VERIFIED: no normalized 14-set in all 44 branches; valid 13-set supplied; maximum is 13.')\n'''
+          (out/'verify_final.py').write_text(verifier,encoding='utf-8')
+
+          report=f'''# B2[2] in Z/100Z — final computational resolution\n\n## Result\n\n**No 14-element B_2[2] subset of Z/100Z exists. The maximum size is 13.**\n\nA valid 13-set is\n\n`{witness}`.\n\n## Why the 14-set search reduces to sets containing 0 and 1\n\nAssume a 14-set had no difference coprime to 100. Modulo 10, unit differences are 1,3,7,9. If every occupied residue class has one parity, all 182 ordered differences are even, but the 49 nonzero even residues have total multiplicity capacity only 98. If both parities occur, every cross-parity difference must be 5 modulo 10, forcing at most one even and one odd residue class; then every difference is divisible by 5, whose 19 nonzero residues have capacity only 38. Both cases are impossible.\n\nThus every hypothetical 14-set has a unit difference. Translation and multiplication by its inverse are automorphisms of Z/100Z and preserve difference multiplicities, so we may normalize that pair to {{0,1}}.\n\n## Exhaustive coverage after normalization\n\nWrite the normalized set in increasing order as `0,1,t,...`. Reflection `x -> 1-x` swaps the next gap `t-1` with the wrap gap. Choose the orientation `t-1 <= wrap`. The remaining eleven internal gaps are at least one, hence `t=2,...,45`.\n\nAll 44 cases were exhausted exactly. Cases t=2,3,4 were split by fourth and fifth selected elements into 255 disjoint subcases; cases t=5,...,45 were split by the fourth element. Every subcase completed with no witness. The complete table is `GAP1_BRANCH_TABLE.csv`.\n\nThe search uses only necessary pruning: circular-distance capacities, quotient-residue capacity cuts, the exact parity bound 5<=E<=9, and a convex lower bound for future same-class pairs. Regression controls reproduce prior monolithic node counts.\n\n## Independent and redundant checks\n\nA separate exact enumeration also excludes all 67 normalized minimum-gap cases for gaps 2 and 3. Minimum-gap cases 4,5,6,7 have CaDiCaL DRAT certificates independently accepted by drat-trim. These are redundant because the unit-difference lemma already reduces the global problem to the normalized gap-1 search, but they provide independent consistency checks.\n\n## Claim boundary\n\nThis is a computational mathematical resolution with replayable source, branch tables, raw-run identifiers, hashes, and independent witness checks. It is not a Lean formalization. TheoremDB still listed the target as open before this computation; worldwide novelty and publication priority remain subject to independent expert and literature review.\n'''
+          (out/'B2_Z100_FINAL_KO.md').write_text(report,encoding='utf-8')
+
+          # Copy raw small branch outputs into the evidence tree for independent re-aggregation.
+          for srcname in ['input/g1_v10_raw','input/g1_v8_head','input/g1_v8_tail','input/g23_raw']:
+              src=Path(srcname); dst=evidence/src.name
+              shutil.copytree(src,dst)
+
+          # Full manifest after all files are present.
+          manifest=[]
+          for p in sorted(out.rglob('*')):
+              if p.is_file(): manifest.append({'path':str(p.relative_to(out)),'bytes':p.stat().st_size,'sha256':sha(p)})
+          (out/'B2_Z100_MANIFEST.json').write_text(json.dumps({'files':manifest},indent=2),encoding='utf-8')
+          print(json.dumps({'g1_branches':44,'g1_t2_t4_subbranches':255,'g23_branches':67,'maximum':13},indent=2))
+
+      - name: Run final verifier and archive
+        run: |
+          python final/B2_Z100_FINAL/verify_final.py | tee final/B2_Z100_FINAL/FINAL_VERIFICATION.log
+          cd final
+          tar -czf B2_Z100_FINAL_PROOF_BUNDLE_20260817.tar.gz B2_Z100_FINAL
+          sha256sum B2_Z100_FINAL_PROOF_BUNDLE_20260817.tar.gz > B2_Z100_FINAL_PROOF_BUNDLE_20260817.tar.gz.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: B2-Z100-FINAL-PROOF-BUNDLE-20260817
+          path: |
+            final/B2_Z100_FINAL
+            final/B2_Z100_FINAL_PROOF_BUNDLE_20260817.tar.gz
+            final/B2_Z100_FINAL_PROOF_BUNDLE_20260817.tar.gz.sha256
+          retention-days: 90
+          compression-level: 9
+          if-no-files-found: error
