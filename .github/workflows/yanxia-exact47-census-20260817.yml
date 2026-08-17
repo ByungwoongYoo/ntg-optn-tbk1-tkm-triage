@@ -1,0 +1,33 @@
+name: Yanxia exact 47 full Uibang source census 20260817
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - '.github/workflows/yanxia-exact47-census-20260817.yml'
+      - 'crossdomain/yanxia_exact47_inventory_20260817.json'
+      - 'crossdomain/yanxia_cross_source_census.py'
+jobs:
+  census:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests
+      - name: Run exact-name source-heading census for all recovered 47 candidates
+        run: |
+          mkdir -p artifact/yanxia_exact47_census
+          python crossdomain/yanxia_cross_source_census.py \
+            --inventory crossdomain/yanxia_exact47_inventory_20260817.json \
+            --out-dir artifact/yanxia_exact47_census \
+            | tee artifact/yanxia_exact47_census/RUN.log
+          cp crossdomain/yanxia_cross_source_census.py crossdomain/yanxia_exact47_inventory_20260817.json artifact/yanxia_exact47_census/
+          find artifact/yanxia_exact47_census -type f -print0 | sort -z | xargs -0 sha256sum > artifact/yanxia_exact47_census/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yanxia-exact47-census-20260817
+          path: artifact/yanxia_exact47_census
+          retention-days: 30
+          if-no-files-found: error
