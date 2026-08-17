@@ -1,0 +1,29 @@
+name: DECRYPT documented public API target audit v2
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/decrypt_api_public_v2.py'
+      - '.github/workflows/decrypt-api-public-v2.yml'
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests
+      - name: Query only documented unauthenticated DECRYPT GET API
+        run: |
+          mkdir -p artifact/decrypt_api_v2
+          OUT_DIR=artifact/decrypt_api_v2 python crossdomain/decrypt_api_public_v2.py
+          cp crossdomain/decrypt_api_public_v2.py artifact/decrypt_api_v2/
+          find artifact/decrypt_api_v2 -type f -print0 | sort -z | xargs -0 sha256sum > artifact/decrypt_api_v2/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: decrypt-public-api-v2
+          path: artifact/decrypt_api_v2
+          retention-days: 30
+          if-no-files-found: error
