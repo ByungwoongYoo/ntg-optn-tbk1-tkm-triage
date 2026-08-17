@@ -1,0 +1,81 @@
+name: B2 Z100 reflected third-element cube DRAT 20260817
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - '.github/workflows/b2-hard-gap-reflected-cubes-20260817.yml'
+      - 'crossdomain/b2_gap_branch_cnf_20260817.py'
+      - 'crossdomain/b2_gap_sat_v4.py'
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.make.outputs.matrix }}
+    steps:
+      - id: make
+        shell: python
+        run: |
+          import json,os
+          inc=[]
+          for g in (1,2,3):
+              for t in range(2*g,50-5*g+1):
+                  inc.append({'gap':g,'third':t})
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f:
+              f.write('matrix='+json.dumps({'include':inc},separators=(',',':'))+'\n')
+          print('branches',len(inc))
+
+  proof:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      max-parallel: 40
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 58
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install python-sat
+      - name: Generate reflected exhaustive branch CNF
+        run: |
+          d=artifact/g${{ matrix.gap }}_t${{ matrix.third }}
+          mkdir -p "$d"
+          python crossdomain/b2_gap_branch_cnf_20260817.py \
+            --gap ${{ matrix.gap }} --third ${{ matrix.third }} --out-dir "$d" \
+            | tee "$d/GENERATOR.log"
+      - name: Build CaDiCaL and DRAT-trim
+        run: |
+          git clone --depth 1 https://github.com/arminbiere/cadical.git /tmp/cadical
+          cd /tmp/cadical && ./configure && make -j2
+          git clone --depth 1 https://github.com/marijnheule/drat-trim.git /tmp/drat-trim
+          cd /tmp/drat-trim && make -j2
+      - name: Solve branch and independently verify DRAT when UNSAT
+        run: |
+          g=${{ matrix.gap }}; t=${{ matrix.third }}; d=artifact/g${g}_t${t}; cnf="$d/g${g}_t${t}.cnf"; proof="$d/g${g}_t${t}.drat"
+          set +e
+          timeout 3150 /tmp/cadical/build/cadical "$cnf" "$proof" > "$d/cadical.log" 2>&1
+          rc=$?
+          set -e
+          echo "$rc" > "$d/cadical_exit_code.txt"
+          if [ "$rc" -eq 20 ]; then
+            /tmp/drat-trim/drat-trim "$cnf" "$proof" > "$d/drat_check.log" 2>&1
+            grep -q 'VERIFIED' "$d/drat_check.log"
+            echo VERIFIED_UNSAT > "$d/STATUS.txt"
+          elif [ "$rc" -eq 10 ]; then
+            echo SAT > "$d/STATUS.txt"
+            grep '^v ' "$d/cadical.log" > "$d/MODEL.txt" || true
+          else
+            echo UNKNOWN_OR_TIMEOUT > "$d/STATUS.txt"
+          fi
+          cp crossdomain/b2_gap_branch_cnf_20260817.py crossdomain/b2_gap_sat_v4.py "$d/"
+          find "$d" -type f -print0 | sort -z | xargs -0 sha256sum > "$d/SHA256SUMS.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: b2-cube-g${{ matrix.gap }}-t${{ matrix.third }}-20260817
+          path: artifact/g${{ matrix.gap }}_t${{ matrix.third }}
+          retention-days: 30
+          compression-level: 9
+          if-no-files-found: error
