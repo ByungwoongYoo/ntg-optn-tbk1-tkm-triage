@@ -1,0 +1,29 @@
+name: B2[2] Z100 exact witness probe
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/b2_z100_probe.py'
+      - '.github/workflows/b2-z100-probe.yml'
+jobs:
+  search:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install ortools
+      - name: Run heuristic then CP-SAT search
+        env: {OUT_DIR: 'artifact/b2_z100'}
+        run: |
+          mkdir -p artifact/b2_z100
+          python crossdomain/b2_z100_probe.py
+      - run: find artifact/b2_z100 -type f -print0 | sort -z | xargs -0 sha256sum > artifact/b2_z100/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: b2-z100-probe
+          path: artifact/b2_z100
+          retention-days: 30
+          if-no-files-found: error
