@@ -1,0 +1,43 @@
+name: eBL current CDLI API probe v7
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["crossdomain-open-problem-tournament-20260817-doit"]
+    paths:
+      - "crossdomain/ebl_cdli_current_api_v7.py"
+      - ".github/workflows/ebl-cdli-current-api-v7.yml"
+
+jobs:
+  api:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: Download v4 candidate metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p data artifact/ebl_cdli_api_v7
+          curl -L --fail -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            -o data/v4.zip https://api.github.com/repos/${{ github.repository }}/actions/artifacts/9276552840/zip
+          unzip -q data/v4.zip -d data/v4
+          test -s data/v4/candidate_asset_metadata.json
+      - name: Probe current API routes
+        run: |
+          python crossdomain/ebl_cdli_current_api_v7.py \
+            --asset-metadata data/v4/candidate_asset_metadata.json \
+            --out-dir artifact/ebl_cdli_api_v7 --top 3
+      - name: Hash outputs
+        run: |
+          cp crossdomain/ebl_cdli_current_api_v7.py artifact/ebl_cdli_api_v7/
+          find artifact/ebl_cdli_api_v7 -type f -print0 | sort -z | xargs -0 sha256sum > artifact/ebl_cdli_api_v7/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ebl-cdli-current-api-v7
+          path: artifact/ebl_cdli_api_v7
+          retention-days: 30
