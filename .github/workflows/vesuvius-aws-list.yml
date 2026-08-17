@@ -1,0 +1,28 @@
+name: Vesuvius AWS prefix listing diagnostic
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - '.github/workflows/vesuvius-aws-list.yml'
+jobs:
+  list:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: List documented public prefixes via AWS CLI
+        run: |
+          mkdir -p artifact/vesuvius_aws_list
+          aws --version | tee artifact/vesuvius_aws_list/aws_version.txt
+          aws s3 ls --no-sign-request s3://vesuvius-challenge-open-data/ | head -100 | tee artifact/vesuvius_aws_list/root.txt
+          aws s3 ls --no-sign-request s3://vesuvius-challenge-open-data/PHerc0332/ | head -100 | tee artifact/vesuvius_aws_list/pherc0332.txt
+          aws s3 ls --no-sign-request s3://vesuvius-challenge-open-data/PHerc0332/volumes/ | head -100 | tee artifact/vesuvius_aws_list/volumes.txt
+          aws s3 ls --no-sign-request --recursive s3://vesuvius-challenge-open-data/PHerc0332/volumes/20231201141544-3.240um-70keV-masked.zarr/ | head -100 | tee artifact/vesuvius_aws_list/example_prefix.txt
+          find artifact/vesuvius_aws_list -type f -print0 | sort -z | xargs -0 sha256sum > artifact/vesuvius_aws_list/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vesuvius-aws-list
+          path: artifact/vesuvius_aws_list
+          retention-days: 30
+          if-no-files-found: error
