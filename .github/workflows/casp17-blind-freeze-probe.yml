@@ -1,0 +1,31 @@
+name: CASP17 blind public-model freeze probe
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/casp17_blind_freeze_probe.py'
+      - '.github/workflows/casp17-blind-freeze-probe.yml'
+jobs:
+  freeze:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests beautifulsoup4
+      - name: Fetch official active target pages and freeze public ESMFold candidates
+        env: {OUT_DIR: 'artifact/casp17_blind'}
+        run: |
+          mkdir -p artifact/casp17_blind
+          python crossdomain/casp17_blind_freeze_probe.py
+      - run: |
+          cp crossdomain/casp17_blind_freeze_probe.py artifact/casp17_blind/
+          find artifact/casp17_blind -type f -print0 | sort -z | xargs -0 sha256sum > artifact/casp17_blind/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: casp17-blind-freeze-probe
+          path: artifact/casp17_blind
+          retention-days: 30
+          if-no-files-found: error
