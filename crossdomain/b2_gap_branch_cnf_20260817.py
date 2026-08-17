@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse,json
+import argparse,json,sys
 from pathlib import Path
-from crossdomain.b2_gap_sat_v4 import build
+sys.path.insert(0,str(Path(__file__).resolve().parent))
+from b2_gap_sat_v4 import build
 
 def main():
     ap=argparse.ArgumentParser()
