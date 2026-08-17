@@ -1,0 +1,35 @@
+name: Ulrich u4 symbolic proof checks 20260818
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'u4_resolution/**'
+      - '.github/workflows/u4-symbolic-proof-check-20260818.yml'
+
+jobs:
+  symbolic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run principal-type and application-tree checker
+        run: |
+          mkdir -p artifact/u4_symbolic
+          python u4_resolution/u4_symbolic_checker.py \
+            --family 120 \
+            --enumerate 12 \
+            --output artifact/u4_symbolic/U4_SYMBOLIC_CHECK.json \
+            | tee artifact/u4_symbolic/U4_SYMBOLIC_CHECK.log
+          cp u4_resolution/U4_NONAXIOM_PROOF.md artifact/u4_symbolic/
+          cp u4_resolution/u4_symbolic_checker.py artifact/u4_symbolic/
+          find artifact/u4_symbolic -type f -print0 | sort -z | xargs -0 sha256sum > artifact/u4_symbolic/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: u4-symbolic-proof-check-20260818
+          path: artifact/u4_symbolic
+          retention-days: 90
+          if-no-files-found: error
