@@ -1,0 +1,41 @@
+name: B2[2] Z100 independent PySAT cases
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["crossdomain-open-problem-tournament-20260817-doit"]
+    paths:
+      - "crossdomain/b2_z100_pysat_independent.py"
+      - ".github/workflows/b2-z100-pysat-independent.yml"
+
+jobs:
+  sat:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 7
+      matrix:
+        min_gap: [1,2,3,4,5,6,7]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install python-sat
+      - name: Solve independent CNF case
+        run: |
+          mkdir -p artifact/b2_pysat_m${{ matrix.min_gap }}
+          timeout 1000s python crossdomain/b2_z100_pysat_independent.py \
+            --min-gap ${{ matrix.min_gap }} \
+            --out-dir artifact/b2_pysat_m${{ matrix.min_gap }} || true
+          test -s artifact/b2_pysat_m${{ matrix.min_gap }}/RESULT.json || echo '{"status":"TIMEOUT_OR_FAILURE","claim_boundary":"No mathematical conclusion."}' > artifact/b2_pysat_m${{ matrix.min_gap }}/RESULT.json
+      - name: Hash outputs
+        run: |
+          cp crossdomain/b2_z100_pysat_independent.py artifact/b2_pysat_m${{ matrix.min_gap }}/
+          find artifact/b2_pysat_m${{ matrix.min_gap }} -type f -print0 | sort -z | xargs -0 sha256sum > artifact/b2_pysat_m${{ matrix.min_gap }}/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: b2-pysat-m${{ matrix.min_gap }}
+          path: artifact/b2_pysat_m${{ matrix.min_gap }}
+          retention-days: 30
