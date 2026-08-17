@@ -1,0 +1,29 @@
+name: Shidian Uibangyuchwi public chapter probe
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/shidian_uibang_probe.py'
+      - '.github/workflows/shidian-uibang-probe.yml'
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests beautifulsoup4
+      - name: Probe three known public chapter pages
+        env: {OUT_DIR: 'artifact/shidian_uibang_probe'}
+        run: |
+          mkdir -p artifact/shidian_uibang_probe
+          python crossdomain/shidian_uibang_probe.py
+      - run: find artifact/shidian_uibang_probe -type f -print0 | sort -z | xargs -0 sha256sum > artifact/shidian_uibang_probe/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shidian-uibang-probe
+          path: artifact/shidian_uibang_probe
+          retention-days: 30
+          if-no-files-found: error
