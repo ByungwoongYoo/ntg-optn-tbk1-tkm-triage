@@ -1,0 +1,27 @@
+name: Costas array order 32 witness probe
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/costas32_probe.cpp'
+      - '.github/workflows/costas32-probe.yml'
+jobs:
+  search:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 28
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and run exact-verifier local search
+        run: |
+          mkdir -p artifact/costas32
+          g++ -O3 -std=c++20 -pthread crossdomain/costas32_probe.cpp -o artifact/costas32/costas32_probe
+          artifact/costas32/costas32_probe 1200 8 2>&1 | tee artifact/costas32/RESULT.txt
+          cp crossdomain/costas32_probe.cpp artifact/costas32/
+          sha256sum artifact/costas32/* > artifact/costas32/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: costas32-probe
+          path: artifact/costas32
+          retention-days: 30
+          if-no-files-found: error
