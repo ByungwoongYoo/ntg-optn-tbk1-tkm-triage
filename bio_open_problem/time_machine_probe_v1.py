@@ -16,7 +16,7 @@ def main():
         for n in members[:20]:
             try:
                 with z.open(n) as f:
-                    df=pd.read_csv(f,sep=None,engine='python',nrows=5,low_memory=False)
+                    df=pd.read_csv(f,nrows=5,low_memory=False)
                 previews.append({'member':n,'columns':list(df.columns),'rows':df.astype(str).head(3).to_dict(orient='records')})
             except Exception as e: previews.append({'member':n,'error':repr(e)})
         result['raw_previews']=previews
