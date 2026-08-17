@@ -1,0 +1,144 @@
+name: ClinVar historical VUS time-machine validation v3
+on:
+  workflow_dispatch:
+  push:
+    branches: [clinvar-time-machine-20260817]
+    paths:
+      - 'bio_open_problem/clinvar_time_machine_v2.py'
+      - 'bio_open_problem/clinvar_time_machine_v2_runner.py'
+      - 'bio_open_problem/clinvar_time_machine_v2_runner_safe.py'
+      - 'bio_open_problem/TIME_MACHINE_PROTOCOL_LOCK_20260817.json'
+      - '.github/workflows/clinvar-time-machine-v3.yml'
+jobs:
+  time-machine:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install analysis stack
+        run: pip install numpy pandas scipy scikit-learn matplotlib tabulate
+      - name: Download official ProteinGym inputs
+        run: |
+          set -euxo pipefail
+          mkdir -p input/proteingym input/family artifact/time_machine_v3
+          curl -L --fail --retry 8 --retry-delay 5 --retry-all-errors \
+            -o input/proteingym/raw_clinical.zip \
+            https://marks.hms.harvard.edu/proteingym/ProteinGym_v1.3/substitutions_raw_clinical.zip
+          curl -L --fail --retry 8 --retry-delay 5 --retry-all-errors \
+            -o input/proteingym/score_clinical.zip \
+            https://marks.hms.harvard.edu/proteingym/ProteinGym_v1.3/zero_shot_clinical_substitutions_scores.zip
+      - name: Recover the frozen family-held-out predictions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          curl -L --fail --retry 5 \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            -o input/family/family_artifact.zip \
+            https://api.github.com/repos/ByungwoongYoo/ntg-optn-tbk1-tkm-triage/actions/artifacts/9272833344/zip
+          unzip -q input/family/family_artifact.zip -d input/family/extracted
+          FROZEN=$(find input/family/extracted -path '*global30_cov80/family_oof_variant_predictions.csv.gz' -type f | head -1)
+          test -n "$FROZEN"
+          cp "$FROZEN" input/family/frozen_global30_predictions.csv.gz
+          sha256sum input/family/frozen_global30_predictions.csv.gz > artifact/time_machine_v3/frozen_prediction_sha256.txt
+      - name: Download fixed historical and outcome ClinVar releases
+        run: |
+          set -euxo pipefail
+          mkdir -p input/clinvar
+          fetch() {
+            local url="$1"; local out="$2"
+            curl -L --fail --retry 10 --retry-delay 10 --retry-all-errors \
+              --connect-timeout 30 --speed-time 120 --speed-limit 1024 \
+              -o "$out" "$url"
+            gzip -t "$out"
+          }
+          fetch https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited/archive/2021/variant_summary_2021-08.txt.gz input/clinvar/variant_summary_2021-08.txt.gz
+          fetch https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited/archive/2021/submission_summary_2021-08.txt.gz input/clinvar/submission_summary_2021-08.txt.gz
+          fetch https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited/archive/2022/variant_summary_2022-08.txt.gz input/clinvar/variant_summary_2022-08.txt.gz
+          fetch https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited/archive/2022/submission_summary_2022-08.txt.gz input/clinvar/submission_summary_2022-08.txt.gz
+          fetch https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited/archive/2023/variant_summary_2023-08.txt.gz input/clinvar/variant_summary_2023-08.txt.gz
+          fetch https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited/archive/2023/submission_summary_2023-08.txt.gz input/clinvar/submission_summary_2023-08.txt.gz
+          fetch https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited/archive/variant_summary_2026-08.txt.gz input/clinvar/variant_summary_2026-08.txt.gz
+          fetch https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited/archive/submission_summary_2026-08.txt.gz input/clinvar/submission_summary_2026-08.txt.gz
+          sha256sum input/proteingym/*.zip input/clinvar/*.gz > artifact/time_machine_v3/resource_sha256.txt
+          ls -lh input/clinvar input/proteingym
+          df -h
+      - name: Run the predeclared empty-safe time-machine analysis
+        env:
+          OPENBLAS_NUM_THREADS: '4'
+          OMP_NUM_THREADS: '4'
+          MPLBACKEND: Agg
+        run: |
+          PYTHONPATH=bio_open_problem python bio_open_problem/clinvar_time_machine_v2_runner_safe.py \
+            --raw-clinical-zip input/proteingym/raw_clinical.zip \
+            --score-zip input/proteingym/score_clinical.zip \
+            --frozen-predictions input/family/frozen_global30_predictions.csv.gz \
+            --protocol-lock bio_open_problem/TIME_MACHINE_PROTOCOL_LOCK_20260817.json \
+            --variant 2021-08=input/clinvar/variant_summary_2021-08.txt.gz \
+            --submission 2021-08=input/clinvar/submission_summary_2021-08.txt.gz \
+            --variant 2022-08=input/clinvar/variant_summary_2022-08.txt.gz \
+            --submission 2022-08=input/clinvar/submission_summary_2022-08.txt.gz \
+            --variant 2023-08=input/clinvar/variant_summary_2023-08.txt.gz \
+            --submission 2023-08=input/clinvar/submission_summary_2023-08.txt.gz \
+            --variant 2026-08=input/clinvar/variant_summary_2026-08.txt.gz \
+            --submission 2026-08=input/clinvar/submission_summary_2026-08.txt.gz \
+            --out-dir artifact/time_machine_v3/results
+      - name: Independently recompute headline values from the saved cohort
+        run: |
+          python - <<'PY'
+          import hashlib, json, pathlib
+          import pandas as pd
+          from sklearn.metrics import brier_score_loss, log_loss, roc_auc_score
+          root=pathlib.Path('artifact/time_machine_v3/results')
+          cohort=pd.read_csv(root/'historical_vus_cohorts.csv.gz')
+          rows=[]
+          for cutoff in ['2021-08','2022-08','2023-08']:
+            q=cohort[(cohort.cutoff==cutoff)&(cohort.truth_tier=='primary_high_confidence')].drop_duplicates(['VariationID','cutoff'])
+            required={'temporal_ensemble_prob','temporal_poet_prob','current_label'}
+            q=q.dropna(subset=list(required.intersection(q.columns))) if required.issubset(q.columns) else q.iloc[0:0]
+            if len(q) and q.current_label.nunique()==2:
+              y=q.current_label.astype(int).to_numpy(); e=q.temporal_ensemble_prob.to_numpy(); b=q.temporal_poet_prob.to_numpy()
+              rows.append({'cutoff':cutoff,'n':len(q),'auc_ensemble':roc_auc_score(y,e),'auc_poet':roc_auc_score(y,b),'brier_improvement':brier_score_loss(y,b)-brier_score_loss(y,e),'logloss_improvement':log_loss(y,b,labels=[0,1])-log_loss(y,e,labels=[0,1])})
+          result={'independent_rows':rows,'cohort_sha256':hashlib.sha256((root/'historical_vus_cohorts.csv.gz').read_bytes()).hexdigest()}
+          (root/'INDEPENDENT_RECOMPUTATION.json').write_text(json.dumps(result,indent=2))
+          print(json.dumps(result,indent=2))
+          PY
+      - name: Package reproducibility outputs
+        run: |
+          set -euxo pipefail
+          cp bio_open_problem/clinvar_time_machine_v2.py artifact/time_machine_v3/
+          cp bio_open_problem/clinvar_time_machine_v2_runner.py artifact/time_machine_v3/
+          cp bio_open_problem/clinvar_time_machine_v2_runner_safe.py artifact/time_machine_v3/
+          cp bio_open_problem/TIME_MACHINE_PROTOCOL_LOCK_20260817.json artifact/time_machine_v3/
+          python - <<'PY'
+          import hashlib, json, pathlib
+          root=pathlib.Path('artifact/time_machine_v3')
+          manifest={}
+          for p in sorted(root.rglob('*')):
+            if p.is_file() and p.name!='MANIFEST.json':
+              h=hashlib.sha256()
+              with p.open('rb') as f:
+                for b in iter(lambda:f.read(1<<20),b''): h.update(b)
+              manifest[str(p.relative_to(root))]={'bytes':p.stat().st_size,'sha256':h.hexdigest()}
+          (root/'MANIFEST.json').write_text(json.dumps(manifest,indent=2))
+          PY
+          tar -czf artifact/clinvar_time_machine_v3_results.tar.gz -C artifact time_machine_v3
+          sha256sum artifact/clinvar_time_machine_v3_results.tar.gz > artifact/clinvar_time_machine_v3_results.tar.gz.sha256
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: clinvar-time-machine-v3
+          path: |
+            artifact/time_machine_v3
+            artifact/clinvar_time_machine_v3_results.tar.gz
+            artifact/clinvar_time_machine_v3_results.tar.gz.sha256
+          retention-days: 30
+          if-no-files-found: warn
