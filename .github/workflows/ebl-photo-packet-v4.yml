@@ -1,0 +1,38 @@
+name: eBL medical join photo falsification packet v4
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/ebl_photo_packet_v4.py'
+      - '.github/workflows/ebl-photo-packet-v4.yml'
+jobs:
+  packet:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install requests beautifulsoup4 numpy scipy scikit-learn pillow
+      - name: Recreate strict candidate list from open eBL corpus
+        run: |
+          mkdir -p data artifact/ebl_photo_v4/base artifact/ebl_photo_v4/photos
+          python - <<'PY'
+          import requests
+          m=requests.get('https://zenodo.org/api/records/10018951',timeout=60).json()
+          f=next(x for x in m['files'] if x['key']=='fragments.json')
+          r=requests.get(f['links']['self'],timeout=180);r.raise_for_status();open('data/fragments.json','wb').write(r.content)
+          PY
+          python crossdomain/ebl_physical_join_rank_v3.py --fragments-json data/fragments.json --out-dir artifact/ebl_photo_v4/base
+      - name: Download CDLI photos and build top-20 visual packet
+        run: python crossdomain/ebl_photo_packet_v4.py --candidates artifact/ebl_photo_v4/base/candidates_v3.json --out-dir artifact/ebl_photo_v4/photos
+      - run: |
+          cp crossdomain/ebl_physical_join_rank_v3.py crossdomain/ebl_photo_packet_v4.py artifact/ebl_photo_v4/
+          find artifact/ebl_photo_v4 -type f -print0 | sort -z | xargs -0 sha256sum > artifact/ebl_photo_v4/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ebl-medical-join-photo-packet-v4
+          path: artifact/ebl_photo_v4
+          retention-days: 30
+          if-no-files-found: error
