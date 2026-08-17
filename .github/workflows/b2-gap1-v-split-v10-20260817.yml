@@ -1,0 +1,90 @@
+name: B2 Z100 gap1 hard t2 t3 t4 fifth-element split v10
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/b2_gap1_v_split_v10.cpp'
+      - '.github/workflows/b2-gap1-v-split-v10-20260817.yml'
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+    steps:
+      - id: m
+        shell: python
+        run: |
+          import json,os
+          inc=[]
+          for t in (2,3,4):
+              for u in range(t+1,92-t): inc.append({'third':t,'fourth':u,'control':False})
+          inc.append({'third':7,'fourth':8,'control':True})
+          assert len(inc)==256,len(inc)
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f:f.write('matrix='+json.dumps({'include':inc},separators=(',',':'))+'\n')
+          print('jobs',len(inc))
+
+  exact:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      max-parallel: 40
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 58
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile fifth-element split solver
+        run: g++ -std=c++20 -O3 -march=native -pthread -DNDEBUG crossdomain/b2_gap1_v_split_v10.cpp -o b2v
+      - name: Exhaust all fifth-element branches
+        run: |
+          t=${{ matrix.third }}; u=${{ matrix.fourth }}; d=artifact/b2_gap1_t${t}_u${u}_v10; mkdir -p "$d"
+          set +e
+          ./b2v "$t" "$u" 3150 "$(nproc)" "$d/RESULT.json" "$d/BRANCHES.tsv" > "$d/solver.stdout.log" 2> "$d/solver.stderr.log"
+          rc=$?
+          set -e
+          echo "$rc" > "$d/solver_exit_code.txt"
+          test "$rc" -eq 0 -o "$rc" -eq 10 -o "$rc" -eq 124
+          cp crossdomain/b2_gap1_v_split_v10.cpp "$d/"
+          sha256sum b2v > "$d/BINARY_SHA256.txt"
+      - name: Independent coverage, witness, and control audit
+        env:
+          THIRD: ${{ matrix.third }}
+          FOURTH: ${{ matrix.fourth }}
+          CONTROL: ${{ matrix.control }}
+        run: |
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          t=int(os.environ['THIRD']);u=int(os.environ['FOURTH']);ctl=os.environ['CONTROL'].lower()=='true';d=Path(f'artifact/b2_gap1_t{t}_u{u}_v10');r=json.loads((d/'RESULT.json').read_text())
+          expected=list(range(u+1,93-t));observed=[x['fifth'] for x in r['branches']]
+          assert r['third']==t and r['fourth']==u
+          assert r['expected_fifth_branches']==len(expected)
+          assert r['observed_fifth_branches']==len(expected) and observed==expected
+          verified=False;detail={}
+          if r['witness_found']:
+              A=r['witness'];assert len(A)==14 and len(set(A))==14 and A[:4]==[0,1,t,u]
+              counts={x:0 for x in range(1,100)}
+              for a in A:
+                  for b in A:
+                      if a!=b:counts[(a-b)%100]+=1
+              verified=max(counts.values())<=2;assert verified and r['witness_verified']
+              detail={'witness':A,'max_ordered_difference_multiplicity':max(counts.values()),'difference_counts':counts}
+          if ctl:
+              assert t==7 and u==8 and r['completed_exhaustively'] and not r['witness_found']
+              assert r['aggregate_nodes_including_fourth_root']==65593402,r['aggregate_nodes_including_fourth_root']
+              detail['regression_control']='PASS: exact aggregate node count matches prior v8 t=7,u=8 branch'
+          status='VERIFIED_WITNESS' if verified else ('EXHAUSTED_NO_WITNESS' if r['completed_exhaustively'] else 'INCOMPLETE_TIMEOUT')
+          audit={'third':t,'fourth':u,'control':ctl,'status':status,'coverage_ok':True,'independent_witness_verifier':verified,'detail':detail}
+          (d/'INDEPENDENT_AUDIT.json').write_text(json.dumps(audit,indent=2),encoding='utf-8');(d/'STATUS.txt').write_text(status+'\n',encoding='utf-8')
+          print(json.dumps(audit,indent=2))
+          PY
+          t=${{ matrix.third }}; u=${{ matrix.fourth }}; d=artifact/b2_gap1_t${t}_u${u}_v10
+          find "$d" -type f -print0 | sort -z | xargs -0 sha256sum > "$d/SHA256SUMS.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: b2-gap1-t${{ matrix.third }}-u${{ matrix.fourth }}-v-split-v10
+          path: artifact/b2_gap1_t${{ matrix.third }}_u${{ matrix.fourth }}_v10
+          retention-days: 30
+          if-no-files-found: error
