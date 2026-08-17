@@ -8,8 +8,8 @@ import requests
 SEEDS=[('7589183229018505251','1lql41s1l5hc6'),('7589226716518678568','1lqv8opt0f95v')]
 BASE='https://www.shidianguji.com/zh/book/{book}/chapter/{chapter}'
 TARGETS=('煙霞聖效方','烟霞圣效方')
-CHAPTER_RE=re.compile(r'(?:/chapter/|chapterId[\\\"\\\':= ]+)([0-9a-z]{8,30})',re.I)
-PAR_RE=re.compile(r'"paragraphId":"([^"]+)","paragraphType":\\d+,"content":"((?:\\\\.|[^"])*)".*?"inChapterOrder":(\\d+)',re.S)
+CHAPTER_RE=re.compile(r'(?:/chapter/|chapterId[\\\"\':= ]+)([0-9a-z]{8,30})',re.I)
+PAR_RE=re.compile(r'"paragraphId":"([^"]+)","paragraphType":\d+,"content":"((?:\\.|[^"])*)".*?"inChapterOrder":(\d+)',re.S)
 FORMULA_RE=re.compile(r'([一-龥]{2,10}(?:丸|散|湯|汤|丹|膏|飲|饮|煎|方|餅|饼|錠|锭))')
 
 def pars(raw):
@@ -27,7 +27,7 @@ def source_titles(first):
     for p in first:
         if 14<=p['order']<=163:
             for x in re.split(r'[、，,。；;]',p['text']):
-                x=re.sub(r'[\\s：:]+','',x)
+                x=re.sub(r'[\s：:]+','',x)
                 if 1<len(x)<=18 and x not in titles:titles.append(x)
     return sorted(titles,key=lambda x:(-len(x),x))
 
@@ -68,16 +68,14 @@ def main():
     uniq={(b['url'],b['start_paragraph_id']):b for b in blocks};blocks=list(uniq.values())
     target_names=[]
     for b in blocks:
-        text='\\n'.join(x['text'] for x in b['paragraphs']);b['text']=text;b['paragraph_count']=len(b['paragraphs']);b['characters']=len(text)
+        text='\n'.join(x['text'] for x in b['paragraphs']);b['text']=text;b['paragraph_count']=len(b['paragraphs']);b['characters']=len(text)
         names=[]
         for p in b['paragraphs']:
             names += FORMULA_RE.findall(p['text'])
         b['formula_name_candidates']=sorted(set(names));target_names+=names;b.pop('paragraphs',None)
     target_names=sorted(set(target_names))
     outside=Counter()
-    target_para_ids={b['start_paragraph_id'] for b in blocks}
     for p in all_pars:
-        # Conservative: count name occurrence anywhere in scanned corpus; this is not a source attribution by itself.
         for name in target_names:
             if name and name in p['text']:outside[name]+=1
     name_rows=[{'name':n,'scanned_corpus_occurrences':outside[n]} for n in target_names]
