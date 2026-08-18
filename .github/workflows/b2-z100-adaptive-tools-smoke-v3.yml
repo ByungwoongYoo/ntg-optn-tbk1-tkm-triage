@@ -17,25 +17,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Compile and cross-check generators
+        with: {python-version: '3.12'}
+      - name: Compile and cross-check optimized generators
         shell: bash
         run: |
           set -euo pipefail
           python -m py_compile \
             crossdomain/b2_z100_global_proof_cnf.py \
             crossdomain/b2_z100_prefix_proof_cnf_v3.py \
+            crossdomain/b2_z100_prefix_proof_cnf_v5.py \
             crossdomain/b2_z100_split_proof_batch_v3.py \
+            crossdomain/b2_z100_recursive_proof_v4.py \
+            crossdomain/b2_z100_finalize_proof_chain_v5.py \
             crossdomain/b2_z100_verify_cadical_model.py
           mkdir -p artifact
-          python crossdomain/b2_z100_global_proof_cnf.py \
-            --third 2 --fourth 30 \
-            --output artifact/old.cnf --metadata artifact/old.json >/dev/null
           python crossdomain/b2_z100_prefix_proof_cnf_v3.py \
             --prefix-json '[0,1,2,30]' \
-            --output artifact/new.cnf --metadata artifact/new.json >/dev/null
-          cmp artifact/old.cnf artifact/new.cnf
+            --output artifact/wrapper.cnf --metadata artifact/wrapper.json >/dev/null
+          python crossdomain/b2_z100_prefix_proof_cnf_v5.py \
+            --prefix-json '[0,1,2,30]' \
+            --output artifact/direct.cnf --metadata artifact/direct.json >/dev/null
+          cmp artifact/wrapper.cnf artifact/direct.cnf
           python crossdomain/b2_z100_split_proof_batch_v3.py \
             --prefix-json '[0,1,2]' \
             --generator crossdomain/b2_z100_prefix_proof_cnf_v3.py \
@@ -48,12 +50,16 @@ jobs:
             --out artifact/plan-t45 --plan-only > artifact/plan-t45.log
           python - <<'PY'
           import json
+          m=json.load(open('artifact/direct.json'))
+          assert m['schema']=='b2-z100-independent-prefix-sat-v5',m
+          assert m['prefix']==[0,1,2,30],m
+          assert m['normalization']==[0,1],m
+          assert m['redundant_cuts']['even_selected_range']==[5,9],m
+          assert m['redundant_cuts']['quotient_moduli']==[2,4,5,10,20,25,50],m
           a=json.load(open('artifact/plan-t2/SPLIT_PLAN.json'))
           b=json.load(open('artifact/plan-t45/SPLIT_PLAN.json'))
-          assert a['expected_values']==list(range(3,90)),a
-          assert a['expected_child_count']==87,a
-          assert b['expected_values']==[46],b
-          assert b['expected_child_count']==1,b
+          assert a['expected_values']==list(range(3,90)) and a['expected_child_count']==87,a
+          assert b['expected_values']==[46] and b['expected_child_count']==1,b
           print('ADAPTIVE_TOOLS_SMOKE_PASS')
           PY
           find artifact -type f -print0 | sort -z | xargs -0 sha256sum > artifact/SHA256SUMS.txt
