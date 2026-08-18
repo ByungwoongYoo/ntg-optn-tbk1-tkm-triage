@@ -29,18 +29,18 @@ jobs:
           set +e
           mkdir -p u4_resolution/lean_check
           lean --version > u4_resolution/lean_check/LEAN_VERSION.txt 2>&1
-          (cd u4_resolution/lean && lean U4Core.lean) > u4_resolution/lean_check/U4Core.log 2>&1
+          (cd u4_resolution/lean && lean U4Core.lean) > u4_resolution/lean_check/U4Core_OUTPUT.txt 2>&1
           rc=$?
           echo "$rc" > u4_resolution/lean_check/EXIT_CODE.txt
           if [ "$rc" -eq 0 ]; then echo VERIFIED > u4_resolution/lean_check/STATUS.txt; else echo FAILED > u4_resolution/lean_check/STATUS.txt; fi
-          sha256sum u4_resolution/lean/U4Core.lean u4_resolution/lean_check/*.txt u4_resolution/lean_check/U4Core.log > u4_resolution/lean_check/SHA256SUMS.txt
+          sha256sum u4_resolution/lean/U4Core.lean u4_resolution/lean_check/*.txt > u4_resolution/lean_check/SHA256SUMS.txt
           echo "rc=$rc" >> "$GITHUB_OUTPUT"
           exit 0
       - name: Commit machine check record
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add u4_resolution/lean_check
+          git add -f u4_resolution/lean_check
           git commit -m 'Record Lean check result for u4 proof' || true
           git push origin HEAD:u4-resolution-20260818
       - name: Fail workflow if Lean failed
