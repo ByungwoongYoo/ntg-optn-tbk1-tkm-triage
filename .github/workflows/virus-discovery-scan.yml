@@ -5,12 +5,13 @@ on:
     branches:
       - virus-discovery-20260818
     paths:
-      - 'virus_discovery/**'
+      - 'virus_discovery/scan_recent_runs.py'
+      - 'virus_discovery/requirements-scan.txt'
       - '.github/workflows/virus-discovery-scan.yml'
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   scan-recent-medicinal-rnaseq:
@@ -19,6 +20,8 @@ jobs:
     steps:
       - name: Checkout isolated research branch
         uses: actions/checkout@v4
+        with:
+          ref: virus-discovery-20260818
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -34,6 +37,7 @@ jobs:
 
       - name: Record runner provenance
         run: |
+          rm -rf virus_discovery/scan_results
           mkdir -p virus_discovery/scan_results
           {
             echo "generated_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -62,6 +66,15 @@ jobs:
             | sort \
             | xargs -r sha256sum > SHA256SUMS_COMPLETE.txt
           ls -lah
+
+      - name: Commit scan evidence to isolated branch
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f virus_discovery/scan_results
+          git commit -m "Store public RNA-seq metadata scan [skip ci]" || exit 0
+          git push origin HEAD:virus-discovery-20260818
 
       - name: Upload immutable scan evidence
         if: always()
