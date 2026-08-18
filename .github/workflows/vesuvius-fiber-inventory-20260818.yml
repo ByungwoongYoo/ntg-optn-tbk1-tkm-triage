@@ -1,0 +1,57 @@
+name: Vesuvius fiber skeleton positive-control inventory 20260818
+on:
+  workflow_dispatch:
+  push:
+    branches: [vesuvius-fiber-tracing-20260818]
+    paths:
+      - 'crossdomain/vesuvius_fiber_inventory.py'
+      - '.github/workflows/vesuvius-fiber-inventory-20260818.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Environment
+        run: |
+          mkdir -p artifact/vesuvius_fiber_inventory
+          {
+            echo "github_run_id=${GITHUB_RUN_ID}"
+            echo "github_sha=${GITHUB_SHA}"
+            echo "runner_image=${ImageOS:-unknown}"
+            uname -a
+            python --version
+            gcc --version | head -1
+          } | tee artifact/vesuvius_fiber_inventory/ENVIRONMENT.txt
+      - name: Install readers
+        run: pip install numpy scipy matplotlib pynrrd nibabel tifffile imagecodecs
+      - name: Download official archived positive-control data
+        run: |
+          set -euo pipefail
+          mkdir -p data
+          url='https://dl.ash2txt.org/datasets/fiber-skeletons/fiber-skeletons.zip'
+          curl -fL --retry 20 --retry-all-errors --retry-delay 3 "$url" -o data/fiber-skeletons.zip
+          sha256sum data/fiber-skeletons.zip | tee artifact/vesuvius_fiber_inventory/ARCHIVE_SHA256.txt
+          stat -c '%s bytes' data/fiber-skeletons.zip | tee artifact/vesuvius_fiber_inventory/ARCHIVE_SIZE.txt
+          unzip -q data/fiber-skeletons.zip -d data/fiber-skeletons
+      - name: Inventory arrays, labels, and original skeletons
+        run: |
+          python crossdomain/vesuvius_fiber_inventory.py data/fiber-skeletons artifact/vesuvius_fiber_inventory --max-arrays 40 | tee artifact/vesuvius_fiber_inventory/STDOUT.log
+          cp crossdomain/vesuvius_fiber_inventory.py artifact/vesuvius_fiber_inventory/
+          test "$(python -c 'import json;print(json.load(open("artifact/vesuvius_fiber_inventory/INVENTORY.json"))["status"])')" = POSITIVE_CONTROL_DATASET_INVENTORIED
+      - name: Manifest
+        run: |
+          find artifact/vesuvius_fiber_inventory -type f -print0 | sort -z | xargs -0 sha256sum > artifact/vesuvius_fiber_inventory/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vesuvius-fiber-inventory-20260818
+          path: artifact/vesuvius_fiber_inventory
+          retention-days: 90
+          if-no-files-found: error
