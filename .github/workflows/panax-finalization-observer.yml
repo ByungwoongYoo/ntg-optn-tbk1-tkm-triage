@@ -1,0 +1,128 @@
+name: Observe isolated Panax impact finalization
+
+on:
+  pull_request:
+    branches: [panax-finalization-observer-base]
+    paths:
+      - '.github/workflows/panax-finalization-observer.yml'
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  observe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      TARGET_REF: panax-impact-finalization-20260818
+      MAX_WAIT_SECONDS: '20700'
+    steps:
+      - name: Wait for all five isolated finalization workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p finalization_observation
+          declare -A workflows=(
+            [metadata]='panax-project-metadata-finalization.yml'
+            [refseq_cp]='panax-impact-refseq-cp.yml'
+            [raw_extension]='panax-impact-raw-extension.yml'
+            [crossproject]='panax-impact-crossproject.yml'
+            [remote_blast]='panax-impact-remote-blast.yml'
+          )
+          start=$(date +%s)
+          : > finalization_observation/run_ids.tsv
+          while true; do
+            : > finalization_observation/run_ids.tmp
+            missing=0
+            for key in metadata refseq_cp raw_extension crossproject remote_blast; do
+              wf="${workflows[$key]}"
+              id=$(gh api --method GET "repos/${REPO}/actions/workflows/${wf}/runs" \
+                    -f branch="$TARGET_REF" -f event=workflow_dispatch -f per_page=30 \
+                    --jq '.workflow_runs | sort_by(.created_at) | reverse | .[0].id // empty' 2>/dev/null || true)
+              if [[ -z "$id" ]]; then
+                missing=$((missing+1))
+              else
+                printf '%s\t%s\t%s\n' "$key" "$wf" "$id" >> finalization_observation/run_ids.tmp
+              fi
+            done
+            if [[ "$missing" -eq 0 ]]; then
+              mv finalization_observation/run_ids.tmp finalization_observation/run_ids.tsv
+              break
+            fi
+            now=$(date +%s)
+            if (( now-start > MAX_WAIT_SECONDS )); then
+              cp finalization_observation/run_ids.tmp finalization_observation/run_ids.tsv
+              echo "Timed out waiting for workflow run creation; missing=$missing" | tee finalization_observation/OBSERVER_TIMEOUT.txt
+              break
+            fi
+            echo "Waiting for dispatched runs; missing=$missing"
+            sleep 30
+          done
+
+          while true; do
+            pending=0
+            : > finalization_observation/status.tsv
+            while IFS=$'\t' read -r key wf id; do
+              [[ -n "$id" ]] || continue
+              status=$(gh api "repos/${REPO}/actions/runs/${id}" --jq '.status')
+              conclusion=$(gh api "repos/${REPO}/actions/runs/${id}" --jq '.conclusion // ""')
+              printf '%s\t%s\t%s\t%s\t%s\n' "$key" "$wf" "$id" "$status" "$conclusion" >> finalization_observation/status.tsv
+              [[ "$status" == completed ]] || pending=$((pending+1))
+            done < finalization_observation/run_ids.tsv
+            if [[ "$pending" -eq 0 ]]; then break; fi
+            now=$(date +%s)
+            if (( now-start > MAX_WAIT_SECONDS )); then
+              echo "Timed out waiting for workflow completion; pending=$pending" | tee -a finalization_observation/OBSERVER_TIMEOUT.txt
+              break
+            fi
+            echo "Waiting for finalization completion; pending=$pending"
+            sleep 60
+          done
+
+      - name: Snapshot run, job, artifact, and result evidence
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p finalization_observation/api finalization_observation/bundle
+          if [[ -s finalization_observation/run_ids.tsv ]]; then
+            while IFS=$'\t' read -r key wf id; do
+              [[ -n "$id" ]] || continue
+              gh api "repos/${REPO}/actions/runs/${id}" > "finalization_observation/api/${key}_run.json" || true
+              gh api "repos/${REPO}/actions/runs/${id}/jobs?per_page=100" > "finalization_observation/api/${key}_jobs.json" || true
+              gh api "repos/${REPO}/actions/runs/${id}/artifacts?per_page=100" > "finalization_observation/api/${key}_artifacts.json" || true
+              mkdir -p "finalization_observation/bundle/${key}"
+              gh run download "$id" --repo "$REPO" --dir "finalization_observation/bundle/${key}" || true
+            done < finalization_observation/run_ids.tsv
+          fi
+          python - <<'PY'
+          import json,pathlib,csv
+          root=pathlib.Path('finalization_observation')
+          records=[]
+          for p in sorted((root/'api').glob('*_run.json')):
+              d=json.load(open(p))
+              key=p.name.removesuffix('_run.json')
+              records.append({'key':key,'id':d.get('id'),'name':d.get('name'),'event':d.get('event'),'head_branch':d.get('head_branch'),'head_sha':d.get('head_sha'),'status':d.get('status'),'conclusion':d.get('conclusion'),'created_at':d.get('created_at'),'updated_at':d.get('updated_at'),'html_url':d.get('html_url')})
+          overall={'target_ref':'panax-impact-finalization-20260818','run_count':len(records),'all_completed':len(records)==5 and all(x.get('status')=='completed' for x in records),'all_succeeded':len(records)==5 and all(x.get('conclusion')=='success' for x in records),'runs':records}
+          (root/'FINALIZATION_RUNS.json').write_text(json.dumps(overall,indent=2)+'\n')
+          md=['# Panax impact finalization execution record','',f"Finalization runs captured: **{len(records)}/5**",f"All completed: **{overall['all_completed']}**",f"All workflow conclusions successful: **{overall['all_succeeded']}**",'', '| Workflow | Run ID | Status | Conclusion | Head SHA |','|---|---:|---|---|---|']
+          for x in records: md.append(f"| {x.get('name')} | {x.get('id')} | {x.get('status')} | {x.get('conclusion')} | `{x.get('head_sha')}` |")
+          md += ['', 'A successful workflow conclusion indicates execution success, not biological truth. Scientific claims must be derived from the deposited result files and their stated evidence boundaries.']
+          (root/'FINALIZATION_EXECUTION_REPORT.md').write_text('\n'.join(md)+'\n')
+          PY
+          find finalization_observation -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > finalization_observation/SHA256SUMS.txt
+          cat finalization_observation/FINALIZATION_EXECUTION_REPORT.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PANAX_IMPACT_FINALIZATION_OBSERVATION_20260818
+          path: finalization_observation
+          retention-days: 30
+          compression-level: 9
