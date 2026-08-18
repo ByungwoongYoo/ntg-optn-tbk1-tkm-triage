@@ -6,6 +6,11 @@ on:
     paths:
       - 'amr_discovery/profile_release.py'
       - '.github/workflows/amr-profile.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'amr_discovery/profile_release.py'
+      - '.github/workflows/amr-profile.yml'
   workflow_dispatch:
 
 permissions:
