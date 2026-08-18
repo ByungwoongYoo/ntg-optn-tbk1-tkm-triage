@@ -1,0 +1,362 @@
+[
+  {
+    "alias": "Panax ginseng",
+    "query": "scientific_name=\"Panax ginseng\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 1000,
+    "label": "Panax ginseng",
+    "timestamp_utc": "2026-08-18T11:54:22+00:00"
+  },
+  {
+    "alias": "Panax notoginseng",
+    "query": "scientific_name=\"Panax notoginseng\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 555,
+    "label": "Panax notoginseng",
+    "timestamp_utc": "2026-08-18T11:54:23+00:00"
+  },
+  {
+    "alias": "Panax quinquefolius",
+    "query": "scientific_name=\"Panax quinquefolius\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 141,
+    "label": "Panax quinquefolius",
+    "timestamp_utc": "2026-08-18T11:54:24+00:00"
+  },
+  {
+    "alias": "Rehmannia glutinosa",
+    "query": "scientific_name=\"Rehmannia glutinosa\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 43,
+    "label": "Rehmannia glutinosa",
+    "timestamp_utc": "2026-08-18T11:54:25+00:00"
+  },
+  {
+    "alias": "Coptis chinensis",
+    "query": "scientific_name=\"Coptis chinensis\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 113,
+    "label": "Coptis chinensis",
+    "timestamp_utc": "2026-08-18T11:54:25+00:00"
+  },
+  {
+    "alias": "Scutellaria baicalensis",
+    "query": "scientific_name=\"Scutellaria baicalensis\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 170,
+    "label": "Scutellaria baicalensis",
+    "timestamp_utc": "2026-08-18T11:54:25+00:00"
+  },
+  {
+    "alias": "Astragalus membranaceus",
+    "query": "scientific_name=\"Astragalus membranaceus\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 114,
+    "label": "Astragalus membranaceus",
+    "timestamp_utc": "2026-08-18T11:54:26+00:00"
+  },
+  {
+    "alias": "Astragalus mongholicus",
+    "query": "scientific_name=\"Astragalus mongholicus\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 92,
+    "label": "Astragalus membranaceus",
+    "timestamp_utc": "2026-08-18T11:54:26+00:00"
+  },
+  {
+    "alias": "Glycyrrhiza uralensis",
+    "query": "scientific_name=\"Glycyrrhiza uralensis\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 416,
+    "label": "Glycyrrhiza uralensis",
+    "timestamp_utc": "2026-08-18T11:54:27+00:00"
+  },
+  {
+    "alias": "Angelica sinensis",
+    "query": "scientific_name=\"Angelica sinensis\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 89,
+    "label": "Angelica sinensis",
+    "timestamp_utc": "2026-08-18T11:54:27+00:00"
+  },
+  {
+    "alias": "Paeonia lactiflora",
+    "query": "scientific_name=\"Paeonia lactiflora\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 191,
+    "label": "Paeonia lactiflora",
+    "timestamp_utc": "2026-08-18T11:54:28+00:00"
+  },
+  {
+    "alias": "Artemisia annua",
+    "query": "scientific_name=\"Artemisia annua\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 154,
+    "label": "Artemisia annua",
+    "timestamp_utc": "2026-08-18T11:54:28+00:00"
+  },
+  {
+    "alias": "Ephedra sinica",
+    "query": "scientific_name=\"Ephedra sinica\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 14,
+    "label": "Ephedra sinica",
+    "timestamp_utc": "2026-08-18T11:54:29+00:00"
+  },
+  {
+    "alias": "Atractylodes macrocephala",
+    "query": "scientific_name=\"Atractylodes macrocephala\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 37,
+    "label": "Atractylodes macrocephala",
+    "timestamp_utc": "2026-08-18T11:54:29+00:00"
+  },
+  {
+    "alias": "Bupleurum chinense",
+    "query": "scientific_name=\"Bupleurum chinense\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 121,
+    "label": "Bupleurum chinense",
+    "timestamp_utc": "2026-08-18T11:54:30+00:00"
+  },
+  {
+    "alias": "Pueraria lobata",
+    "query": "scientific_name=\"Pueraria lobata\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 0,
+    "label": "Pueraria lobata",
+    "timestamp_utc": "2026-08-18T11:54:30+00:00"
+  },
+  {
+    "alias": "Pueraria montana var. lobata",
+    "query": "scientific_name=\"Pueraria montana var. lobata\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 28,
+    "label": "Pueraria lobata",
+    "timestamp_utc": "2026-08-18T11:54:30+00:00"
+  },
+  {
+    "alias": "Schisandra chinensis",
+    "query": "scientific_name=\"Schisandra chinensis\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 137,
+    "label": "Schisandra chinensis",
+    "timestamp_utc": "2026-08-18T11:54:31+00:00"
+  },
+  {
+    "alias": "Cornus officinalis",
+    "query": "scientific_name=\"Cornus officinalis\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 10,
+    "label": "Cornus officinalis",
+    "timestamp_utc": "2026-08-18T11:54:31+00:00"
+  },
+  {
+    "alias": "Gardenia jasminoides",
+    "query": "scientific_name=\"Gardenia jasminoides\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 49,
+    "label": "Gardenia jasminoides",
+    "timestamp_utc": "2026-08-18T11:54:32+00:00"
+  },
+  {
+    "alias": "Ziziphus jujuba",
+    "query": "scientific_name=\"Ziziphus jujuba\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 710,
+    "label": "Ziziphus jujuba",
+    "timestamp_utc": "2026-08-18T11:54:32+00:00"
+  },
+  {
+    "alias": "Platycodon grandiflorus",
+    "query": "scientific_name=\"Platycodon grandiflorus\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 180,
+    "label": "Platycodon grandiflorus",
+    "timestamp_utc": "2026-08-18T11:54:33+00:00"
+  },
+  {
+    "alias": "Lonicera japonica",
+    "query": "scientific_name=\"Lonicera japonica\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 84,
+    "label": "Lonicera japonica",
+    "timestamp_utc": "2026-08-18T11:54:34+00:00"
+  },
+  {
+    "alias": "Forsythia suspensa",
+    "query": "scientific_name=\"Forsythia suspensa\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 111,
+    "label": "Forsythia suspensa",
+    "timestamp_utc": "2026-08-18T11:54:34+00:00"
+  },
+  {
+    "alias": "Magnolia officinalis",
+    "query": "scientific_name=\"Magnolia officinalis\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 0,
+    "label": "Magnolia officinalis",
+    "timestamp_utc": "2026-08-18T11:54:35+00:00"
+  },
+  {
+    "alias": "Salvia miltiorrhiza",
+    "query": "scientific_name=\"Salvia miltiorrhiza\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 519,
+    "label": "Salvia miltiorrhiza",
+    "timestamp_utc": "2026-08-18T11:54:35+00:00"
+  },
+  {
+    "alias": "Curcuma longa",
+    "query": "scientific_name=\"Curcuma longa\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 21,
+    "label": "Curcuma longa",
+    "timestamp_utc": "2026-08-18T11:54:36+00:00"
+  },
+  {
+    "alias": "Zingiber officinale",
+    "query": "scientific_name=\"Zingiber officinale\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 188,
+    "label": "Zingiber officinale",
+    "timestamp_utc": "2026-08-18T11:54:36+00:00"
+  },
+  {
+    "alias": "Houttuynia cordata",
+    "query": "scientific_name=\"Houttuynia cordata\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 20,
+    "label": "Houttuynia cordata",
+    "timestamp_utc": "2026-08-18T11:54:36+00:00"
+  },
+  {
+    "alias": "Dendrobium officinale",
+    "query": "scientific_name=\"Dendrobium officinale\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 393,
+    "label": "Dendrobium officinale",
+    "timestamp_utc": "2026-08-18T11:54:37+00:00"
+  },
+  {
+    "alias": "Eucommia ulmoides",
+    "query": "scientific_name=\"Eucommia ulmoides\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 157,
+    "label": "Eucommia ulmoides",
+    "timestamp_utc": "2026-08-18T11:54:38+00:00"
+  },
+  {
+    "alias": "Cinnamomum cassia",
+    "query": "scientific_name=\"Cinnamomum cassia\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 0,
+    "label": "Cinnamomum cassia",
+    "timestamp_utc": "2026-08-18T11:54:38+00:00"
+  },
+  {
+    "alias": "Cinnamomum aromaticum",
+    "query": "scientific_name=\"Cinnamomum aromaticum\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 34,
+    "label": "Cinnamomum cassia",
+    "timestamp_utc": "2026-08-18T11:54:38+00:00"
+  },
+  {
+    "alias": "Morus alba",
+    "query": "scientific_name=\"Morus alba\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 483,
+    "label": "Morus alba",
+    "timestamp_utc": "2026-08-18T11:54:39+00:00"
+  },
+  {
+    "alias": "Ganoderma lingzhi",
+    "query": "scientific_name=\"Ganoderma lingzhi\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 24,
+    "label": "Ganoderma lingzhi/lucidum",
+    "timestamp_utc": "2026-08-18T11:54:40+00:00"
+  },
+  {
+    "alias": "Ganoderma lucidum",
+    "query": "scientific_name=\"Ganoderma lucidum\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 179,
+    "label": "Ganoderma lingzhi/lucidum",
+    "timestamp_utc": "2026-08-18T11:54:40+00:00"
+  },
+  {
+    "alias": "Cordyceps militaris",
+    "query": "scientific_name=\"Cordyceps militaris\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 154,
+    "label": "Cordyceps militaris",
+    "timestamp_utc": "2026-08-18T11:54:40+00:00"
+  },
+  {
+    "alias": "Ophiocordyceps sinensis",
+    "query": "scientific_name=\"Ophiocordyceps sinensis\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 163,
+    "label": "Ophiocordyceps sinensis",
+    "timestamp_utc": "2026-08-18T11:54:41+00:00"
+  },
+  {
+    "alias": "Cordyceps sinensis",
+    "query": "scientific_name=\"Cordyceps sinensis\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 0,
+    "label": "Ophiocordyceps sinensis",
+    "timestamp_utc": "2026-08-18T11:54:41+00:00"
+  },
+  {
+    "alias": "Sanghuangporus sanghuang",
+    "query": "scientific_name=\"Sanghuangporus sanghuang\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 18,
+    "label": "Sanghuangporus/Phellinus",
+    "timestamp_utc": "2026-08-18T11:54:42+00:00"
+  },
+  {
+    "alias": "Phellinus linteus",
+    "query": "scientific_name=\"Phellinus linteus\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 0,
+    "label": "Sanghuangporus/Phellinus",
+    "timestamp_utc": "2026-08-18T11:54:42+00:00"
+  },
+  {
+    "alias": "Wolfiporia cocos",
+    "query": "scientific_name=\"Wolfiporia cocos\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 23,
+    "label": "Wolfiporia cocos",
+    "timestamp_utc": "2026-08-18T11:54:42+00:00"
+  },
+  {
+    "alias": "Poria cocos",
+    "query": "scientific_name=\"Poria cocos\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 0,
+    "label": "Wolfiporia cocos",
+    "timestamp_utc": "2026-08-18T11:54:43+00:00"
+  },
+  {
+    "alias": "Hericium erinaceus",
+    "query": "scientific_name=\"Hericium erinaceus\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 11,
+    "label": "Hericium erinaceus",
+    "timestamp_utc": "2026-08-18T11:54:43+00:00"
+  },
+  {
+    "alias": "Inonotus obliquus",
+    "query": "scientific_name=\"Inonotus obliquus\" AND library_strategy=\"RNA-Seq\" AND first_public>=2021-01-01",
+    "field_mode": "rich",
+    "returned": 16,
+    "label": "Inonotus obliquus",
+    "timestamp_utc": "2026-08-18T11:54:44+00:00"
+  }
+]

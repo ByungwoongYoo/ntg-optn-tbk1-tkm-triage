@@ -1,0 +1,47 @@
+[scan] Panax ginseng <- Panax ginseng
+[scan] Panax notoginseng <- Panax notoginseng
+[scan] Panax quinquefolius <- Panax quinquefolius
+[scan] Rehmannia glutinosa <- Rehmannia glutinosa
+[scan] Coptis chinensis <- Coptis chinensis
+[scan] Scutellaria baicalensis <- Scutellaria baicalensis
+[scan] Astragalus membranaceus <- Astragalus membranaceus
+[scan] Astragalus membranaceus <- Astragalus mongholicus
+[scan] Glycyrrhiza uralensis <- Glycyrrhiza uralensis
+[scan] Angelica sinensis <- Angelica sinensis
+[scan] Paeonia lactiflora <- Paeonia lactiflora
+[scan] Artemisia annua <- Artemisia annua
+[scan] Ephedra sinica <- Ephedra sinica
+[scan] Atractylodes macrocephala <- Atractylodes macrocephala
+[scan] Bupleurum chinense <- Bupleurum chinense
+[scan] Pueraria lobata <- Pueraria lobata
+[scan] Pueraria lobata <- Pueraria montana var. lobata
+[scan] Schisandra chinensis <- Schisandra chinensis
+[scan] Cornus officinalis <- Cornus officinalis
+[scan] Gardenia jasminoides <- Gardenia jasminoides
+[scan] Ziziphus jujuba <- Ziziphus jujuba
+[scan] Platycodon grandiflorus <- Platycodon grandiflorus
+[scan] Lonicera japonica <- Lonicera japonica
+[scan] Forsythia suspensa <- Forsythia suspensa
+[scan] Magnolia officinalis <- Magnolia officinalis
+[scan] Salvia miltiorrhiza <- Salvia miltiorrhiza
+[scan] Curcuma longa <- Curcuma longa
+[scan] Zingiber officinale <- Zingiber officinale
+[scan] Houttuynia cordata <- Houttuynia cordata
+[scan] Dendrobium officinale <- Dendrobium officinale
+[scan] Eucommia ulmoides <- Eucommia ulmoides
+[scan] Cinnamomum cassia <- Cinnamomum cassia
+[scan] Cinnamomum cassia <- Cinnamomum aromaticum
+[scan] Morus alba <- Morus alba
+[scan] Ganoderma lingzhi/lucidum <- Ganoderma lingzhi
+[scan] Ganoderma lingzhi/lucidum <- Ganoderma lucidum
+[scan] Cordyceps militaris <- Cordyceps militaris
+[scan] Ophiocordyceps sinensis <- Ophiocordyceps sinensis
+[scan] Ophiocordyceps sinensis <- Cordyceps sinensis
+[scan] Sanghuangporus/Phellinus <- Sanghuangporus sanghuang
+[scan] Sanghuangporus/Phellinus <- Phellinus linteus
+[scan] Wolfiporia cocos <- Wolfiporia cocos
+[scan] Wolfiporia cocos <- Poria cocos
+[scan] Hericium erinaceus <- Hericium erinaceus
+[scan] Inonotus obliquus <- Inonotus obliquus
+[done] 6962 unique runs across 586 projects
+[done] results: virus_discovery/scan_results
