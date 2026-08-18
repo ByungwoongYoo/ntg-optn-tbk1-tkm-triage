@@ -1,0 +1,60 @@
+name: CASP17 T2461 finalize TS format 20260818
+on:
+  push:
+    branches: [casp17-t2461-final-20260818]
+    paths:
+      - 'casp17/t2461/finalize_submission.py'
+      - '.github/workflows/casp17-t2461-finalize-20260818.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  finalize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download frozen A24 model artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: casp17-t2461-a24-models-20260818
+          path: models
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 32117812304
+      - name: Generate and audit official-format templates
+        run: |
+          set -euo pipefail
+          mkdir -p artifact
+          python casp17/t2461/finalize_submission.py --models-dir models --out artifact | tee artifact/stdout.log
+          cp models/T2461_model{1,2,3,4,5}.pdb artifact/
+          cp models/MODEL_BUILD_SUMMARY.json models/MODEL_VALIDATION.csv models/T2461_full_esmfold.pdb artifact/
+          find artifact -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > artifact/SHA256SUMS.txt
+      - id: upload
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: casp17-t2461-final-result-20260818
+          path: artifact
+          retention-days: 90
+          compression-level: 6
+          if-no-files-found: error
+      - name: Publish immutable run pointer
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+        run: |
+          python - <<'PY'
+          import json,os
+          p={'schema':'casp17-t2461-final-result-v1','run_id':int(os.environ['GITHUB_RUN_ID']),'run_attempt':int(os.environ['GITHUB_RUN_ATTEMPT']),'commit':os.environ['GITHUB_SHA'],'artifact_id':int(os.environ['ARTIFACT_ID']),'artifact_url':os.environ['ARTIFACT_URL'],'artifact_digest':os.environ['ARTIFACT_DIGEST']}
+          open('pointer.json','w').write(json.dumps(p,indent=2,sort_keys=True)+'\n')
+          PY
+          encoded=$(base64 -w0 pointer.json); path='casp17/t2461/FINAL_RESULT_LATEST_RUN.json'
+          sha=$(gh api "repos/${GITHUB_REPOSITORY}/contents/${path}?ref=${GITHUB_REF_NAME}" --jq .sha 2>/dev/null || true)
+          args=(--method PUT "repos/${GITHUB_REPOSITORY}/contents/${path}" -f message="Record CASP17 T2461 final result ${GITHUB_RUN_ID}" -f content="$encoded" -f branch="${GITHUB_REF_NAME}")
+          if [ -n "$sha" ]; then args+=(-f sha="$sha"); fi
+          gh api "${args[@]}" >/dev/null
