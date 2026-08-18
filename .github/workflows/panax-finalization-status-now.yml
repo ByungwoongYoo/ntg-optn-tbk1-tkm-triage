@@ -1,0 +1,65 @@
+name: Snapshot isolated Panax finalization status now
+
+on:
+  pull_request:
+    branches: [panax-finalization-observer-base]
+    paths:
+      - '.github/workflows/panax-finalization-status-now.yml'
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Query latest workflow-dispatch runs on finalization branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TARGET_REF: panax-impact-finalization-20260818
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p status_now/api
+          declare -A workflows=(
+            [metadata]='panax-project-metadata-finalization.yml'
+            [refseq_cp]='panax-impact-refseq-cp.yml'
+            [raw_extension]='panax-impact-raw-extension.yml'
+            [crossproject]='panax-impact-crossproject.yml'
+            [remote_blast]='panax-impact-remote-blast.yml'
+          )
+          printf 'key\tworkflow\trun_id\tstatus\tconclusion\thead_sha\tcreated_at\tupdated_at\n' > status_now/STATUS.tsv
+          for key in metadata refseq_cp raw_extension crossproject remote_blast; do
+            wf="${workflows[$key]}"
+            gh api --method GET "repos/${REPO}/actions/workflows/${wf}/runs" \
+              -f branch="$TARGET_REF" -f event=workflow_dispatch -f per_page=30 \
+              > "status_now/api/${key}_runs.json"
+            python - "$key" "$wf" "status_now/api/${key}_runs.json" >> status_now/STATUS.tsv <<'PY'
+          import json,sys
+          key,wf,path=sys.argv[1:]
+          data=json.load(open(path))
+          runs=sorted(data.get('workflow_runs',[]),key=lambda r:r.get('created_at',''),reverse=True)
+          if not runs:
+              print(f'{key}\t{wf}\t\tmissing\t\t\t\t')
+          else:
+              r=runs[0]
+              vals=[key,wf,str(r.get('id','')),str(r.get('status','')),str(r.get('conclusion') or ''),str(r.get('head_sha','')),str(r.get('created_at','')),str(r.get('updated_at',''))]
+              print('\t'.join(vals))
+          PY
+          done
+          python - <<'PY'
+          import csv,json,pathlib
+          rows=list(csv.DictReader(open('status_now/STATUS.tsv'),delimiter='\t'))
+          out={'target_ref':'panax-impact-finalization-20260818','run_count':sum(bool(r['run_id']) for r in rows),'all_completed':len(rows)==5 and all(r['status']=='completed' for r in rows),'all_succeeded':len(rows)==5 and all(r['conclusion']=='success' for r in rows),'runs':rows}
+          pathlib.Path('status_now/STATUS.json').write_text(json.dumps(out,indent=2)+'\n')
+          PY
+          cat status_now/STATUS.tsv
+          find status_now -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > status_now/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PANAX_FINALIZATION_STATUS_NOW_20260818
+          path: status_now
+          retention-days: 7
+          compression-level: 9
