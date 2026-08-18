@@ -1,0 +1,38 @@
+name: Dispatch isolated Panax impact finalization
+
+on:
+  push:
+    branches: [panax-impact-finalization-20260818]
+    paths:
+      - '.github/workflows/panax-finalization-dispatch.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Dispatch finalization workflows on the isolated branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          REF: panax-impact-finalization-20260818
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflows=(
+            panax-project-metadata-finalization.yml
+            panax-impact-refseq-cp.yml
+            panax-impact-raw-extension.yml
+            panax-impact-crossproject.yml
+            panax-impact-remote-blast.yml
+          )
+          for wf in "${workflows[@]}"; do
+            echo "Dispatching $wf on $REF"
+            gh workflow run "$wf" --repo "$REPO" --ref "$REF"
+            sleep 2
+          done
+          echo "All five isolated finalization workflows dispatched."
