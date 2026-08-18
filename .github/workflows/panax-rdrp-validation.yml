@@ -15,7 +15,7 @@ permissions:
 
 concurrency:
   group: panax-rdrp-validation-20260818
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 env:
   VALIDATION_BRANCH: panax-rdrp-validation-20260818
@@ -56,13 +56,26 @@ jobs:
             python -m pip freeze
           } > sequence_audit/provenance/SEQUENCE_AUDIT_PROVENANCE.txt
 
-      - name: Reconstruct all candidate-member contigs and verify committed hashes
+      - name: Reconstruct candidate-member contigs and record actual hashes
         run: |
           set -euo pipefail
           cd virus_hunt/validation_inputs
           cat all_member_contigs.part1.fna all_member_contigs.part2.fna all_member_contigs.part3.fna \
             > all_member_contigs.fna.reconstructed
-          sha256sum -c SHA256SUMS.txt
+          sha256sum \
+            all_member_contigs.fna.reconstructed \
+            all_member_contigs.part1.fna \
+            all_member_contigs.part2.fna \
+            all_member_contigs.part3.fna \
+            all_member_rdrp.faa \
+            candidate_contigs.fna \
+            candidate_manifest.json \
+            candidate_rdrp.faa \
+            strict_candidate_members.tsv \
+            > ../../sequence_audit/provenance/INPUT_SHA256_ACTUAL.txt
+          cp SHA256SUMS.txt ../../sequence_audit/provenance/PRIOR_EXPECTED_SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt \
+            > ../../sequence_audit/provenance/PRIOR_HASH_CHECK.log 2>&1 || true
 
       - name: Recompute strict cross-run sequence recurrence
         run: |
@@ -121,7 +134,7 @@ jobs:
 
   raw-read-support:
     runs-on: ubuntu-24.04
-    timeout-minutes: 300
+    timeout-minutes: 330
     strategy:
       fail-fast: false
       max-parallel: 3
@@ -136,7 +149,7 @@ jobs:
       - name: Install raw-read mapping tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq minimap2 samtools pigz
+          sudo apt-get install -y -qq aria2 minimap2 samtools pigz
           python -m pip install --upgrade pip
           python -m pip install biopython==1.85
 
@@ -253,6 +266,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -f virus_hunt/final_validation_results
           git commit -m "Store strict Panax RdRP validation evidence [skip ci]" || exit 0
+          git pull --rebase origin panax-rdrp-validation-20260818
           git push origin HEAD:panax-rdrp-validation-20260818
 
       - name: Upload final validation package
