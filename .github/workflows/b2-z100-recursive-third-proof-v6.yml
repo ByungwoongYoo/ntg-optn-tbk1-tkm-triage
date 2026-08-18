@@ -1,0 +1,194 @@
+name: B2 Z100 independent 44-root recursive proof v6
+
+on:
+  push:
+    branches: [b2-z100-final-proof-audit-20260818]
+    paths:
+      - '.github/workflows/b2-z100-recursive-third-proof-v6.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  prove:
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        third: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 355
+    env:
+      CADICAL_COMMIT: c60730422e758ef1cebe7aeddf2dda31c996bf04
+      DRAT_TRIM_COMMIT: 2e3b2dc0ecf938addbd779d42877b6ed69d9a985
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Compile frozen independent proof tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            crossdomain/b2_z100_prefix_proof_cnf_v3.py \
+            crossdomain/b2_z100_prefix_proof_cnf_v5.py \
+            crossdomain/b2_z100_recursive_proof_v4.py \
+            crossdomain/b2_z100_verify_cadical_model.py
+          git clone -q https://github.com/arminbiere/cadical.git /tmp/cadical
+          git -C /tmp/cadical checkout -q "$CADICAL_COMMIT"
+          test "$(git -C /tmp/cadical rev-parse HEAD)" = "$CADICAL_COMMIT"
+          (cd /tmp/cadical && ./configure >/dev/null && make -j2 >/dev/null)
+          git clone -q https://github.com/marijnheule/drat-trim.git /tmp/drat-trim
+          git -C /tmp/drat-trim checkout -q "$DRAT_TRIM_COMMIT"
+          test "$(git -C /tmp/drat-trim rev-parse HEAD)" = "$DRAT_TRIM_COMMIT"
+          make -C /tmp/drat-trim -j2 >/dev/null
+          sudo apt-get update -qq && sudo apt-get install -y -qq zstd
+      - name: Recursively prove one complete normalized third branch
+        env:
+          THIRD: ${{ matrix.third }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          d="artifact/t${THIRD}";mkdir -p "$d"
+          set +e
+          python crossdomain/b2_z100_recursive_proof_v4.py \
+            --prefix-json "[0,1,${THIRD}]" \
+            --generator crossdomain/b2_z100_prefix_proof_cnf_v3.py \
+            --model-checker crossdomain/b2_z100_verify_cadical_model.py \
+            --cadical /tmp/cadical/build/cadical \
+            --drat-trim /tmp/drat-trim/drat-trim \
+            --zstd zstd \
+            --workers 2 \
+            --root-solve-seconds 1200 \
+            --min-solve-seconds 60 \
+            --root-check-seconds 360 \
+            --min-check-seconds 75 \
+            --decay 0.68 \
+            --wall-seconds 19000 \
+            --max-nodes 200000 \
+            --out "$d" \
+            > "$d/runner_stdout.log" 2> "$d/runner_stderr.log"
+          rc=$?
+          set -e
+          printf '%s\n' "$rc" > "$d/runner_exit_code.txt"
+          python - "$d/SUMMARY.json" "$THIRD" <<'PY'
+          import json,sys,pathlib
+          p,t=sys.argv[1],int(sys.argv[2]);s=json.load(open(p))
+          out={
+            'schema':'b2-z100-recursive-third-v6-job-summary',
+            'third':t,
+            'root_prefix':[0,1,t],
+            'root_verified_unsat':bool(s.get('root_verified_unsat')),
+            'unresolved_prefixes':s.get('unresolved_prefixes',[]),
+            'verified_sat_counterexamples':s.get('verified_sat_counterexamples',[]),
+            'node_counts':s.get('node_counts',{}),
+            'source_summary':s
+          }
+          pathlib.Path('job-summary.json').write_text(json.dumps(out,indent=2,sort_keys=True)+'\n')
+          PY
+          mv job-summary.json "$d/JOB_SUMMARY.json"
+          {
+            date -u +'%Y-%m-%dT%H:%M:%SZ'
+            uname -a
+            lscpu
+            /tmp/cadical/build/cadical --version
+            git -C /tmp/cadical rev-parse HEAD
+            git -C /tmp/drat-trim rev-parse HEAD
+            printf 'repository=%s\nref=%s\ncommit=%s\nrun_id=%s\nthird=%s\n' "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" "$GITHUB_SHA" "$GITHUB_RUN_ID" "$THIRD"
+          } > "$d/ENVIRONMENT.txt"
+          find "$d" -maxdepth 1 -type f ! -name SHA256SUMS_TOP.txt -print0 | sort -z | xargs -0 sha256sum > "$d/SHA256SUMS_TOP.txt"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: b2-z100-recursive-third-${{ matrix.third }}-v6-proofs
+          path: artifact/t${{ matrix.third }}
+          retention-days: 90
+          compression-level: 3
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: b2-z100-recursive-third-${{ matrix.third }}-v6-summary
+          path: |
+            artifact/t${{ matrix.third }}/JOB_SUMMARY.json
+            artifact/t${{ matrix.third }}/SUMMARY.json
+            artifact/t${{ matrix.third }}/runner_exit_code.txt
+            artifact/t${{ matrix.third }}/SHA256SUMS_TOP.txt
+          retention-days: 90
+          compression-level: 6
+          if-no-files-found: error
+
+  aggregate:
+    if: always()
+    needs: prove
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: b2-z100-recursive-third-*-v6-summary
+          path: aggregate/jobs
+          merge-multiple: false
+      - name: Audit all forty-four recursive roots
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p aggregate/final
+          python - <<'PY'
+          import json,pathlib
+          root=pathlib.Path('aggregate/jobs');rows=[]
+          for t in range(2,46):
+              fs=list(root.glob(f'b2-z100-recursive-third-{t}-v6-summary/**/JOB_SUMMARY.json'))
+              if len(fs)!=1:
+                  rows.append({'third':t,'root_verified_unsat':False,'status':'MISSING_JOB_SUMMARY','count':len(fs),'unresolved_prefixes':[[0,1,t]],'verified_sat_counterexamples':[]});continue
+              r=json.load(open(fs[0]));r['status']='VERIFIED_UNSAT_ROOT' if r.get('root_verified_unsat') else 'UNRESOLVED_ROOT';rows.append(r)
+          counter=[];unresolved=[]
+          for r in rows:
+              counter.extend(r.get('verified_sat_counterexamples',[]))
+              if not r.get('root_verified_unsat'):
+                  u=r.get('unresolved_prefixes') or [[0,1,r['third']]];unresolved.extend(u)
+          payload={
+            'schema':'b2-z100-recursive-third-v6-summary',
+            'run_id':int('${{ github.run_id }}'),'run_attempt':int('${{ github.run_attempt }}'),'commit':'${{ github.sha }}',
+            'expected_roots':44,'observed_rows':len(rows),
+            'closed_thirds':[r['third'] for r in rows if r.get('root_verified_unsat')],
+            'unresolved_thirds':[r['third'] for r in rows if not r.get('root_verified_unsat')],
+            'unresolved_prefixes':unresolved,
+            'verified_sat_counterexamples':counter,
+            'all_44_roots_verified_unsat':len(unresolved)==0 and len(counter)==0 and len(rows)==44,
+            'claim_boundary':'All normalized 14-element candidates are excluded computationally only if all 44 canonical third-element roots are independently proof-closed and no verified counterexample exists.'
+          }
+          out=pathlib.Path('aggregate/final');out.joinpath('SUMMARY.json').write_text(json.dumps(payload,indent=2,sort_keys=True)+'\n');out.joinpath('ROOTS.json').write_text(json.dumps(rows,indent=2,sort_keys=True)+'\n');out.joinpath('UNRESOLVED_PREFIXES.json').write_text(json.dumps(unresolved,indent=2)+'\n');print(json.dumps(payload,indent=2,sort_keys=True))
+          PY
+          find aggregate/final -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > aggregate/final/SHA256SUMS.txt
+      - id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: b2-z100-recursive-third-v6-summary
+          path: aggregate/final
+          retention-days: 90
+          if-no-files-found: error
+      - name: Publish immutable v6 pointer before the fail-closed gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os,pathlib
+          p=json.load(open('aggregate/final/SUMMARY.json'));p.update({'artifact_id':int(os.environ['ARTIFACT_ID']),'artifact_url':os.environ['ARTIFACT_URL'],'artifact_digest':os.environ['ARTIFACT_DIGEST']});pathlib.Path('pointer.json').write_text(json.dumps(p,indent=2,sort_keys=True)+'\n')
+          PY
+          encoded=$(base64 -w0 pointer.json);path='crossdomain/B2_RECURSIVE_THIRD_V6_LATEST_RUN.json';sha=$(gh api "repos/${GITHUB_REPOSITORY}/contents/${path}?ref=${GITHUB_REF_NAME}" --jq .sha 2>/dev/null || true);args=(--method PUT "repos/${GITHUB_REPOSITORY}/contents/${path}" -f message="Record B2 44-root recursive proof run ${GITHUB_RUN_ID}" -f content="$encoded" -f branch="${GITHUB_REF_NAME}");if [ -n "$sha" ];then args+=(-f sha="$sha");fi;gh api "${args[@]}" >/dev/null
+      - name: Enforce no-counterexample and complete-proof gates
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          p=json.load(open('aggregate/final/SUMMARY.json'));assert not p['verified_sat_counterexamples'],p;assert p['all_44_roots_verified_unsat'],p
+          PY
