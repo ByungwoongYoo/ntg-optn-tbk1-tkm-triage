@@ -1,2 +1,13 @@
-DRR853911_1	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853911/DRR853911_1.fastq.gz
-DRR853911_2	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853911/DRR853911_2.fastq.gz
+run	alias	mate	url
+DRR853907	ZhA	1	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853907/DRR853907_1.fastq.gz
+DRR853907	ZhA	2	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853907/DRR853907_2.fastq.gz
+DRR853908	ZhB	1	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853908/DRR853908_1.fastq.gz
+DRR853908	ZhB	2	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853908/DRR853908_2.fastq.gz
+DRR853909	ZhC	1	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853909/DRR853909_1.fastq.gz
+DRR853909	ZhC	2	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853909/DRR853909_2.fastq.gz
+DRR853910	BhA	1	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853910/DRR853910_1.fastq.gz
+DRR853910	BhA	2	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853910/DRR853910_2.fastq.gz
+DRR853911	BhB	1	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853911/DRR853911_1.fastq.gz
+DRR853911	BhB	2	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853911/DRR853911_2.fastq.gz
+DRR853912	BhC	1	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853912/DRR853912_1.fastq.gz
+DRR853912	BhC	2	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853912/DRR853912_2.fastq.gz
