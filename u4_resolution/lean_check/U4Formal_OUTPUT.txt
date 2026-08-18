@@ -1,0 +1,22 @@
+U4Formal.lean:39:22: error: unexpected token ':'; expected '}' or structInstFieldDecl
+U4Formal.lean:65:0: error: unexpected identifier; expected command
+U4Formal.lean:134:0: error: unexpected identifier; expected command
+U4Formal.lean:157:2: error: Function expected at
+  ∃ a b r, Pair a b ∧ C a b r = f
+but this term has type
+  Prop
+
+Note: Expected a function because this term is being applied to the argument
+  lemma
+U4Formal.lean:159:28: error: unexpected token ':'; expected command
+U4Formal.lean:210:13: error(lean.unknownIdentifier): Unknown identifier `P_phi`
+U4Formal.lean:211:15: error(lean.unknownIdentifier): Unknown identifier `P_mp`
+U4Formal.lean:212:16: error(lean.unknownIdentifier): Unknown identifier `P_no_refl`
+U4Formal.lean:219:12: error(lean.unknownIdentifier): Unknown identifier `P_phi`
+U4Formal.lean:219:30: error(lean.unknownIdentifier): Unknown identifier `P_mp`
+U4Formal.lean:219:36: error(lean.unknownIdentifier): Unknown identifier `P_no_refl`
+explicitU4Countermodel : U4Countermodel
+u4_countermodel_exists :
+  ∃ pred,
+    (∀ (x y z u : Fml), pred (Phi x y z u)) ∧
+      (∀ (X Y : Fml), pred X → pred (I X Y) → pred Y) ∧ ∀ (q : Fml), ¬pred (I q q)
