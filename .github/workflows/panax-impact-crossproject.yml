@@ -1,0 +1,227 @@
+name: Panax impact finalization - independent project recurrence
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/panax-impact-crossproject.yml'
+      - 'virus_hunt/validation_inputs/candidate_contigs.fna'
+      - 'virus_hunt/finalization/panax_four_full_orfs.faa'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+      selected_count: ${{ steps.select.outputs.selected_count }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: select
+        name: Query all public Panax notoginseng RNA-seq runs and select project representatives
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p crossproject_selection
+          fields='run_accession,study_accession,secondary_study_accession,sample_accession,experiment_accession,scientific_name,sample_title,experiment_title,library_strategy,library_source,library_selection,library_layout,instrument_platform,instrument_model,base_count,read_count,first_public,last_updated,country,collection_date,fastq_bytes'
+          query='scientific_name="Panax notoginseng" AND library_strategy="RNA-Seq"'
+          if ! curl -fsSL --retry 8 --retry-all-errors -G 'https://www.ebi.ac.uk/ena/portal/api/search' \
+            --data-urlencode 'result=read_run' --data-urlencode "query=${query}" --data-urlencode "fields=${fields}" \
+            --data-urlencode 'format=tsv' --data-urlencode 'limit=0' -o crossproject_selection/all_panax_notoginseng_rnaseq.tsv; then
+            curl -fsSL --retry 8 --retry-all-errors -G 'https://www.ebi.ac.uk/ena/portal/api/search' \
+              --data-urlencode 'result=read_run' --data-urlencode 'query=tax_eq(44588) AND library_strategy="RNA-Seq"' \
+              --data-urlencode "fields=${fields}" --data-urlencode 'format=tsv' --data-urlencode 'limit=0' \
+              -o crossproject_selection/all_panax_notoginseng_rnaseq.tsv
+          fi
+          python - <<'PY'
+          import csv,json,pathlib,collections,datetime
+          root=pathlib.Path('crossproject_selection')
+          rows=list(csv.DictReader(open(root/'all_panax_notoginseng_rnaseq.tsv'),delimiter='\t'))
+          for r in rows:
+              r['effective_study']=r.get('study_accession') or r.get('secondary_study_accession') or ''
+              try:r['_date']=datetime.date.fromisoformat((r.get('first_public') or '1900-01-01')[:10])
+              except:r['_date']=datetime.date(1900,1,1)
+              try:r['_bases']=int(r.get('base_count') or 0)
+              except:r['_bases']=0
+          by=collections.defaultdict(list)
+          for r in rows:
+              if r.get('run_accession'): by[r['effective_study']].append(r)
+          selected=[]
+          for study,rs in sorted(by.items()):
+              rs=sorted(rs,key=lambda r:(r['_date'],r['_bases']),reverse=True)
+              take=len(rs) if study=='PRJDB39299' else min(3,len(rs))
+              selected.extend(rs[:take])
+          source=[r for r in selected if r['effective_study']=='PRJDB39299']
+          other=[r for r in selected if r['effective_study']!='PRJDB39299'][:60]
+          selected=source+other
+          matrix={'include':[{'run':r['run_accession'],'study':r['effective_study'],'sample':r.get('sample_accession',''),'organism':r.get('scientific_name',''),'title':r.get('sample_title','')} for r in selected]}
+          (root/'matrix.json').write_text(json.dumps(matrix,separators=(',',':'))+'\n')
+          audit={'query_row_count':len(rows),'distinct_studies':len(by),'selected_run_count':len(selected),'selected_distinct_studies':len({r['effective_study'] for r in selected}),'source_project_run_count':len(source),'selection_rule':'all PRJDB39299 runs plus up to three recent/high-base-count runs per other study, capped at 60 non-source runs'}
+          (root/'SELECTION_AUDIT.json').write_text(json.dumps(audit,indent=2)+'\n')
+          fields=[k for k in rows[0].keys() if not k.startswith('_')] if rows else []
+          if rows:
+              with open(root/'selected_runs.tsv','w',newline='') as f:
+                  w=csv.DictWriter(f,fieldnames=fields,delimiter='\t',extrasaction='ignore');w.writeheader();w.writerows(selected)
+          print(json.dumps(audit,indent=2))
+          PY
+          echo "matrix=$(cat crossproject_selection/matrix.json)" >> "$GITHUB_OUTPUT"
+          echo "selected_count=$(python -c 'import json;print(len(json.load(open("crossproject_selection/matrix.json"))["include"]))')" >> "$GITHUB_OUTPUT"
+          find crossproject_selection -type f -print0 | sort -z | xargs -0 sha256sum > crossproject_selection/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PANAX_CROSSPROJECT_SELECTION_20260818
+          path: crossproject_selection
+          retention-days: 30
+
+  screen:
+    needs: discover
+    if: ${{ needs.discover.outputs.selected_count != '0' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix: ${{ fromJson(needs.discover.outputs.matrix) }}
+    env:
+      RUN: ${{ matrix.run }}
+      STUDY: ${{ matrix.study }}
+      SAMPLE: ${{ matrix.sample }}
+      ORGANISM: ${{ matrix.organism }}
+      SAMPLE_TITLE: ${{ matrix.title }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install screening tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq aria2 zstd ncbi-blast+ seqkit
+      - name: Search Logan assembly for four candidate lineages
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="crossproject/${RUN}"; mkdir -p "$OUT"
+          python - <<'PY'
+          import json,os,pathlib
+          root=pathlib.Path(f"crossproject/{os.environ['RUN']}")
+          root.mkdir(parents=True,exist_ok=True)
+          meta={k:os.environ.get(k,'') for k in ['RUN','STUDY','SAMPLE','ORGANISM','SAMPLE_TITLE']}
+          (root/'metadata.json').write_text(json.dumps(meta,indent=2)+'\n')
+          PY
+          URL="https://s3.amazonaws.com/logan-pub/c/${RUN}/${RUN}.contigs.fa.zst"
+          if ! aria2c --continue=true --allow-overwrite=true --auto-file-renaming=false --file-allocation=none \
+            --max-connection-per-server=4 --split=4 --max-tries=12 --retry-wait=5 --dir "$OUT" --out "${RUN}.contigs.fa.zst" "$URL"; then
+            echo '{"status":"logan_unavailable"}' > "$OUT/STATUS.json"
+            : > "$OUT/nucleotide_hits.tsv"; : > "$OUT/protein_hits.tsv"
+            exit 0
+          fi
+          zstd -t "$OUT/${RUN}.contigs.fa.zst"
+          zstdcat "$OUT/${RUN}.contigs.fa.zst" > "$OUT/${RUN}.contigs.fna"
+          makeblastdb -in "$OUT/${RUN}.contigs.fna" -dbtype nucl -parse_seqids -out "$OUT/${RUN}.db" >/dev/null
+          blastn -query virus_hunt/validation_inputs/candidate_contigs.fna -db "$OUT/${RUN}.db" -task dc-megablast \
+            -evalue 1e-20 -max_target_seqs 100 -dust yes -soft_masking true \
+            -outfmt '6 qseqid sseqid pident length qlen slen qstart qend sstart send evalue bitscore qcovhsp' \
+            -out "$OUT/nucleotide_hits_all.tsv" || true
+          tblastn -query virus_hunt/finalization/panax_four_full_orfs.faa -db "$OUT/${RUN}.db" \
+            -evalue 1e-10 -max_target_seqs 100 -seg yes -comp_based_stats 2 \
+            -outfmt '6 qseqid sseqid pident length qlen slen qstart qend sstart send evalue bitscore qcovs' \
+            -out "$OUT/protein_hits_all.tsv" || true
+          python - "$OUT" <<'PY'
+          import csv,json,pathlib,sys
+          root=pathlib.Path(sys.argv[1])
+          nr=[]
+          for v in csv.reader(open(root/'nucleotide_hits_all.tsv'),delimiter='\t'):
+              if len(v)>=13 and float(v[2])>=90 and float(v[12])>=70: nr.append(v)
+          pr=[]
+          for v in csv.reader(open(root/'protein_hits_all.tsv'),delimiter='\t'):
+              if len(v)>=13 and float(v[12])>=60 and float(v[2])>=45: pr.append(v)
+          with open(root/'nucleotide_hits.tsv','w',newline='') as f: csv.writer(f,delimiter='\t').writerows(nr)
+          with open(root/'protein_hits.tsv','w',newline='') as f: csv.writer(f,delimiter='\t').writerows(pr)
+          status={'status':'complete','strict_nucleotide_recurrence_hits':len(nr),'broad_protein_homology_hits':len(pr)}
+          (root/'STATUS.json').write_text(json.dumps(status,indent=2)+'\n')
+          ids=sorted({v[1] for v in nr})
+          (root/'strict_hit_contig_ids.txt').write_text('\n'.join(ids)+'\n' if ids else '')
+          PY
+          if [[ -s "$OUT/strict_hit_contig_ids.txt" ]]; then
+            blastdbcmd -db "$OUT/${RUN}.db" -entry_batch "$OUT/strict_hit_contig_ids.txt" > "$OUT/strict_hit_contigs.fna" || true
+          else
+            : > "$OUT/strict_hit_contigs.fna"
+          fi
+          rm -f "$OUT/${RUN}.contigs.fa.zst" "$OUT/${RUN}.contigs.fna" "$OUT/${RUN}.db"*
+          find "$OUT" -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > "$OUT/SHA256SUMS.txt"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: panax-crossproject-${{ matrix.run }}
+          path: crossproject/${{ matrix.run }}
+          retention-days: 30
+          compression-level: 9
+
+  aggregate:
+    needs: [discover, screen]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: panax-crossproject-*
+          path: downloads
+      - uses: actions/download-artifact@v4
+        with:
+          name: PANAX_CROSSPROJECT_SELECTION_20260818
+          path: selection
+      - name: Aggregate independent-study recurrence evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p aggregate
+          python - <<'PY'
+          import csv,json,pathlib
+          root=pathlib.Path('downloads')
+          metadata={}
+          for p in root.rglob('metadata.json'):
+              try:m=json.load(open(p)); metadata[m['RUN']]=m
+              except:pass
+          nrows=[]; prows=[]; statuses=[]
+          for p in root.rglob('STATUS.json'):
+              try:
+                  s=json.load(open(p)); run=p.parent.name; s['run']=run; statuses.append(s)
+              except:pass
+          for p in root.rglob('nucleotide_hits.tsv'):
+              run=p.parent.name; m=metadata.get(run,{})
+              for v in csv.reader(open(p),delimiter='\t'):
+                  if len(v)>=13:nrows.append({'run':run,'study':m.get('STUDY',''),'sample':m.get('SAMPLE',''),'sample_title':m.get('SAMPLE_TITLE',''),'lineage':v[0],'contig':v[1],'pident':v[2],'alignment_length':v[3],'query_length':v[4],'subject_length':v[5],'evalue':v[10],'bitscore':v[11],'qcov':v[12]})
+          for p in root.rglob('protein_hits.tsv'):
+              run=p.parent.name; m=metadata.get(run,{})
+              for v in csv.reader(open(p),delimiter='\t'):
+                  if len(v)>=13:prows.append({'run':run,'study':m.get('STUDY',''),'sample':m.get('SAMPLE',''),'sample_title':m.get('SAMPLE_TITLE',''),'lineage':v[0],'contig':v[1],'pident':v[2],'alignment_length':v[3],'qcov':v[12],'evalue':v[10],'bitscore':v[11]})
+          def write(path,rows,header):
+              with open(path,'w',newline='') as f:
+                  w=csv.DictWriter(f,fieldnames=header,delimiter='\t');w.writeheader();w.writerows(rows)
+          nh=['run','study','sample','sample_title','lineage','contig','pident','alignment_length','query_length','subject_length','evalue','bitscore','qcov']
+          ph=['run','study','sample','sample_title','lineage','contig','pident','alignment_length','qcov','evalue','bitscore']
+          write('aggregate/STRICT_NUCLEOTIDE_RECURRENCE.tsv',nrows,nh)
+          write('aggregate/BROAD_PROTEIN_HOMOLOGY.tsv',prows,ph)
+          summary={}
+          for lin in ['PNX_Duplo_A','PNX_Duplo_B','PNX_Picorna_A','PNX_Picorna_B']:
+              rs=[r for r in nrows if r['lineage']==lin]
+              independent=[r for r in rs if r['study'] and r['study']!='PRJDB39299']
+              summary[lin]={'strict_hit_runs':sorted({r['run'] for r in rs}),'strict_hit_studies':sorted({r['study'] for r in rs if r['study']}),'independent_study_hit_count':len({r['study'] for r in independent}),'independent_study_hits':sorted({r['study'] for r in independent})}
+          selection=json.load(open('selection/SELECTION_AUDIT.json'))
+          overall={'selection':selection,'lineages':summary,'completed_runs':sum(s.get('status')=='complete' for s in statuses),'logan_unavailable_runs':sum(s.get('status')=='logan_unavailable' for s in statuses),'interpretation_boundary':'A hit in a distinct archive study strengthens sequence recurrence but does not by itself identify the true host, prove active replication, or exclude shared laboratory/reagent contamination.'}
+          pathlib.Path('aggregate/CROSSPROJECT_SUMMARY.json').write_text(json.dumps(overall,indent=2)+'\n')
+          md=['# Independent-project Panax recurrence audit','',f"Panax notoginseng RNA-seq records queried: **{selection['query_row_count']}**",f"Distinct studies represented in the query: **{selection['distinct_studies']}**",f"Runs screened: **{selection['selected_run_count']}**",'', '| Lineage | Strict nucleotide hit studies | Independent studies outside PRJDB39299 |','|---|---|---:|']
+          for lin,x in summary.items(): md.append(f"| `{lin}` | {', '.join(x['strict_hit_studies']) or 'none'} | {x['independent_study_hit_count']} |")
+          md += ['', '## Claim boundary','',overall['interpretation_boundary'],'','Absence from the selected screen is not proof of biological absence, because not every public run has a Logan assembly and only a bounded number of runs per study was selected.']
+          pathlib.Path('aggregate/CROSSPROJECT_REPORT.md').write_text('\n'.join(md)+'\n')
+          PY
+          find aggregate -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > aggregate/SHA256SUMS.txt
+          cat aggregate/CROSSPROJECT_REPORT.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PANAX_CROSSPROJECT_RECURRENCE_FINAL_20260818
+          path: aggregate
+          retention-days: 30
+          compression-level: 9
