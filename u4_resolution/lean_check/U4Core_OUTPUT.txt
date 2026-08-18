@@ -1,1 +1,10 @@
-U4Core.lean:1:0: error: object file '/home/runner/.elan/toolchains/leanprover--lean4---v4.30.0/lib/lean/Std/Tactic/Omega.olean' of module Std.Tactic.Omega does not exist
+U4Core.lean:23:36: error: No goals to be solved
+U4Core.lean:55:72: error: Function expected at
+  I (subst σ Q) W
+but this term has type
+  Form
+
+Note: Expected a function because this term is being applied to the argument
+  lemma
+U4Core.lean:57:16: error: unexpected token ':'; expected command
+U4Core.lean:91:42: error(lean.unknownIdentifier): Unknown identifier `interlocking`
