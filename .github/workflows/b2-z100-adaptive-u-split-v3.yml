@@ -1,0 +1,241 @@
+name: B2 Z100 adaptive fourth-point proof split v3
+
+on:
+  push:
+    branches: [b2-z100-final-proof-audit-20260818]
+    paths:
+      - 'crossdomain/B2_THIRD_BRANCH_DRAT_V2_LATEST_RUN.json'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      has_cases: ${{ steps.plan.outputs.has_cases }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          p='crossdomain/B2_THIRD_BRANCH_DRAT_V2_LATEST_RUN.json'
+          d=json.load(open(p))
+          assert not d.get('verified_sat_counterexample_thirds'),d
+          unresolved=[int(x) for x in d.get('unresolved_thirds',[])]
+          assert all(2<=x<=45 for x in unresolved),unresolved
+          cases=[{'third':x,'skip':False} for x in unresolved]
+          if not cases:
+              cases=[{'third':0,'skip':True}]
+          print('matrix='+json.dumps({'include':cases},separators=(',',':')))
+          print('has_cases='+('true' if unresolved else 'false'))
+          PY
+
+  split:
+    needs: plan
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 355
+    env:
+      CADICAL_COMMIT: c60730422e758ef1cebe7aeddf2dda31c996bf04
+      DRAT_TRIM_COMMIT: 2e3b2dc0ecf938addbd779d42877b6ed69d9a985
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        if: ${{ !matrix.skip }}
+        with:
+          python-version: '3.12'
+
+      - name: Build pinned tools
+        if: ${{ !matrix.skip }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            crossdomain/b2_z100_prefix_proof_cnf_v3.py \
+            crossdomain/b2_z100_split_proof_batch_v3.py \
+            crossdomain/b2_z100_verify_cadical_model.py
+          git clone -q https://github.com/arminbiere/cadical.git /tmp/cadical
+          git -C /tmp/cadical checkout -q "$CADICAL_COMMIT"
+          test "$(git -C /tmp/cadical rev-parse HEAD)" = "$CADICAL_COMMIT"
+          (cd /tmp/cadical && ./configure >/dev/null && make -j2 >/dev/null)
+          git clone -q https://github.com/marijnheule/drat-trim.git /tmp/drat-trim
+          git -C /tmp/drat-trim checkout -q "$DRAT_TRIM_COMMIT"
+          test "$(git -C /tmp/drat-trim rev-parse HEAD)" = "$DRAT_TRIM_COMMIT"
+          make -C /tmp/drat-trim -j2 >/dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zstd
+
+      - name: Run complete fourth-point split
+        if: ${{ !matrix.skip }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          t='${{ matrix.third }}'
+          d="artifact/t${t}"
+          mkdir -p "$d"
+          set +e
+          python crossdomain/b2_z100_split_proof_batch_v3.py \
+            --prefix-json "[0,1,${t}]" \
+            --generator crossdomain/b2_z100_prefix_proof_cnf_v3.py \
+            --model-checker crossdomain/b2_z100_verify_cadical_model.py \
+            --cadical /tmp/cadical/build/cadical \
+            --drat-trim /tmp/drat-trim/drat-trim \
+            --zstd zstd \
+            --workers 2 \
+            --solve-seconds 300 \
+            --check-seconds 120 \
+            --out "$d" \
+            > "$d/batch_stdout.log" 2> "$d/batch_stderr.log"
+          rc=$?
+          set -e
+          printf '%s\n' "$rc" > "$d/batch_exit_code.txt"
+          test -f "$d/SUMMARY.json"
+          test -f "$d/STATUS.txt"
+          find "$d" -maxdepth 1 -type f ! -name SHA256SUMS_TOP.txt -print0 | sort -z | xargs -0 sha256sum > "$d/SHA256SUMS_TOP.txt"
+
+      - name: Write no-op result when no third branch remains
+        if: ${{ matrix.skip }}
+        shell: bash
+        run: |
+          mkdir -p artifact/t0
+          printf 'NO_UNRESOLVED_THIRD_BRANCHES\n' > artifact/t0/STATUS.txt
+          printf '{"schema":"b2-z100-u-split-noop-v3","parent_prefix":null,"unresolved_child_prefixes":[],"verified_sat_counterexamples":[],"parent_verified_unsat_by_complete_children":true}\n' > artifact/t0/SUMMARY.json
+          printf '[]\n' > artifact/t0/UNRESOLVED_CHILDREN.json
+          printf '{"schema":"b2-z100-u-split-noop-plan-v3"}\n' > artifact/t0/SPLIT_PLAN.json
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !matrix.skip }}
+        with:
+          name: b2-z100-u-split-t${{ matrix.third }}-v3-proofs
+          path: artifact/t${{ matrix.third }}
+          retention-days: 90
+          compression-level: 3
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: b2-z100-u-split-t${{ matrix.third }}-v3-summary
+          path: |
+            artifact/t${{ matrix.third }}/SPLIT_PLAN.json
+            artifact/t${{ matrix.third }}/SUMMARY.json
+            artifact/t${{ matrix.third }}/UNRESOLVED_CHILDREN.json
+            artifact/t${{ matrix.third }}/STATUS.txt
+            artifact/t${{ matrix.third }}/batch_exit_code.txt
+            artifact/t${{ matrix.third }}/SHA256SUMS_TOP.txt
+          retention-days: 90
+          if-no-files-found: warn
+
+  aggregate:
+    if: always()
+    needs: [plan, split]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: b2-z100-u-split-t*-v3-summary
+          path: aggregate
+          merge-multiple: false
+
+      - name: Combine parent summaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,pathlib
+          stage1=json.load(open('crossdomain/B2_THIRD_BRANCH_DRAT_V2_LATEST_RUN.json'))
+          expected=[int(x) for x in stage1.get('unresolved_thirds',[])]
+          rows=[]
+          for t in expected:
+              ds=list(pathlib.Path('aggregate').glob(f'b2-z100-u-split-t{t}-v3-summary'))
+              if len(ds)!=1:
+                  rows.append({'third':t,'status':'MISSING_SUMMARY_ARTIFACT','unresolved_child_prefixes':[[0,1,t]]})
+                  continue
+              ss=list(ds[0].rglob('SUMMARY.json'))
+              if len(ss)!=1:
+                  rows.append({'third':t,'status':'MISSING_SUMMARY_JSON','unresolved_child_prefixes':[[0,1,t]]})
+                  continue
+              s=json.load(open(ss[0]))
+              rows.append({'third':t,'status':'VERIFIED_UNSAT_BY_COMPLETE_CHILDREN' if s.get('parent_verified_unsat_by_complete_children') else 'PARTIAL_UNRESOLVED','summary':s,'unresolved_child_prefixes':s.get('unresolved_child_prefixes',[]),'verified_sat_counterexamples':s.get('verified_sat_counterexamples',[])})
+          unresolved=[];counter=[];proved=[]
+          for r in rows:
+              unresolved.extend(r.get('unresolved_child_prefixes',[]))
+              counter.extend(r.get('verified_sat_counterexamples',[]))
+              if r['status']=='VERIFIED_UNSAT_BY_COMPLETE_CHILDREN':proved.append(r['third'])
+          payload={
+            'schema':'b2-z100-adaptive-u-split-v3-summary',
+            'run_id':int('${{ github.run_id }}'),
+            'run_attempt':int('${{ github.run_attempt }}'),
+            'commit':'${{ github.sha }}',
+            'stage1_run_id':stage1.get('run_id'),
+            'stage1_unresolved_thirds':expected,
+            'proved_thirds_by_u_split':proved,
+            'unresolved_prefixes':unresolved,
+            'verified_sat_counterexamples':counter,
+            'all_stage1_unresolved_thirds_closed':len(proved)==len(expected) and not unresolved and not counter,
+            'claim_boundary':'Each listed third branch is closed only through complete disjoint fourth-point coverage with every child carrying a checked UNSAT proof.'
+          }
+          pathlib.Path('aggregate/U_SPLIT_SUMMARY.json').write_text(json.dumps(payload,indent=2,sort_keys=True)+'\n')
+          pathlib.Path('aggregate/PARENT_ROWS.json').write_text(json.dumps(rows,indent=2,sort_keys=True)+'\n')
+          pathlib.Path('aggregate/UNRESOLVED_PREFIXES.json').write_text(json.dumps(unresolved,indent=2)+'\n')
+          print(json.dumps(payload,indent=2,sort_keys=True))
+          PY
+          find aggregate -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > aggregate/SHA256SUMS.txt
+
+      - id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: b2-z100-adaptive-u-split-v3-summary
+          path: |
+            aggregate/U_SPLIT_SUMMARY.json
+            aggregate/PARENT_ROWS.json
+            aggregate/UNRESOLVED_PREFIXES.json
+            aggregate/SHA256SUMS.txt
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Publish stage pointer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os,pathlib
+          p=json.load(open('aggregate/U_SPLIT_SUMMARY.json'))
+          p.update({'artifact_id':int(os.environ['ARTIFACT_ID']),'artifact_url':os.environ['ARTIFACT_URL'],'artifact_digest':os.environ['ARTIFACT_DIGEST']})
+          pathlib.Path('pointer.json').write_text(json.dumps(p,indent=2,sort_keys=True)+'\n')
+          PY
+          encoded=$(base64 -w0 pointer.json)
+          path='crossdomain/B2_U_SPLIT_DRAT_V3_LATEST_RUN.json'
+          sha=$(gh api "repos/${GITHUB_REPOSITORY}/contents/${path}?ref=${GITHUB_REF_NAME}" --jq .sha 2>/dev/null || true)
+          args=(--method PUT "repos/${GITHUB_REPOSITORY}/contents/${path}" -f message="Record B2 adaptive U-split run ${GITHUB_RUN_ID}" -f content="$encoded" -f branch="${GITHUB_REF_NAME}")
+          if [ -n "$sha" ]; then args+=(-f sha="$sha"); fi
+          gh api "${args[@]}" >/dev/null
+
+      - name: Enforce stage proof gate
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          p=json.load(open('aggregate/U_SPLIT_SUMMARY.json'))
+          assert not p['verified_sat_counterexamples'],p
+          assert p['all_stage1_unresolved_thirds_closed'],p
+          PY
