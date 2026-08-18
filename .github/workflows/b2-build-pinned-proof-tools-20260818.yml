@@ -1,0 +1,67 @@
+name: B2 build pinned proof tools 20260818
+on:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - '.github/workflows/b2-build-pinned-proof-tools-20260818.yml'
+permissions:
+  contents: write
+  actions: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned CaDiCaL and drat-trim
+        run: |
+          set -euo pipefail
+          mkdir -p artifact
+          git clone https://github.com/arminbiere/cadical.git /tmp/cadical
+          cd /tmp/cadical
+          git checkout c60730422e758ef1cebe7aeddf2dda31c996bf04
+          ./configure && make -j2
+          cp build/cadical "$GITHUB_WORKSPACE/artifact/cadical"
+          cd /tmp
+          git clone https://github.com/marijnheule/drat-trim.git
+          cd drat-trim
+          git checkout 2e3b2dc0ecf938addbd779d42877b6ed69d9a985
+          make -j2
+          cp drat-trim "$GITHUB_WORKSPACE/artifact/drat-trim"
+          cd "$GITHUB_WORKSPACE"
+          ./artifact/cadical --version > artifact/cadical_version.txt
+          ./artifact/drat-trim 2>&1 | head -5 > artifact/drat_trim_banner.txt || true
+          cat > artifact/BUILD_METADATA.json <<'EOF'
+          {
+            "runner": "ubuntu-24.04",
+            "cadical_commit": "c60730422e758ef1cebe7aeddf2dda31c996bf04",
+            "drat_trim_commit": "2e3b2dc0ecf938addbd779d42877b6ed69d9a985"
+          }
+          EOF
+          sha256sum artifact/* > artifact/SHA256SUMS.txt
+      - id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: b2-pinned-proof-tools-20260818
+          path: artifact
+          retention-days: 30
+          if-no-files-found: error
+      - name: Publish artifact pointer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+        run: |
+          python - <<'PY'
+          import json,os
+          p={'run_id':int(os.environ['GITHUB_RUN_ID']),'commit':os.environ['GITHUB_SHA'],'status':'completed',
+             'artifact_id':int(os.environ['ARTIFACT_ID']),'artifact_url':os.environ['ARTIFACT_URL'],
+             'artifact_digest':os.environ['ARTIFACT_DIGEST']}
+          open('pointer.json','w').write(json.dumps(p,indent=2)+'\n')
+          PY
+          encoded=$(base64 -w0 pointer.json)
+          path='crossdomain/B2_PINNED_PROOF_TOOLS_LATEST_RUN.json'
+          sha=$(gh api "repos/${GITHUB_REPOSITORY}/contents/${path}?ref=${GITHUB_REF_NAME}" --jq .sha 2>/dev/null || true)
+          args=(--method PUT "repos/${GITHUB_REPOSITORY}/contents/${path}" -f message="Record B2 proof tools ${GITHUB_RUN_ID}" -f content="$encoded" -f branch="${GITHUB_REF_NAME}")
+          if [ -n "$sha" ]; then args+=(-f sha="$sha"); fi
+          gh api "${args[@]}" >/dev/null
