@@ -1,0 +1,75 @@
+name: CASP17 T2461 build A24 candidate models 20260818
+on:
+  push:
+    branches: [casp17-t2461-final-20260818]
+    paths:
+      - 'casp17/t2461/build_a24.py'
+      - '.github/workflows/casp17-t2461-build-a24-20260818.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install numpy scipy biopython
+      - name: Download frozen public ESMFold prediction artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: casp17-t2461-predict-search-20260818
+          path: prediction
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 32116211347
+      - name: Download public homologous A24 cage assemblies
+        run: |
+          set -euo pipefail
+          mkdir -p templates artifact
+          curl -fL --retry 4 -o templates/3vcd-assembly1.cif https://files.rcsb.org/download/3vcd-assembly1.cif
+          curl -fL --retry 4 -o templates/6fdb-assembly1.cif https://files.rcsb.org/download/6fdb-assembly1.cif
+          sha256sum templates/* > artifact/TEMPLATE_SHA256SUMS.txt
+      - name: Build and validate five A24 alternatives
+        run: |
+          set -euo pipefail
+          python casp17/t2461/build_a24.py \
+            --monomer prediction/T2461_full_esmfold.pdb \
+            --template 3VCD=templates/3vcd-assembly1.cif \
+            --template 6FDB=templates/6fdb-assembly1.cif \
+            --out artifact | tee artifact/build_stdout.log
+          cp prediction/T2461_full_esmfold.pdb artifact/
+          find artifact -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > artifact/SHA256SUMS.txt
+      - id: upload
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: casp17-t2461-a24-models-20260818
+          path: artifact
+          retention-days: 90
+          compression-level: 6
+          if-no-files-found: error
+      - name: Publish immutable run pointer
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+        run: |
+          python - <<'PY'
+          import json,os
+          p={'schema':'casp17-t2461-a24-build-v1','run_id':int(os.environ['GITHUB_RUN_ID']),
+             'run_attempt':int(os.environ['GITHUB_RUN_ATTEMPT']),'commit':os.environ['GITHUB_SHA'],
+             'artifact_id':int(os.environ['ARTIFACT_ID']),'artifact_url':os.environ['ARTIFACT_URL'],
+             'artifact_digest':os.environ['ARTIFACT_DIGEST']}
+          open('pointer.json','w').write(json.dumps(p,indent=2,sort_keys=True)+'\n')
+          PY
+          encoded=$(base64 -w0 pointer.json); path='casp17/t2461/A24_MODELS_LATEST_RUN.json'
+          sha=$(gh api "repos/${GITHUB_REPOSITORY}/contents/${path}?ref=${GITHUB_REF_NAME}" --jq .sha 2>/dev/null || true)
+          args=(--method PUT "repos/${GITHUB_REPOSITORY}/contents/${path}" -f message="Record CASP17 T2461 A24 models ${GITHUB_RUN_ID}" -f content="$encoded" -f branch="${GITHUB_REF_NAME}")
+          if [ -n "$sha" ]; then args+=(-f sha="$sha"); fi
+          gh api "${args[@]}" >/dev/null
