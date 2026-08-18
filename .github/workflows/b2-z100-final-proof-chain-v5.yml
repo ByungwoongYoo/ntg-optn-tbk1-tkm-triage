@@ -20,6 +20,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
       - name: Verify complete staged proof chain and witness
         shell: bash
         run: |
@@ -42,6 +43,7 @@ jobs:
           cp crossdomain/b2_z100_split_proof_batch_v3.py artifact/
           cp crossdomain/b2_z100_recursive_proof_v4.py artifact/
           cp crossdomain/b2_z100_verify_cadical_model.py artifact/
+
       - name: Freeze all workflow-run artifact indexes
         env:
           GH_TOKEN: ${{ github.token }}
@@ -49,41 +51,49 @@ jobs:
         run: |
           set -euo pipefail
           python - <<'PY'
-          import json,pathlib,subprocess
+          import json,os,pathlib,subprocess
           names=[
             ('third','crossdomain/B2_THIRD_BRANCH_DRAT_V2_LATEST_RUN.json'),
             ('u','crossdomain/B2_U_SPLIT_DRAT_V3_LATEST_RUN.json'),
             ('v','crossdomain/B2_V_SPLIT_DRAT_V3_LATEST_RUN.json'),
             ('recursive','crossdomain/B2_RECURSIVE_PROOF_V4_LATEST_RUN.json')]
+          repo=os.environ['GITHUB_REPOSITORY']
           out={}
           for name,path in names:
               p=json.load(open(path));rid=int(p['run_id'])
-              raw=subprocess.check_output(['gh','api','--paginate',f'repos/${{GITHUB_REPOSITORY}}/actions/runs/{rid}/artifacts'],text=True)
-              data=json.loads(raw)
+              raw=subprocess.check_output(['gh','api','--paginate','--slurp',f'repos/{repo}/actions/runs/{rid}/artifacts'],text=True)
+              pages=json.loads(raw)
               arts=[]
-              for x in data.get('artifacts',[]):
-                  arts.append({'id':x.get('id'),'name':x.get('name'),'size_in_bytes':x.get('size_in_bytes'),'expired':x.get('expired'),'created_at':x.get('created_at'),'expires_at':x.get('expires_at'),'digest':x.get('digest'),'archive_download_url':x.get('archive_download_url')})
-              out[name]={'run_id':rid,'commit':p.get('commit'),'summary_artifact_id':p.get('artifact_id'),'summary_artifact_digest':p.get('artifact_digest'),'artifacts':arts}
+              for page in pages:
+                  for x in page.get('artifacts',[]):
+                      arts.append({
+                        'id':x.get('id'),'name':x.get('name'),
+                        'size_in_bytes':x.get('size_in_bytes'),'expired':x.get('expired'),
+                        'created_at':x.get('created_at'),'expires_at':x.get('expires_at'),
+                        'digest':x.get('digest'),'archive_download_url':x.get('archive_download_url')})
+              out[name]={
+                'run_id':rid,'commit':p.get('commit'),
+                'summary_artifact_id':p.get('artifact_id'),
+                'summary_artifact_digest':p.get('artifact_digest'),
+                'artifact_count':len(arts),'artifacts':arts}
           pathlib.Path('artifact/RUN_ARTIFACT_INDEX.json').write_text(json.dumps(out,indent=2,sort_keys=True)+'\n')
           PY
+
       - name: Write reproducibility and claim-boundary README
         shell: bash
         run: |
           cat > artifact/README.md <<'EOF'
           # B2[2]/Z100 final proof-chain record
 
-          This artifact is a compact index and verifier output for the staged proof-producing computation. The exact CNFs, checked DRAT proof objects, logs, direct fixed-set checks, and recursive proof trees are preserved in the GitHub Actions artifacts indexed by `RUN_ARTIFACT_INDEX.json`.
+          This compact record indexes the staged proof-producing computation. Exact CNFs, checked DRAT proof objects, logs, direct fixed-set checks, and recursive proof trees are preserved in the GitHub Actions artifacts listed in `RUN_ARTIFACT_INDEX.json`.
 
-          A successful `STATUS.txt` value of
+          A `STATUS.txt` value of `COMPUTATIONAL_PROOF_CANDIDATE_FOR_M_13_PENDING_INDEPENDENT_EXTERNAL_REVIEW` means that the checked 13-element witness establishes `M>=13` and the audited normalization plus all terminal evidence establish `M<=13` computationally.
 
-          `COMPUTATIONAL_PROOF_CANDIDATE_FOR_M_13_PENDING_INDEPENDENT_EXTERNAL_REVIEW`
-
-          means that the independently checked 13-element witness establishes `M>=13`, while the audited affine/reflection normalization and every preserved terminal proof establish `M<=13` computationally.
-
-          It does not mean Lean verification, peer review, or independent external reproduction. No timeout is accepted as UNSAT.
+          This is not a Lean proof, peer review, or independent external reproduction. No timeout is accepted as UNSAT.
           EOF
           find artifact -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > artifact/SHA256SUMS.txt
           find artifact -maxdepth 1 -type f -printf '%f\t%s bytes\n' | sort > artifact/FILE_LIST.txt
+
       - id: upload
         uses: actions/upload-artifact@v4
         if: always()
@@ -93,6 +103,7 @@ jobs:
           retention-days: 90
           compression-level: 6
           if-no-files-found: error
+
       - name: Publish final immutable pointer
         if: always()
         env:
@@ -106,7 +117,12 @@ jobs:
           python - <<'PY'
           import json,os,pathlib
           p=json.load(open('artifact/FINAL_PROOF_CHAIN.json'))
-          p.update({'final_workflow_run_id':int(os.environ['GITHUB_RUN_ID']),'final_workflow_commit':os.environ['GITHUB_SHA'],'final_artifact_id':int(os.environ['ARTIFACT_ID']),'final_artifact_url':os.environ['ARTIFACT_URL'],'final_artifact_digest':os.environ['ARTIFACT_DIGEST']})
+          p.update({
+            'final_workflow_run_id':int(os.environ['GITHUB_RUN_ID']),
+            'final_workflow_commit':os.environ['GITHUB_SHA'],
+            'final_artifact_id':int(os.environ['ARTIFACT_ID']),
+            'final_artifact_url':os.environ['ARTIFACT_URL'],
+            'final_artifact_digest':os.environ['ARTIFACT_DIGEST']})
           pathlib.Path('pointer.json').write_text(json.dumps(p,indent=2,sort_keys=True)+'\n')
           PY
           encoded=$(base64 -w0 pointer.json)
@@ -115,6 +131,7 @@ jobs:
           args=(--method PUT "repos/${GITHUB_REPOSITORY}/contents/${path}" -f message="Record B2 final proof-chain run ${GITHUB_RUN_ID}" -f content="$encoded" -f branch="${GITHUB_REF_NAME}")
           if [ -n "$sha" ]; then args+=(-f sha="$sha"); fi
           gh api "${args[@]}" >/dev/null
+
       - name: Enforce final claim gate
         if: always()
         shell: bash
