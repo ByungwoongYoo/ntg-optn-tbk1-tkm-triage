@@ -1,0 +1,209 @@
+name: B2 Z100 robust recursive proof continuation v4c
+
+on:
+  push:
+    branches: [b2-z100-final-proof-audit-20260818]
+    paths:
+      - 'crossdomain/B2_RECURSIVE_PROOF_V4B_LATEST_RUN.json'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import base64,json,math
+          d=json.load(open('crossdomain/B2_RECURSIVE_PROOF_V4B_LATEST_RUN.json'))
+          assert not d.get('verified_sat_counterexamples'),d
+          original=d.get('input_unresolved_prefixes',[])
+          closed={tuple(x) for x in d.get('closed_root_prefixes',[])}
+          residual=[p for p in original if tuple(p) not in closed]
+          for p in d.get('unresolved_prefixes',[])+d.get('missing_root_prefixes',[]):
+              if tuple(p) not in closed and p not in residual: residual.append(p)
+          if residual:
+              chunk=max(1,math.ceil(len(residual)/240));b=[]
+              for i in range(0,len(residual),chunk):
+                  ps=residual[i:i+chunk]
+                  enc=base64.urlsafe_b64encode(json.dumps(ps,separators=(',',':')).encode()).decode()
+                  b.append({'batch':len(b),'prefixes_b64':enc,'count':len(ps),'skip':False})
+          else:
+              b=[{'batch':0,'prefixes_b64':'W10=','count':0,'skip':True}]
+          print('matrix='+json.dumps({'include':b},separators=(',',':')))
+          PY
+
+  close:
+    needs: plan
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 355
+    env:
+      CADICAL_COMMIT: c60730422e758ef1cebe7aeddf2dda31c996bf04
+      DRAT_TRIM_COMMIT: 2e3b2dc0ecf938addbd779d42877b6ed69d9a985
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        if: ${{ !matrix.skip }}
+        with: {python-version: '3.12'}
+      - name: Build pinned proof tools
+        if: ${{ !matrix.skip }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile crossdomain/b2_z100_prefix_proof_cnf_v3.py crossdomain/b2_z100_prefix_proof_cnf_v5.py crossdomain/b2_z100_recursive_proof_v4.py crossdomain/b2_z100_verify_cadical_model.py
+          git clone -q https://github.com/arminbiere/cadical.git /tmp/cadical
+          git -C /tmp/cadical checkout -q "$CADICAL_COMMIT"
+          test "$(git -C /tmp/cadical rev-parse HEAD)" = "$CADICAL_COMMIT"
+          (cd /tmp/cadical && ./configure >/dev/null && make -j2 >/dev/null)
+          git clone -q https://github.com/marijnheule/drat-trim.git /tmp/drat-trim
+          git -C /tmp/drat-trim checkout -q "$DRAT_TRIM_COMMIT"
+          test "$(git -C /tmp/drat-trim rev-parse HEAD)" = "$DRAT_TRIM_COMMIT"
+          make -C /tmp/drat-trim -j2 >/dev/null
+          sudo apt-get update -qq && sudo apt-get install -y -qq zstd
+      - name: Close all cumulative residual roots
+        if: ${{ !matrix.skip }}
+        env:
+          PREFIXES_B64: ${{ matrix.prefixes_b64 }}
+          BATCH: ${{ matrix.batch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "artifact/batch${BATCH}/parents"
+          python - <<'PY'
+          import base64,json,os,pathlib,subprocess
+          ps=json.loads(base64.urlsafe_b64decode(os.environ['PREFIXES_B64']).decode())
+          per=max(1800,19000//max(1,len(ps)))
+          root=pathlib.Path(f"artifact/batch{os.environ['BATCH']}/parents");rows=[]
+          for p in ps:
+              pid='p'+'-'.join(map(str,p));out=root/pid;out.mkdir(parents=True,exist_ok=True)
+              cmd=['python','crossdomain/b2_z100_recursive_proof_v4.py','--prefix-json',json.dumps(p,separators=(',',':')),'--generator','crossdomain/b2_z100_prefix_proof_cnf_v3.py','--model-checker','crossdomain/b2_z100_verify_cadical_model.py','--cadical','/tmp/cadical/build/cadical','--drat-trim','/tmp/drat-trim/drat-trim','--zstd','zstd','--workers','1','--root-solve-seconds','1200','--min-solve-seconds','90','--root-check-seconds','360','--min-check-seconds','90','--decay','0.70','--wall-seconds',str(per),'--max-nodes','100000','--out',str(out)]
+              with (out/'runner_stdout.log').open('wb') as so,(out/'runner_stderr.log').open('wb') as se:
+                  rc=subprocess.run(cmd,stdout=so,stderr=se,check=False).returncode
+              (out/'runner_exit_code.txt').write_text(str(rc)+'\n')
+              s=json.load(open(out/'SUMMARY.json'));rows.append({'parent_prefix':p,'return_code':rc,'summary':s})
+          pathlib.Path(f"artifact/batch{os.environ['BATCH']}/BATCH_SUMMARY.json").write_text(json.dumps({'schema':'b2-z100-recursive-continuation-batch-v4c','batch':int(os.environ['BATCH']),'parents':rows},indent=2,sort_keys=True)+'\n')
+          PY
+          find "artifact/batch${BATCH}" -maxdepth 1 -type f ! -name SHA256SUMS_TOP.txt -print0 | sort -z | xargs -0 sha256sum > "artifact/batch${BATCH}/SHA256SUMS_TOP.txt"
+      - name: Write no-op batch
+        if: ${{ matrix.skip }}
+        run: |
+          mkdir -p artifact/batch0
+          printf '{"schema":"b2-z100-recursive-continuation-batch-v4c","batch":0,"parents":[]}\n' > artifact/batch0/BATCH_SUMMARY.json
+          sha256sum artifact/batch0/BATCH_SUMMARY.json > artifact/batch0/SHA256SUMS_TOP.txt
+      - uses: actions/upload-artifact@v4
+        if: ${{ !matrix.skip }}
+        with:
+          name: b2-z100-recursive-continuation-batch${{ matrix.batch }}-v4c-proofs
+          path: artifact/batch${{ matrix.batch }}
+          retention-days: 90
+          compression-level: 3
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: b2-z100-recursive-continuation-batch${{ matrix.batch }}-v4c-summary
+          path: |
+            artifact/batch${{ matrix.batch }}/BATCH_SUMMARY.json
+            artifact/batch${{ matrix.batch }}/SHA256SUMS_TOP.txt
+          retention-days: 90
+          if-no-files-found: error
+
+  aggregate:
+    if: always()
+    needs: [plan, close]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: b2-z100-recursive-continuation-batch*-v4c-summary
+          path: aggregate
+          merge-multiple: false
+      - name: Build robust cumulative result
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,pathlib
+          prev=json.load(open('crossdomain/B2_RECURSIVE_PROOF_V4B_LATEST_RUN.json'))
+          original=prev.get('input_unresolved_prefixes',[])
+          prior_closed=[]
+          seen=set()
+          for p in prev.get('closed_root_prefixes',[]):
+              if tuple(p) not in seen:prior_closed.append(p);seen.add(tuple(p))
+          residual=[p for p in original if tuple(p) not in seen]
+          rows=[]
+          for p in pathlib.Path('aggregate').rglob('BATCH_SUMMARY.json'): rows.extend(json.load(open(p)).get('parents',[]))
+          by={tuple(r['parent_prefix']):r for r in rows};missing=[p for p in residual if tuple(p) not in by]
+          newclosed=[];newun=[];counter=[]
+          for p in residual:
+              r=by.get(tuple(p))
+              if not r:continue
+              s=r['summary'];newun.extend(s.get('unresolved_prefixes',[]));counter.extend(s.get('verified_sat_counterexamples',[]))
+              if s.get('root_verified_unsat'):newclosed.append(p)
+          closed=prior_closed[:]
+          for p in newclosed:
+              if tuple(p) not in {tuple(x) for x in closed}:closed.append(p)
+          still=[p for p in original if tuple(p) not in {tuple(x) for x in closed}]
+          for p in newun+missing:
+              if tuple(p) not in {tuple(x) for x in closed} and p not in still:still.append(p)
+          all_closed=len({tuple(x) for x in closed})==len({tuple(x) for x in original}) and not still and not counter
+          payload={
+            'schema':'b2-z100-recursive-residual-v4-summary','run_id':int('${{ github.run_id }}'),'run_attempt':int('${{ github.run_attempt }}'),'commit':'${{ github.sha }}',
+            'v_split_run_id':prev.get('v_split_run_id'),'prior_recursive_run_id':prev.get('run_id'),'input_unresolved_prefixes':original,
+            'closed_root_prefixes':closed,'missing_root_prefixes':missing,'unresolved_prefixes':still,
+            'verified_sat_counterexamples':prev.get('verified_sat_counterexamples',[])+counter,
+            'all_input_roots_closed':all_closed,
+            'claim_boundary':'Second cumulative continuation. Every original recursive root must appear in the cumulative closed set; missing and timeout roots remain explicit and are never treated as evidence.'}
+          pathlib.Path('aggregate/RECURSIVE_SUMMARY.json').write_text(json.dumps(payload,indent=2,sort_keys=True)+'\n')
+          pathlib.Path('aggregate/PARENT_ROWS.json').write_text(json.dumps(rows,indent=2,sort_keys=True)+'\n')
+          pathlib.Path('aggregate/UNRESOLVED_PREFIXES.json').write_text(json.dumps(still,indent=2)+'\n')
+          print(json.dumps(payload,indent=2,sort_keys=True))
+          PY
+          find aggregate -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > aggregate/SHA256SUMS.txt
+      - id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: b2-z100-recursive-residual-v4c-summary
+          path: |
+            aggregate/RECURSIVE_SUMMARY.json
+            aggregate/PARENT_ROWS.json
+            aggregate/UNRESOLVED_PREFIXES.json
+            aggregate/SHA256SUMS.txt
+          retention-days: 90
+          if-no-files-found: error
+      - name: Publish robust cumulative pointer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os,pathlib
+          p=json.load(open('aggregate/RECURSIVE_SUMMARY.json'));p.update({'artifact_id':int(os.environ['ARTIFACT_ID']),'artifact_url':os.environ['ARTIFACT_URL'],'artifact_digest':os.environ['ARTIFACT_DIGEST']});pathlib.Path('pointer.json').write_text(json.dumps(p,indent=2,sort_keys=True)+'\n')
+          PY
+          encoded=$(base64 -w0 pointer.json);path='crossdomain/B2_RECURSIVE_PROOF_V4C_LATEST_RUN.json';sha=$(gh api "repos/${GITHUB_REPOSITORY}/contents/${path}?ref=${GITHUB_REF_NAME}" --jq .sha 2>/dev/null || true);args=(--method PUT "repos/${GITHUB_REPOSITORY}/contents/${path}" -f message="Record robust B2 recursive continuation ${GITHUB_RUN_ID}" -f content="$encoded" -f branch="${GITHUB_REF_NAME}");if [ -n "$sha" ]; then args+=(-f sha="$sha");fi;gh api "${args[@]}" >/dev/null
+      - name: Enforce cumulative proof gate
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          p=json.load(open('aggregate/RECURSIVE_SUMMARY.json'));assert not p['verified_sat_counterexamples'],p;assert p['all_input_roots_closed'],p
+          PY
