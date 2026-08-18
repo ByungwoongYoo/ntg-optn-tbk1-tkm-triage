@@ -1,0 +1,9 @@
+warning: could not canonicalize path: '/home/runner/.elan/toolchains'
+warning: could not canonicalize path: '/home/runner/.elan/toolchains'
+warning: could not canonicalize path: '/home/runner/.elan/toolchains'
+warning: could not canonicalize path: '/home/runner/.elan/toolchains'
+warning: could not canonicalize path: '/home/runner/.elan/toolchains'
+warning: could not canonicalize path: '/home/runner/.elan/toolchains'
+info: downloading https://releases.lean-lang.org/lean4/v4.30.0/lean-4.30.0-linux.tar.zst
+info: installing /home/runner/.elan/toolchains/leanprover--lean4---v4.30.0
+Lean (version 4.30.0, x86_64-unknown-linux-gnu, commit d024af099ca4bf2c86f649261ebf59565dc8c622, Release)
