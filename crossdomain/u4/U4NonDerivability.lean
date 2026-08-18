@@ -1,4 +1,4 @@
-import Std.Tactic.Omega
+import Lean.Elab.Tactic.Omega
 
 /-!
 A machine-checked syntactic refutation of Ulrich's u4 as a single axiom
