@@ -1,0 +1,119 @@
+name: B2 Z100 final recursive proof record v7
+
+on:
+  push:
+    branches: [b2-z100-final-proof-audit-20260818]
+    paths:
+      - 'crossdomain/B2_RECURSIVE_THIRD_V6C_LATEST_RUN.json'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  finalize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Fail-closed final mathematical and linkage audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifact
+          set +e
+          python crossdomain/b2_z100_finalize_recursive_v6.py \
+            --base crossdomain/B2_RECURSIVE_THIRD_V6_LATEST_RUN.json \
+            --continuation crossdomain/B2_RECURSIVE_THIRD_V6C_LATEST_RUN.json \
+            --normalization-proof crossdomain/B2_Z100_GLOBAL_NORMALIZATION_PROOF.md \
+            --redundant-cuts-proof crossdomain/B2_Z100_REDUNDANT_CUTS_PROOF.md \
+            --out artifact \
+            > artifact/finalizer_stdout.log 2> artifact/finalizer_stderr.log
+          rc=$?
+          set -e
+          printf '%s\n' "$rc" > artifact/finalizer_exit_code.txt
+          cp crossdomain/B2_Z100_GLOBAL_NORMALIZATION_PROOF.md artifact/
+          cp crossdomain/B2_Z100_REDUNDANT_CUTS_PROOF.md artifact/
+          cp crossdomain/B2_Z100_CODE_LICENSES.md artifact/
+          cp crossdomain/B2_Z100_V6_CODE_LICENSES.md artifact/
+          cp crossdomain/b2_z100_finalize_recursive_v6.py artifact/
+          cp crossdomain/b2_z100_prefix_proof_cnf_v3.py artifact/
+          cp crossdomain/b2_z100_prefix_proof_cnf_v5.py artifact/
+          cp crossdomain/b2_z100_recursive_proof_v4.py artifact/
+          cp crossdomain/b2_z100_verify_cadical_model.py artifact/
+      - name: Freeze every upstream proof-artifact index
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,pathlib,subprocess
+          sources=[('base','crossdomain/B2_RECURSIVE_THIRD_V6_LATEST_RUN.json'),('continuation_1','crossdomain/B2_RECURSIVE_THIRD_V6B_LATEST_RUN.json'),('continuation_2','crossdomain/B2_RECURSIVE_THIRD_V6C_LATEST_RUN.json')]
+          out={}
+          for label,path in sources:
+              p=json.load(open(path));rid=int(p['run_id'])
+              raw=subprocess.check_output(['gh','api','--paginate',f'repos/${{GITHUB_REPOSITORY}}/actions/runs/{rid}/artifacts'],text=True);data=json.loads(raw);arts=[]
+              for x in data.get('artifacts',[]):arts.append({'id':x.get('id'),'name':x.get('name'),'size_in_bytes':x.get('size_in_bytes'),'expired':x.get('expired'),'created_at':x.get('created_at'),'expires_at':x.get('expires_at'),'digest':x.get('digest'),'archive_download_url':x.get('archive_download_url')})
+              out[label]={'run_id':rid,'commit':p.get('commit'),'summary_artifact_id':p.get('artifact_id'),'summary_artifact_digest':p.get('artifact_digest'),'artifacts':arts}
+          pathlib.Path('artifact/RUN_ARTIFACT_INDEX.json').write_text(json.dumps(out,indent=2,sort_keys=True)+'\n')
+          PY
+      - name: Audit required proof artifacts and write README
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          idx=json.load(open('artifact/RUN_ARTIFACT_INDEX.json'));base=idx['base']['artifacts'];c1=idx['continuation_1']['artifacts'];c2=idx['continuation_2']['artifacts']
+          assert any(x['name']=='b2-z100-recursive-third-v6-summary' and not x['expired'] for x in base),base
+          for t in range(2,46):assert any(x['name']==f'b2-z100-recursive-third-{t}-v6-proofs' and not x['expired'] for x in base),t
+          assert any(x['name']=='b2-z100-recursive-third-v6b-summary' and not x['expired'] for x in c1),c1
+          assert any(x['name']=='b2-z100-recursive-third-v6c-summary' and not x['expired'] for x in c2),c2
+          p1=json.load(open('crossdomain/B2_RECURSIVE_THIRD_V6B_LATEST_RUN.json'));p2=json.load(open('crossdomain/B2_RECURSIVE_THIRD_V6C_LATEST_RUN.json'))
+          if p1.get('input_unresolved_prefixes'):assert any('v6b-proofs' in str(x['name']) and not x['expired'] for x in c1),c1
+          if p2.get('input_unresolved_prefixes') and not p1.get('all_input_prefixes_closed'):assert any('v6c-proofs' in str(x['name']) and not x['expired'] for x in c2),c2
+          PY
+          cat > artifact/README.md <<'EOF'
+          # B2[2]/Z100 proof-carrying computational resolution candidate
+
+          This record is successful only after a fail-closed audit verifies the 13-element lower-bound witness, the affine/reflection normalization to all 44 canonical third-element roots, exact linkage of every unresolved prefix across both continuation runs, absence of any verified 14-element counterexample, and complete terminal closure by a direct fixed-set check or an independently checked DRAT certificate.
+
+          `RUN_ARTIFACT_INDEX.json` freezes the identifiers, sizes, digests, expiry metadata, and download endpoints of the proof-carrying GitHub Actions artifacts. No timeout is treated as UNSAT.
+
+          The permitted conclusion is `computational proof candidate for M=13 — pending independent external review`; it is not a Lean proof, peer review, or independent external reproduction.
+          EOF
+          find artifact -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > artifact/SHA256SUMS.txt
+          find artifact -maxdepth 1 -type f -printf '%f\t%s bytes\n' | sort > artifact/FILE_LIST.txt
+      - id: upload
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: b2-z100-final-recursive-proof-v7
+          path: artifact
+          retention-days: 90
+          compression-level: 6
+          if-no-files-found: error
+      - name: Publish final immutable public pointer
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os,pathlib
+          p=json.load(open('artifact/FINAL_PROOF_CHAIN.json'));p.update({'final_workflow_run_id':int(os.environ['GITHUB_RUN_ID']),'final_workflow_commit':os.environ['GITHUB_SHA'],'final_artifact_id':int(os.environ['ARTIFACT_ID']),'final_artifact_url':os.environ['ARTIFACT_URL'],'final_artifact_digest':os.environ['ARTIFACT_DIGEST']});pathlib.Path('pointer.json').write_text(json.dumps(p,indent=2,sort_keys=True)+'\n')
+          PY
+          encoded=$(base64 -w0 pointer.json);path='crossdomain/B2_FINAL_RECURSIVE_PROOF_V7_LATEST_RUN.json';sha=$(gh api "repos/${GITHUB_REPOSITORY}/contents/${path}?ref=${GITHUB_REF_NAME}" --jq .sha 2>/dev/null || true);args=(--method PUT "repos/${GITHUB_REPOSITORY}/contents/${path}" -f message="Record final B2 recursive proof-chain v7 run ${GITHUB_RUN_ID}" -f content="$encoded" -f branch="${GITHUB_REF_NAME}");if [ -n "$sha" ];then args+=(-f sha="$sha");fi;gh api "${args[@]}" >/dev/null
+      - name: Enforce final claim gate
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(cat artifact/STATUS.txt)" = COMPUTATIONAL_PROOF_CANDIDATE_FOR_M_13_PENDING_INDEPENDENT_EXTERNAL_REVIEW
