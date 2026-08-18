@@ -9,7 +9,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+  actions: read
 
 jobs:
   discover:
@@ -25,8 +26,9 @@ jobs:
           set -euo pipefail
           mkdir -p artifact
           OUT_DIR=artifact python casp17/t2461/discover_templates.py | tee artifact/stdout.log
-          find artifact -type f -maxdepth 1 -print0 | sort -z | xargs -0 sha256sum > artifact/SHA256SUMS.txt
-      - uses: actions/upload-artifact@v4
+          find artifact -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > artifact/SHA256SUMS.txt
+      - id: upload
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: casp17-t2461-discovery-20260818
@@ -34,3 +36,32 @@ jobs:
           retention-days: 30
           compression-level: 6
           if-no-files-found: error
+      - name: Publish immutable run pointer
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          p={
+            'schema':'casp17-t2461-discovery-run-v1',
+            'run_id':int(os.environ['GITHUB_RUN_ID']),
+            'run_attempt':int(os.environ['GITHUB_RUN_ATTEMPT']),
+            'commit':os.environ['GITHUB_SHA'],
+            'workflow':os.environ['GITHUB_WORKFLOW'],
+            'artifact_id':int(os.environ['ARTIFACT_ID']),
+            'artifact_url':os.environ['ARTIFACT_URL'],
+            'artifact_digest':os.environ['ARTIFACT_DIGEST'],
+          }
+          open('pointer.json','w').write(json.dumps(p,indent=2,sort_keys=True)+'\n')
+          PY
+          encoded=$(base64 -w0 pointer.json)
+          path='casp17/t2461/DISCOVERY_LATEST_RUN.json'
+          sha=$(gh api "repos/${GITHUB_REPOSITORY}/contents/${path}?ref=${GITHUB_REF_NAME}" --jq .sha 2>/dev/null || true)
+          args=(--method PUT "repos/${GITHUB_REPOSITORY}/contents/${path}" -f message="Record CASP17 T2461 discovery ${GITHUB_RUN_ID}" -f content="$encoded" -f branch="${GITHUB_REF_NAME}")
+          if [ -n "$sha" ]; then args+=(-f sha="$sha"); fi
+          gh api "${args[@]}" >/dev/null
