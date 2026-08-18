@@ -1,0 +1,27 @@
+name: B2 action smoke 20260818
+on:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - '.github/workflows/b2-action-smoke-20260818.yml'
+permissions:
+  contents: write
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Write pointer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import json,os
+          open('pointer.json','w').write(json.dumps({'run_id':int(os.environ['GITHUB_RUN_ID']),'commit':os.environ['GITHUB_SHA'],'status':'success'},indent=2)+'\n')
+          PY
+          encoded=$(base64 -w0 pointer.json)
+          path='crossdomain/B2_ACTION_SMOKE_LATEST_RUN.json'
+          sha=$(gh api "repos/${GITHUB_REPOSITORY}/contents/${path}?ref=${GITHUB_REF_NAME}" --jq .sha 2>/dev/null || true)
+          args=(--method PUT "repos/${GITHUB_REPOSITORY}/contents/${path}" -f message="Record B2 action smoke ${GITHUB_RUN_ID}" -f content="$encoded" -f branch="${GITHUB_REF_NAME}")
+          if [ -n "$sha" ]; then args+=(-f sha="$sha"); fi
+          gh api "${args[@]}" >/dev/null
