@@ -1,0 +1,5 @@
+lineage	source_query	full_orf_aa_length	orf_boundary_interpretation
+PNX_Duplo_A	DRR853908_24399_frame=+3	476	upstream stop; extends to contig boundary
+PNX_Duplo_B	DRR853908_33091_frame=+1	340	upstream stop; extends to contig boundary
+PNX_Picorna_A	DRR853910_26168_frame=-1	484	downstream stop; extends to contig boundary
+PNX_Picorna_B	DRR853912_43327_frame=-1	604	continuous ORF spans the complete contig frame
