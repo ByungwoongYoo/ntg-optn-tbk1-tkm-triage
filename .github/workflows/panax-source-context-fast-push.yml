@@ -1,0 +1,162 @@
+name: Fast Panax source-context audit on push
+
+on:
+  push:
+    branches: [panax-source-context-final-20260819]
+    paths:
+      - '.github/workflows/panax-source-context-fast-push.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install extractors
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check requests==2.32.5 beautifulsoup4==4.13.4 lxml==6.0.0 python-docx==1.2.0
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq tesseract-ocr poppler-utils file unzip
+
+      - name: Retrieve exact public evidence objects
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=source_context_fast
+          mkdir -p "$root"/{archive,article,supplementary,figure,extracted}
+
+          for acc in PRJDB39299 DRR853907 DRR853908 DRR853909 DRR853910 DRR853911 DRR853912 \
+                     SAMD01772848 SAMD01772849 SAMD01772850 SAMD01772851 SAMD01772852 SAMD01772853 \
+                     DRX831960 DRX831961 DRX831962 DRX831963 DRX831964 DRX831965; do
+            curl -fL --retry 5 --retry-all-errors \
+              "https://www.ebi.ac.uk/ena/browser/api/xml/${acc}" \
+              -o "$root/archive/${acc}.xml" || true
+          done
+
+          curl -fL --retry 6 --retry-all-errors \
+            'https://www.ebi.ac.uk/europepmc/webservices/rest/PMC12918092/fullTextXML' \
+            -o "$root/article/PMC12918092.xml" || true
+          curl -fL --retry 6 --retry-all-errors \
+            'https://link.springer.com/content/pdf/10.1186/s12870-026-08239-w.pdf' \
+            -o "$root/article/article.pdf" || true
+          curl -fL --retry 6 --retry-all-errors \
+            'https://ngdc.cncb.ac.cn/gsa/browse/CRA029712' \
+            -o "$root/archive/CRA029712.html" || true
+
+          curl -fL --retry 6 --retry-all-errors \
+            'https://media.springernature.com/original/springer-static/esm/art%3A10.1186%2Fs12870-026-08239-w/MediaObjects/12870_2026_8239_MOESM1_ESM.docx' \
+            -o "$root/supplementary/MOESM1.docx" || true
+          curl -fL --retry 6 --retry-all-errors \
+            'https://media.springernature.com/original/springer-static/esm/art%3A10.1186%2Fs12870-026-08239-w/MediaObjects/12870_2026_8239_MOESM2_ESM.docx' \
+            -o "$root/supplementary/MOESM2.docx" || true
+          curl -fL --retry 6 --retry-all-errors \
+            'https://media.springernature.com/lw1200/springer-static/image/art%3A10.1186%2Fs12870-026-08239-w/MediaObjects/12870_2026_8239_Fig1_HTML.png' \
+            -o "$root/figure/Figure1.png" || true
+
+          find "$root" -type f -exec file {} \; > "$root/FILE_TYPES.txt"
+
+      - name: Extract text and grade exact token-to-condition evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=source_context_fast
+          if [[ -s "$root/article/article.pdf" ]]; then
+            pdftotext -layout "$root/article/article.pdf" "$root/extracted/article_pdf.txt" || true
+          fi
+          if [[ -s "$root/figure/Figure1.png" ]]; then
+            for psm in 3 6 11 12; do
+              tesseract "$root/figure/Figure1.png" "$root/extracted/Figure1_psm${psm}" -l eng --psm "$psm" >/dev/null 2>&1 || true
+            done
+          fi
+
+          python - <<'PY'
+          from pathlib import Path
+          from bs4 import BeautifulSoup
+          from docx import Document
+          import csv, hashlib, json, re, zipfile
+
+          root=Path('source_context_fast')
+          for p in sorted((root/'supplementary').glob('*')):
+              if not p.is_file() or not zipfile.is_zipfile(p): continue
+              try:
+                  d=Document(p); lines=[]
+                  lines.extend(x.text for x in d.paragraphs if x.text)
+                  for n,t in enumerate(d.tables,1):
+                      lines.append(f'[[TABLE {n}]]')
+                      for row in t.rows: lines.append('\t'.join(c.text for c in row.cells))
+                  (root/'extracted'/(p.name+'.txt')).write_text('\n'.join(lines)+'\n')
+              except Exception as e:
+                  (root/'extracted'/(p.name+'.error.txt')).write_text(repr(e)+'\n')
+
+          for p in sorted(list((root/'archive').glob('*.xml'))+[root/'article/PMC12918092.xml',root/'archive/CRA029712.html']):
+              if not p.exists() or p.stat().st_size<50: continue
+              text=BeautifulSoup(p.read_text(errors='ignore'),'lxml').get_text('\n')
+              (root/'extracted'/(p.name+'.txt')).write_text(text+'\n')
+
+          search=[]
+          for p in sorted((root/'extracted').glob('*.txt')):
+              try: search.append((str(p),p.read_text(errors='ignore')))
+              except Exception: pass
+
+          token_pat=r'(?i)(?:Sample_)?(?:Zh|Bh)[ABC]?'
+          condition_pat=r'(?i)healthy|normal|control|CK|root[ -]?rot|diseas(?:e|ed)|infect(?:ed|ion)|susceptible|resistant|健康|正常|病害|病株|根腐|腐烂'
+          contexts=[]; explicit=[]
+          for src,text in search:
+              flat=' '.join(text.split())
+              for m in re.finditer(token_pat,flat):
+                  lo=max(0,m.start()-350); hi=min(len(flat),m.end()+350); sn=flat[lo:hi]
+                  if not re.search(condition_pat,sn): continue
+                  row={'source':src,'token':m.group(0),'snippet':sn}; contexts.append(row)
+                  # Strictly require a short sentence/legend-like linkage, not mere occurrence in a long article.
+                  if re.search(r'(?i)(?:Zh[ABC]?|Bh[ABC]?).{0,90}(?:=|:|means|denotes|represents|group|samples?|健康|正常|病害|病株|根腐).{0,90}(?:healthy|normal|control|root[ -]?rot|diseas(?:e|ed)|infect(?:ed)?|健康|正常|病害|病株|根腐)|(?:healthy|normal|control|root[ -]?rot|diseas(?:e|ed)|infect(?:ed)?|健康|正常|病害|病株|根腐).{0,90}(?:=|:|means|denotes|represents|group|samples?|组|为).{0,90}(?:Zh[ABC]?|Bh[ABC]?)',sn):
+                      explicit.append(row)
+
+          runs={
+            'DRR853907':{'sample':'SAMD01772848','experiment':'DRX831960','title':'Sample_ZhA-R21032239','token':'Zh','replicate':'A'},
+            'DRR853908':{'sample':'SAMD01772849','experiment':'DRX831961','title':'Sample_ZhB-R21032240','token':'Zh','replicate':'B'},
+            'DRR853909':{'sample':'SAMD01772850','experiment':'DRX831962','title':'Sample_ZhC-R21032241','token':'Zh','replicate':'C'},
+            'DRR853910':{'sample':'SAMD01772851','experiment':'DRX831963','title':'Sample_BhA-R21032242','token':'Bh','replicate':'A'},
+            'DRR853911':{'sample':'SAMD01772852','experiment':'DRX831964','title':'Sample_BhB-R21032243','token':'Bh','replicate':'B'},
+            'DRR853912':{'sample':'SAMD01772853','experiment':'DRX831965','title':'Sample_BhC-R21032244','token':'Bh','replicate':'C'},
+          }
+          status='explicit_mapping_found' if explicit else 'not_explicitly_resolved'
+          result={
+            'source_article':'Li et al., BMC Plant Biology 2026, doi:10.1186/s12870-026-08239-w',
+            'source_design':'healthy versus root-rot-affected primary roots; 3 biological replicates per group; 5 plants per replicate',
+            'archive_project':'CRA029712 / PRJDB39299',
+            'runs':runs,
+            'mapping_status':status,
+            'explicit_mapping_evidence':explicit,
+            'contextual_evidence':contexts,
+            'boundary':'Do not map Zh or Bh to a phenotype without explicit source evidence; do not infer host, infection, replication, causality, or pathogenicity from bulk RNA-seq.'
+          }
+          (root/'SOURCE_CONTEXT_FAST.json').write_text(json.dumps(result,indent=2,ensure_ascii=False)+'\n')
+          with (root/'TOKEN_CONTEXTS.tsv').open('w',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=['source','token','snippet'],delimiter='\t'); w.writeheader(); w.writerows(contexts)
+          md=['# Fast source-context audit','',f'- Mapping status: **{status}**','- Source design: healthy vs root-rot primary roots, three biological replicates per group, five plants per replicate.','', '## Exact mapping evidence','']
+          if explicit:
+              md.extend(f"- `{x['source']}` — {x['snippet']}" for x in explicit[:40])
+          else:
+              md.append('- No exact Zh/Bh-to-condition statement was recovered in this pass.')
+          md += ['','## Boundary','',result['boundary']]
+          (root/'SOURCE_CONTEXT_FAST_REPORT.md').write_text('\n'.join(md)+'\n')
+          hashes=[]
+          for p in sorted(x for x in root.rglob('*') if x.is_file() and x.name!='SHA256SUMS.txt'):
+              hashes.append(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+str(p.relative_to(root)))
+          (root/'SHA256SUMS.txt').write_text('\n'.join(hashes)+'\n')
+          print((root/'SOURCE_CONTEXT_FAST_REPORT.md').read_text())
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PANAX_SOURCE_CONTEXT_FAST_20260819
+          path: source_context_fast
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 9
