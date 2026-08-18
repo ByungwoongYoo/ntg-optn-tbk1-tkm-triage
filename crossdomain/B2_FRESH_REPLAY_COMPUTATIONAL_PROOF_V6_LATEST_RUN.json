@@ -1,0 +1,78 @@
+{
+  "aggregate_manifest_entries_checked": 2961,
+  "audit_artifact_digest": "79a787967a6c421e86f51248816705de7fc4abdf15598cd050c700cea9d441a0",
+  "audit_artifact_id": 9330620059,
+  "audit_artifact_url": "https://github.com/ByungwoongYoo/ntg-optn-tbk1-tkm-triage/actions/runs/32151214318/artifacts/9330620059",
+  "audit_commit": "7f1751ea03c75c56351ece47d17d9f9df04135d2",
+  "audit_run_attempt": 1,
+  "audit_run_id": 32151214318,
+  "binary_hash_counts": {
+    "v10": 1,
+    "v8": 1
+  },
+  "branch_rows": 12650,
+  "claim_boundary": "This establishes an internally audited frozen-source computational proof candidate for M=13. The complete search was freshly replayed by the same research project; independent external reproduction, peer review, and formal proof-assistant verification remain pending.",
+  "errors": [],
+  "exact_value": "M=13",
+  "fresh_replay_artifact_digest": "sha256:8baab190689ed862cd87323e9fd72d6772cc62f22b1b54be2ca08d5b497879bf",
+  "fresh_replay_artifact_id": 9312169839,
+  "fresh_replay_commit": "57486d19ef1088f755c5129131e187b5e2f5cb4b",
+  "fresh_replay_run_id": 32100985982,
+  "inner_manifest_entries_checked": 1480,
+  "lower_bound": "M>=13",
+  "mathematical_self_checks": {
+    "normalized_thirds": [
+      2,
+      45
+    ],
+    "ordered_circular_equivalence_small_instances": true,
+    "parity_feasible_even_counts": [
+      5,
+      6,
+      7,
+      8,
+      9
+    ],
+    "unit_difference_mod10_support_check": true,
+    "v10_descriptor_count": 255,
+    "v8_descriptor_count": 41
+  },
+  "result_files": 296,
+  "schema": "b2-z100-fresh-replay-final-public-pointer-v6",
+  "source_sha256": {
+    "v10": "3000f45f9a699445f736815a01bde93dd174353e69c0892c2e3fd9578f3988a1",
+    "v8": "93cf177dcfe3f92e24c5f5750af97a73e90cd17673a154188ee7333c466c1d13"
+  },
+  "status": "COMPUTATIONAL_PROOF_CANDIDATE_FOR_M_13_PENDING_INDEPENDENT_EXTERNAL_REVIEW",
+  "timeouts": 0,
+  "total_nodes": 13668473356,
+  "upper_bound": "M<=13",
+  "v10_descriptors": 255,
+  "v10_nodes": 5880602065,
+  "v8_descriptors": 41,
+  "v8_nodes": 7787871291,
+  "verified_14_set_counterexamples": 0,
+  "witness": {
+    "distinct": 13,
+    "max_multiplicity": 2,
+    "ordered_pairs": 156,
+    "set": [
+      0,
+      5,
+      7,
+      31,
+      58,
+      61,
+      62,
+      63,
+      72,
+      80,
+      84,
+      91,
+      97
+    ],
+    "size": 13,
+    "valid": true
+  },
+  "witness_valid": true
+}
