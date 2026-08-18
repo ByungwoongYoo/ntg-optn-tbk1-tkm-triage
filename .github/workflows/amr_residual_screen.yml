@@ -5,13 +5,15 @@ on:
     branches:
       - amr-residual-marker-discovery-20260819
     paths:
-      - 'amr_discovery/**'
+      - 'amr_discovery/01_screen_residual_pairs.py'
+      - 'amr_discovery/PROTOCOL_FREEZE_V1.md'
       - '.github/workflows/amr_residual_screen.yml'
   pull_request:
     branches:
       - main
     paths:
-      - 'amr_discovery/**'
+      - 'amr_discovery/01_screen_residual_pairs.py'
+      - 'amr_discovery/PROTOCOL_FREEZE_V1.md'
       - '.github/workflows/amr_residual_screen.yml'
   workflow_dispatch:
 
