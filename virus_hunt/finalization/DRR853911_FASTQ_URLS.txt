@@ -1,0 +1,2 @@
+DRR853911_1	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853911/DRR853911_1.fastq.gz
+DRR853911_2	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853911/DRR853911_2.fastq.gz
