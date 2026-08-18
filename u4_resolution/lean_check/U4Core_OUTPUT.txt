@@ -1,9 +1,28 @@
-U4Core.lean:56:45: error: Function expected at
-  I (subst σ Q) W
-but this term has type
-  Form
+U4Core.lean:76:2: error: omega could not prove the goal:
+a possible counterexample may satisfy the constraints
+  c ≥ 1
+  b ≥ 1
+  a ≥ 1
+  a + c ≥ -1
+where
+ a := ↑(σ 5).size
+ b := ↑(σ 4).size
+ c := ↑(σ 6).size
+U4Core.lean:85:8: error: Tactic `injection` failed: equality expected
 
-Note: Expected a function because this term is being applied to the argument
-  lemma
-U4Core.lean:58:16: error: unexpected token ':'; expected command
-U4Core.lean:92:42: error(lean.unknownIdentifier): Unknown identifier `interlocking`
+case left
+n : Nat
+ih : E (A n) (B n) ∧ E (B n) (A n)
+σ : Nat → Form
+W : Form
+h : subst σ (B n) = (subst σ (A n)).arr (subst σ (R n)) ∧ subst σ (R n) = W
+⊢ False
+U4Core.lean:89:8: error: Tactic `injection` failed: equality expected
+
+case right
+n : Nat
+ih : E (A n) (B n) ∧ E (B n) (A n)
+σ : Nat → Form
+W : Form
+h : subst σ (A n) = (subst σ (B n)).arr (subst σ (R n)) ∧ subst σ (R n) = W
+⊢ False
