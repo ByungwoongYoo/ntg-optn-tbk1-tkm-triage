@@ -20,7 +20,7 @@ namespace Form
 @[simp] theorem size_pos (f : Form) : 0 < size f := by
   induction f with
   | v n => simp
-  | arr a b iha ihb => simp [size]; omega
+  | arr a b iha ihb => simp [size]
 
 end Form
 
@@ -52,7 +52,8 @@ def T : Nat → Form
   | 0 => phi
   | n+1 => Td n
 
-def E (P Q : Form) : Prop := ∀ (σ : Nat → Form) (W : Form), subst σ P ≠ I (subst σ Q) W
+def E (P Q : Form) : Prop :=
+  ∀ (σ : Nat → Form) (W : Form), subst σ P ≠ (I (subst σ Q) W)
 
 lemma E_base_AB : E (A 0) (B 0) := by
   intro σ W h
