@@ -1,0 +1,158 @@
+name: Final audit of upgraded Panax Picornavirales-like ORFs
+
+on:
+  push:
+    branches: [panax-impact-finalization-20260818]
+    paths:
+      - '.github/workflows/panax-upgraded-orfs-final-audit.yml'
+      - 'virus_hunt/finalization/panax_upgraded_picorna_orfs.*'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/panax-upgraded-orfs-final-audit.yml'
+      - 'virus_hunt/finalization/panax_upgraded_picorna_orfs.*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install homology and phylogenetic tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq aria2 pigz ncbi-blast+ mafft fasttree
+          sudo apt-get install -y -qq iqtree || true
+          python -m pip install biopython==1.85 requests==2.32.5
+
+      - name: Run current RefSeq viral homology audit and trees
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x virus_hunt/refseq_audit/run_refseq_audit.sh
+          bash virus_hunt/refseq_audit/run_refseq_audit.sh \
+            virus_hunt/finalization/panax_upgraded_picorna_orfs.faa \
+            virus_hunt/finalization/panax_upgraded_picorna_orfs.fna \
+            upgraded_orf_audit
+
+          python - <<'PY'
+          import csv,json,pathlib
+          out=pathlib.Path('upgraded_orf_audit')
+          fields=['qseqid','saccver','pident','length','qlen','slen','qstart','qend','sstart','send','evalue','bitscore','qcovs','stitle']
+          rows=[]
+          for vals in csv.reader(open(out/'results/refseq_viral_blastp.tsv'),delimiter='\t'):
+              if len(vals)>=len(fields): rows.append(dict(zip(fields,vals[:len(fields)])))
+          by={}
+          for r in rows: by.setdefault(r['qseqid'],[]).append(r)
+          summary=[]
+          for q in ['PNX_Picorna_A_long','PNX_Picorna_B_long']:
+              rs=by.get(q,[])
+              rs.sort(key=lambda r:float(r['bitscore']),reverse=True)
+              top=rs[0] if rs else {}
+              summary.append({
+                  'query':q,'hit_count':len(rs),
+                  'top_accession':top.get('saccver',''),'top_identity':top.get('pident',''),
+                  'top_alignment_length':top.get('length',''),'query_length':top.get('qlen',''),
+                  'top_query_coverage':top.get('qcovs',''),'top_evalue':top.get('evalue',''),
+                  'top_bitscore':top.get('bitscore',''),'top_title':top.get('stitle',''),
+                  'near_identical_ge90pct_qcov80':any(float(r['pident'])>=90 and float(r['qcovs'])>=80 for r in rs)
+              })
+          (out/'results/UPGRADED_REFSEQ_SUMMARY.json').write_text(json.dumps(summary,indent=2)+'\n')
+          with open(out/'results/UPGRADED_REFSEQ_SUMMARY.tsv','w',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=list(summary[0]),delimiter='\t'); w.writeheader(); w.writerows(summary)
+          nt=[]
+          for vals in csv.reader(open(out/'results/refseq_viral_blastn.tsv'),delimiter='\t'):
+              if len(vals)>=len(fields): nt.append(dict(zip(fields,vals[:len(fields)])))
+          nt_by={}
+          for r in nt: nt_by.setdefault(r['qseqid'],[]).append(r)
+          (out/'results/UPGRADED_NT_HIT_COUNTS.json').write_text(json.dumps({q:len(nt_by.get(q,[])) for q in ['PNX_Picorna_A_long','PNX_Picorna_B_long']},indent=2)+'\n')
+          report=['# Upgraded partial-polyprotein RefSeq audit','',
+                  'These sequences are partial C-terminal ORFs with an open 5-prime boundary; they are not complete viral genomes.','',
+                  '| Query | Length (aa) | RefSeq hits | Top identity | Top qcov | Top hit | Near-identical hit |',
+                  '|---|---:|---:|---:|---:|---|---|']
+          for r in summary:
+              report.append(f"| `{r['query']}` | {r['query_length']} | {r['hit_count']} | {r['top_identity']}% | {r['top_query_coverage']}% | {r['top_title']} | {r['near_identical_ge90pct_qcov80']} |")
+          report += ['',f"RefSeq viral nucleotide hit counts: `{json.dumps({q:len(nt_by.get(q,[])) for q in ['PNX_Picorna_A_long','PNX_Picorna_B_long']})}`",'',
+                     'No-hit and low-identity results are evidence of sequence divergence only. They do not establish a new taxon, host, replication, pathogenicity, or epidemiological independence.']
+          (out/'UPGRADED_REFSEQ_REPORT.md').write_text('\n'.join(report)+'\n')
+          print((out/'UPGRADED_REFSEQ_REPORT.md').read_text())
+          PY
+
+      - name: Run current Pfam and UniProtKB HMMER-web audit
+        shell: bash
+        run: |
+          set +e
+          python virus_hunt/hmmer_audit/run_hmmer_api.py \
+            --fasta virus_hunt/finalization/panax_upgraded_picorna_orfs.faa \
+            --out upgraded_hmmer_audit
+          rc=$?
+          echo "$rc" > upgraded_hmmer_audit/HMMER_SCRIPT_EXIT_CODE.txt
+          exit 0
+
+      - name: Build optional IQ-TREE bootstrap trees from RefSeq alignments
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p upgraded_iqtree
+          IQ=''
+          command -v iqtree2 >/dev/null 2>&1 && IQ=iqtree2
+          command -v iqtree >/dev/null 2>&1 && IQ=${IQ:-iqtree}
+          if [[ -z "$IQ" ]]; then
+            echo 'IQ-TREE unavailable; FastTree trees remain in upgraded_orf_audit/trees.' > upgraded_iqtree/STATUS.txt
+            exit 0
+          fi
+          for aln in upgraded_orf_audit/trees/*.aln.faa; do
+            [[ -s "$aln" ]] || continue
+            q=$(basename "$aln" .aln.faa)
+            mkdir -p "upgraded_iqtree/$q"
+            "$IQ" -s "$aln" -m MFP -B 1000 --alrt 1000 -T AUTO \
+              --prefix "upgraded_iqtree/$q/$q" > "upgraded_iqtree/$q/console.log" 2>&1 || true
+          done
+          find upgraded_iqtree -type f -print | sort > upgraded_iqtree/FILES.txt
+
+      - name: Generate integrity manifest and consolidated audit note
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p upgraded_final_audit
+          cp -r upgraded_orf_audit upgraded_final_audit/
+          cp -r upgraded_hmmer_audit upgraded_final_audit/
+          cp -r upgraded_iqtree upgraded_final_audit/
+          cp virus_hunt/finalization/panax_upgraded_picorna_orfs.* upgraded_final_audit/
+          python - <<'PY'
+          import csv,json,pathlib
+          root=pathlib.Path('upgraded_final_audit')
+          hmmer=root/'upgraded_hmmer_audit/HMMER_TOP_HITS.tsv'
+          pfam=[]
+          if hmmer.exists():
+              pfam=[r for r in csv.DictReader(open(hmmer),delimiter='\t') if r.get('algorithm')=='hmmscan']
+          by={}
+          for r in pfam: by.setdefault(r['query'],[]).append(r)
+          report=['# Consolidated audit of upgraded Panax-associated Picornavirales-like ORFs','',
+                  '- `PNX_Picorna_A_long`: 606-aa partial C-terminal ORF.','- `PNX_Picorna_B_long`: 1,135-aa partial C-terminal ORF.','',
+                  'Both sequences have an open N-terminal contig boundary and a downstream stop; neither is a complete genome.','',
+                  '## Pfam domains returned by HMMER-web','']
+          for q in ['PNX_Picorna_A_long','PNX_Picorna_B_long']:
+              report.append(f'### {q}')
+              hits=sorted(by.get(q,[]),key=lambda r:float(r['evalue']) if r.get('evalue') not in ('',None) else 1e999)
+              if not hits: report.append('- No successfully summarized Pfam hit in this API run.')
+              for r in hits[:20]: report.append(f"- `{r.get('accession') or r.get('name')}` — {r.get('description')}; E={r.get('evalue')}; score={r.get('score')}")
+              report.append('')
+          report += ['## Claim boundary','',
+                     'The strongest defensible claim is the detection of two divergent Picornavirales-like partial polyprotein/RdRP lineages in archived Panax-notoginseng-associated RNA-seq data. Formal species or genus naming requires genome architecture and additional taxonomic evidence. The nominal plant host, active replication, disease association, transmissibility, and agricultural or medical effects remain unconfirmed.']
+          (root/'CONSOLIDATED_UPGRADED_AUDIT.md').write_text('\n'.join(report)+'\n')
+          PY
+          find upgraded_final_audit -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > upgraded_final_audit/SHA256SUMS.txt
+          cat upgraded_final_audit/CONSOLIDATED_UPGRADED_AUDIT.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PANAX_UPGRADED_PICORNAVIRALES_FINAL_AUDIT_20260819
+          path: upgraded_final_audit
+          retention-days: 30
+          compression-level: 9
