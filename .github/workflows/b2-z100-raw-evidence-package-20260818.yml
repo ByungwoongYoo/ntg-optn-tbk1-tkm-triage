@@ -1,0 +1,40 @@
+name: B2 Z100 full raw evidence package 20260818
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/collect_b2_raw_evidence_20260818.py'
+      - '.github/workflows/b2-z100-raw-evidence-package-20260818.yml'
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  collect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Collect every selected raw artifact and proof object
+        run: python crossdomain/collect_b2_raw_evidence_20260818.py | tee B2_RAW_COLLECTION.log
+      - name: Record collector source and package inventory
+        run: |
+          cp crossdomain/collect_b2_raw_evidence_20260818.py B2_RAW_COLLECTED/repository_snapshot/
+          cp B2_RAW_COLLECTION.log B2_RAW_COLLECTED/environment/
+          find B2_RAW_COLLECTED -type f -printf '%s\t%p\n' | sort -k2 > B2_RAW_COLLECTED/manifest/FILE_LIST.tsv
+          find B2_RAW_COLLECTED -type f -print0 | sort -z | xargs -0 sha256sum > B2_RAW_COLLECTED/manifest/PRE_UPLOAD_SHA256SUMS.txt
+          echo "${GITHUB_SHA}" > B2_RAW_COLLECTED/environment/PACKAGE_BUILDER_COMMIT.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: B2-Z100-RAW-EVIDENCE-20260818
+          path: B2_RAW_COLLECTED
+          retention-days: 90
+          compression-level: 6
+          if-no-files-found: error
