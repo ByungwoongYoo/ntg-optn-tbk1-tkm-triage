@@ -1,0 +1,158 @@
+name: Panax impact finalization - unrestricted NCBI BLAST audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/panax-impact-remote-blast.yml'
+      - 'virus_hunt/finalization/panax_four_full_orfs.faa'
+      - 'virus_hunt/validation_inputs/candidate_contigs.fna'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  search:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 160
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - lineage: PNX_Duplo_A
+            mode: protein
+          - lineage: PNX_Duplo_B
+            mode: protein
+          - lineage: PNX_Picorna_A
+            mode: protein
+          - lineage: PNX_Picorna_B
+            mode: protein
+          - lineage: PNX_Duplo_A
+            mode: nucleotide
+          - lineage: PNX_Duplo_B
+            mode: nucleotide
+          - lineage: PNX_Picorna_A
+            mode: nucleotide
+          - lineage: PNX_Picorna_B
+            mode: nucleotide
+    env:
+      LINEAGE: ${{ matrix.lineage }}
+      MODE: ${{ matrix.mode }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install NCBI BLAST and sequence utilities
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ncbi-blast+ seqkit samtools
+      - name: Run current NCBI remote database searches
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="remote_blast/${LINEAGE}/${MODE}"; mkdir -p "$OUT"
+          date -u +%FT%TZ > "$OUT/started_utc.txt"
+          blastp -version > "$OUT/blast_version.txt" 2>&1 || true
+          if [[ "$MODE" == protein ]]; then
+            seqkit grep -n -p "$LINEAGE" virus_hunt/finalization/panax_four_full_orfs.faa > "$OUT/query.faa"
+            if timeout 120m blastp -remote -query "$OUT/query.faa" -db nr \
+              -evalue 1e-5 -max_target_seqs 100 -seg yes -comp_based_stats 2 \
+              -outfmt '6 qseqid saccver pident length qlen slen qstart qend sstart send evalue bitscore qcovs staxids sscinames stitle' \
+              -out "$OUT/unrestricted_nr.tsv" > "$OUT/unrestricted_nr.stdout.txt" 2> "$OUT/unrestricted_nr.stderr.txt"; then
+              echo true > "$OUT/unrestricted_nr.success"
+            else
+              echo false > "$OUT/unrestricted_nr.success"; : > "$OUT/unrestricted_nr.tsv"
+            fi
+            if timeout 90m blastp -remote -query "$OUT/query.faa" -db nr \
+              -entrez_query 'Viruses[Organism] OR unclassified viruses[Organism]' \
+              -evalue 1e-5 -max_target_seqs 100 -seg yes -comp_based_stats 2 \
+              -outfmt '6 qseqid saccver pident length qlen slen qstart qend sstart send evalue bitscore qcovs staxids sscinames stitle' \
+              -out "$OUT/viral_nr.tsv" > "$OUT/viral_nr.stdout.txt" 2> "$OUT/viral_nr.stderr.txt"; then
+              echo true > "$OUT/viral_nr.success"
+            else
+              echo false > "$OUT/viral_nr.success"; : > "$OUT/viral_nr.tsv"
+            fi
+          else
+            samtools faidx virus_hunt/validation_inputs/candidate_contigs.fna "$LINEAGE" > "$OUT/query.fna"
+            if timeout 120m blastn -remote -query "$OUT/query.fna" -db nt -task megablast \
+              -evalue 1e-20 -max_target_seqs 100 -dust yes -soft_masking true \
+              -outfmt '6 qseqid saccver pident length qlen slen qstart qend sstart send evalue bitscore qcovs staxids sscinames stitle' \
+              -out "$OUT/nt_megablast.tsv" > "$OUT/nt_megablast.stdout.txt" 2> "$OUT/nt_megablast.stderr.txt"; then
+              echo true > "$OUT/nt_megablast.success"
+            else
+              echo false > "$OUT/nt_megablast.success"; : > "$OUT/nt_megablast.tsv"
+            fi
+          fi
+          python - <<'PY'
+          import csv,json,os,pathlib
+          out=pathlib.Path('remote_blast')/os.environ['LINEAGE']/os.environ['MODE']
+          files=['unrestricted_nr.tsv','viral_nr.tsv'] if os.environ['MODE']=='protein' else ['nt_megablast.tsv']
+          data={}
+          for fn in files:
+            p=out/fn; rows=[]
+            if p.exists():
+              for v in csv.reader(open(p),delimiter='\t'):
+                if len(v)>=16:
+                  rows.append({'subject':v[1],'pident':float(v[2]),'length':int(v[3]),'qlen':int(v[4]),'slen':int(v[5]),'qstart':int(v[6]),'qend':int(v[7]),'evalue':v[10],'bitscore':float(v[11]),'qcov':float(v[12]),'taxids':v[13],'scientific_names':v[14],'title':v[15]})
+            rows.sort(key=lambda r:r['bitscore'],reverse=True)
+            success_file=out/(fn.replace('.tsv','.success'))
+            completed=success_file.exists() and success_file.read_text().strip()=='true'
+            data[fn]={'completed_successfully':completed,'hit_count':len(rows),'top_hit':rows[0] if rows else None,'near_identical_count':sum(r['pident']>=90 and r['qcov']>=80 for r in rows)}
+          status={'lineage':os.environ['LINEAGE'],'mode':os.environ['MODE'],'databases':data,'interpretation_boundary':'A failed or timed-out remote search is incomplete evidence. An empty result may be interpreted only when the corresponding command completed successfully.'}
+          (out/'SEARCH_SUMMARY.json').write_text(json.dumps(status,indent=2)+'\n')
+          PY
+          date -u +%FT%TZ > "$OUT/finished_utc.txt"
+          find "$OUT" -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > "$OUT/SHA256SUMS.txt"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: panax-remote-blast-${{ matrix.lineage }}-${{ matrix.mode }}
+          path: remote_blast/${{ matrix.lineage }}/${{ matrix.mode }}
+          retention-days: 30
+          compression-level: 9
+
+  aggregate:
+    needs: search
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: panax-remote-blast-*
+          path: downloads
+      - name: Aggregate completed and incomplete searches
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p aggregate
+          python - <<'PY'
+          import json,pathlib,csv
+          summaries=[]
+          for p in pathlib.Path('downloads').rglob('SEARCH_SUMMARY.json'):
+            try:summaries.append(json.load(open(p)))
+            except:pass
+          rows=[]
+          for s in summaries:
+            for db,x in s['databases'].items():
+              top=x.get('top_hit') or {}
+              rows.append({'lineage':s['lineage'],'mode':s['mode'],'database_result':db,'completed_successfully':x.get('completed_successfully',False),'hit_count':x.get('hit_count',0),'near_identical_count':x.get('near_identical_count',0),'top_subject':top.get('subject',''),'top_identity':top.get('pident',''),'top_qcov':top.get('qcov',''),'top_evalue':top.get('evalue',''),'top_scientific_names':top.get('scientific_names',''),'top_title':top.get('title','')})
+          header=['lineage','mode','database_result','completed_successfully','hit_count','near_identical_count','top_subject','top_identity','top_qcov','top_evalue','top_scientific_names','top_title']
+          with open('aggregate/REMOTE_BLAST_SUMMARY.tsv','w',newline='') as f:
+            w=csv.DictWriter(f,fieldnames=header,delimiter='\t');w.writeheader();w.writerows(rows)
+          expected=12
+          overall={'summary_rows':len(rows),'expected_summary_rows':expected,'all_expected_results_present':len(rows)==expected,'all_searches_completed_successfully':len(rows)==expected and all(r['completed_successfully'] for r in rows),'results':rows,'interpretation_boundary':'Only successfully completed NCBI remote searches may support novelty or alternative-explanation claims. Missing or failed rows remain unresolved.'}
+          pathlib.Path('aggregate/REMOTE_BLAST_SUMMARY.json').write_text(json.dumps(overall,indent=2)+'\n')
+          md=['# Unrestricted NCBI BLAST audit','',f"Result summaries present: **{len(rows)}/{expected}**",f"Completed successfully: **{sum(bool(r['completed_successfully']) for r in rows)}/{expected}**",'', '| Lineage | Mode/database | Complete | Hits | Near-identical | Top hit | Identity/qcov |','|---|---|---:|---:|---:|---|---|']
+          for r in rows: md.append(f"| `{r['lineage']}` | {r['mode']} / {r['database_result']} | {r['completed_successfully']} | {r['hit_count']} | {r['near_identical_count']} | {r['top_title'] or 'none'} | {r['top_identity'] or 'NA'} / {r['top_qcov'] or 'NA'} |")
+          md += ['', '## Claim boundary','',overall['interpretation_boundary']]
+          pathlib.Path('aggregate/REMOTE_BLAST_REPORT.md').write_text('\n'.join(md)+'\n')
+          PY
+          find aggregate -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > aggregate/SHA256SUMS.txt
+          cat aggregate/REMOTE_BLAST_REPORT.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PANAX_UNRESTRICTED_REMOTE_BLAST_FINAL_20260818
+          path: aggregate
+          retention-days: 30
+          compression-level: 9
