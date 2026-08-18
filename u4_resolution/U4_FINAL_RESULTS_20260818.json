@@ -1,0 +1,28 @@
+{
+  "problem": "Ulrich u4 single-axiom question for positive implicational logic",
+  "candidate_formula": "(((x->y)->z)->((y->(z->u))->(y->u)))",
+  "answer": "NO",
+  "final_status": "SOLVED_PENDING_EXTERNAL_REVIEW",
+  "resolution_type": "explicit infinite semantic countermodel with Lean 4 kernel verification",
+  "countermodel": {
+    "universe": "all finite implicational formulas",
+    "implication_operation": "syntactic implication constructor",
+    "designated_predicate": "all instances of u4 together with a recursively generated family of C(A,B,R) formulas",
+    "u4_valid": true,
+    "closed_under_modus_ponens": true,
+    "reflexivity_invalid_for_every_formula": true
+  },
+  "formal_certificate": {
+    "file": "lean/U4Formal.lean",
+    "theorem": "u4_countermodel_exists",
+    "toolchain": "leanprover/lean4:v4.30.0",
+    "kernel_check_status": "VERIFIED"
+  },
+  "independent_supporting_checks": {
+    "symbolic_checker": "u4_symbolic_checker.py",
+    "finite_family_and_application_tree_checks": true,
+    "prior_finite_matrix_search_n2_to_n6": "no finite countermodel found; not used as the resolution",
+    "prior_vampire_1200_second_portfolio": "timeout; not used as the resolution"
+  },
+  "claim_boundary": "The countermodel and its core closure/non-reflexivity proof are machine-checked by Lean 4. External peer review and independent literature-level verification are still pending; worldwide priority is not claimed as established."
+}
