@@ -30,10 +30,16 @@ jobs:
           mkdir -p u4_resolution/lean_check
           lean --version > u4_resolution/lean_check/LEAN_VERSION.txt 2>&1
           (cd u4_resolution/lean && lean U4Core.lean) > u4_resolution/lean_check/U4Core_OUTPUT.txt 2>&1
-          rc=$?
+          rc_core=$?
+          (cd u4_resolution/lean && lean U4Formal.lean) > u4_resolution/lean_check/U4Formal_OUTPUT.txt 2>&1
+          rc_formal=$?
+          echo "$rc_core" > u4_resolution/lean_check/U4Core_EXIT_CODE.txt
+          echo "$rc_formal" > u4_resolution/lean_check/U4Formal_EXIT_CODE.txt
+          rc=0
+          if [ "$rc_core" -ne 0 ] || [ "$rc_formal" -ne 0 ]; then rc=1; fi
           echo "$rc" > u4_resolution/lean_check/EXIT_CODE.txt
           if [ "$rc" -eq 0 ]; then echo VERIFIED > u4_resolution/lean_check/STATUS.txt; else echo FAILED > u4_resolution/lean_check/STATUS.txt; fi
-          sha256sum u4_resolution/lean/U4Core.lean u4_resolution/lean_check/*.txt > u4_resolution/lean_check/SHA256SUMS.txt
+          sha256sum u4_resolution/lean/U4Core.lean u4_resolution/lean/U4Formal.lean u4_resolution/lean_check/*.txt > u4_resolution/lean_check/SHA256SUMS.txt
           echo "rc=$rc" >> "$GITHUB_OUTPUT"
           exit 0
       - name: Commit machine check record
