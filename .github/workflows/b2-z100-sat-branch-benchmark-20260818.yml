@@ -1,0 +1,149 @@
+name: B2 Z100 normalized SAT branch benchmark 20260818
+on:
+  workflow_dispatch:
+  push:
+    branches: [b2-z100-final-proof-audit-20260818]
+    paths:
+      - 'crossdomain/b2_branch_sat_certificate_v1.py'
+      - '.github/workflows/b2-z100-sat-branch-benchmark-20260818.yml'
+permissions:
+  actions: read
+  contents: write
+jobs:
+  benchmark:
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix:
+        case:
+          - g1-t2-u3
+          - g1-t2-u10
+          - g1-t2-u30
+          - g1-t2-u60
+          - g1-t2-u89
+          - g1-t3-u4
+          - g1-t3-u20
+          - g1-t3-u60
+          - g1-t3-u88
+          - g1-t4-u5
+          - g1-t4-u25
+          - g1-t4-u60
+          - g1-t4-u87
+          - g1-t5
+          - g1-t10
+          - g1-t20
+          - g1-t45
+          - g2-t4
+          - g2-t20
+          - g2-t40
+          - g3-t6
+          - g3-t20
+          - g3-t35
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Install CNF generator dependency
+        run: pip install python-sat
+      - name: Parse case and generate CNF
+        id: parse
+        shell: bash
+        run: |
+          set -euo pipefail
+          c='${{ matrix.case }}'
+          g=$(sed -E 's/^g([0-9]+).*/\1/' <<<"$c")
+          t=$(sed -nE 's/.*-t([0-9]+).*/\1/p' <<<"$c")
+          u=$(sed -nE 's/.*-u([0-9]+).*/\1/p' <<<"$c")
+          d="artifact/$c"; mkdir -p "$d"
+          args=(--gap "$g" --third "$t" --out-dir "$d")
+          if [ -n "$u" ]; then args+=(--fourth "$u"); fi
+          python crossdomain/b2_branch_sat_certificate_v1.py "${args[@]}" > "$d/generator_stdout.log"
+          cnf=$(find "$d" -maxdepth 1 -name '*.cnf' -print -quit)
+          echo "dir=$d" >> "$GITHUB_OUTPUT"
+          echo "cnf=$cnf" >> "$GITHUB_OUTPUT"
+          echo "case=$c" >> "$GITHUB_OUTPUT"
+      - name: Build pinned CaDiCaL
+        run: |
+          git clone https://github.com/arminbiere/cadical.git /tmp/cadical
+          cd /tmp/cadical
+          git checkout c60730422e758ef1cebe7aeddf2dda31c996bf04
+          ./configure && make -j2
+      - name: Benchmark solve without proof output
+        shell: bash
+        run: |
+          set -euo pipefail
+          d='${{ steps.parse.outputs.dir }}'
+          cnf='${{ steps.parse.outputs.cnf }}'
+          set +e
+          /usr/bin/time -v timeout 900 /tmp/cadical/build/cadical "$cnf" > "$d/cadical.log" 2> "$d/time.log"
+          rc=$?
+          set -e
+          echo "$rc" > "$d/exit_code.txt"
+          if [ "$rc" -eq 20 ]; then echo UNSAT > "$d/STATUS.txt";
+          elif [ "$rc" -eq 10 ]; then echo SAT > "$d/STATUS.txt";
+          elif [ "$rc" -eq 124 ]; then echo TIMEOUT > "$d/STATUS.txt";
+          else echo "ERROR_$rc" > "$d/STATUS.txt"; fi
+          sha256sum "$d"/* > "$d/SHA256SUMS.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: b2-sat-benchmark-${{ matrix.case }}
+          path: artifact/${{ matrix.case }}
+          retention-days: 30
+          if-no-files-found: error
+  aggregate:
+    if: always()
+    needs: benchmark
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: b2-sat-benchmark-*
+          path: aggregate
+          merge-multiple: false
+      - name: Build aggregate summary
+        run: |
+          python - <<'PY'
+          import json, pathlib, re
+          root=pathlib.Path('aggregate'); rows=[]
+          for d in sorted(root.iterdir()):
+            if not d.is_dir(): continue
+            files=list(d.rglob('STATUS.txt'))
+            if not files: continue
+            s=files[0].read_text().strip(); base=files[0].parent
+            log=(base/'cadical.log').read_text(errors='replace') if (base/'cadical.log').exists() else ''
+            m=re.search(r'total real time since initialization:\s+([0-9.]+)',log)
+            rows.append({'artifact':d.name,'case':d.name.removeprefix('b2-sat-benchmark-'),'status':s,'solver_real_seconds':float(m.group(1)) if m else None})
+          pathlib.Path('aggregate/SUMMARY.json').write_text(json.dumps(rows,indent=2)+'\n')
+          print(json.dumps(rows,indent=2))
+          PY
+      - id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: b2-sat-branch-benchmark-aggregate-20260818
+          path: aggregate
+          retention-days: 30
+          if-no-files-found: error
+      - name: Publish run pointer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+        run: |
+          python - <<'PY'
+          import json,os
+          p={'run_id':int(os.environ['GITHUB_RUN_ID']),'run_attempt':int(os.environ['GITHUB_RUN_ATTEMPT']),
+             'status':'completed','commit':os.environ['GITHUB_SHA'],'workflow':os.environ['GITHUB_WORKFLOW'],
+             'artifact_id':int(os.environ['ARTIFACT_ID']),'artifact_url':os.environ['ARTIFACT_URL'],
+             'artifact_digest':os.environ['ARTIFACT_DIGEST']}
+          open('pointer.json','w').write(json.dumps(p,indent=2)+'\n')
+          PY
+          encoded=$(base64 -w0 pointer.json)
+          path='crossdomain/B2_SAT_BENCHMARK_LATEST_RUN.json'
+          sha=$(gh api "repos/${GITHUB_REPOSITORY}/contents/${path}?ref=${GITHUB_REF_NAME}" --jq .sha 2>/dev/null || true)
+          args=(--method PUT "repos/${GITHUB_REPOSITORY}/contents/${path}" -f message="Record B2 SAT branch benchmark ${GITHUB_RUN_ID}" -f content="$encoded" -f branch="${GITHUB_REF_NAME}")
+          if [ -n "$sha" ]; then args+=(-f sha="$sha"); fi
+          gh api "${args[@]}" >/dev/null
