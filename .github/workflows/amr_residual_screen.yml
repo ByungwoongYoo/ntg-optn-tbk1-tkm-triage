@@ -7,6 +7,12 @@ on:
     paths:
       - 'amr_discovery/**'
       - '.github/workflows/amr_residual_screen.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'amr_discovery/**'
+      - '.github/workflows/amr_residual_screen.yml'
   workflow_dispatch:
 
 permissions:
