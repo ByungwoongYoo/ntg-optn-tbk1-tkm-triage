@@ -1,0 +1,176 @@
+name: PR-visible Panax source-study context audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/panax-source-context-pr.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  context:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install metadata and document tools
+        run: |
+          python -m pip install requests==2.32.5 beautifulsoup4==4.13.4 pandas==2.3.1 openpyxl==3.1.5 lxml==6.0.0
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq file tesseract-ocr
+
+      - name: Retrieve archive metadata, source article, figure, and supplementary links
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p source_context/ena_samples source_context/ena_experiments source_context/gsa source_context/article source_context/supplementary
+
+          fields='run_accession,study_accession,sample_accession,experiment_accession,scientific_name,sample_title,library_name,library_strategy,library_source,library_selection,library_layout,instrument_platform,instrument_model,base_count,read_count,first_public,last_updated,country,collection_date,fastq_ftp,fastq_md5,fastq_bytes'
+          curl -fsSL --retry 10 --retry-all-errors -G 'https://www.ebi.ac.uk/ena/portal/api/filereport' \
+            --data-urlencode 'accession=PRJDB39299' --data-urlencode 'result=read_run' \
+            --data-urlencode "fields=${fields}" --data-urlencode 'format=tsv' \
+            -o source_context/ena_read_runs.tsv
+
+          curl -fL --retry 10 --retry-all-errors \
+            'https://www.ebi.ac.uk/ena/browser/api/xml/PRJDB39299' \
+            -o source_context/article/ENA_PRJDB39299.xml || true
+          curl -fL --retry 10 --retry-all-errors \
+            'https://ngdc.cncb.ac.cn/gsa/browse/CRA029712' \
+            -o source_context/gsa/CRA029712.html || true
+          curl -fL --retry 10 --retry-all-errors \
+            'https://link.springer.com/article/10.1186/s12870-026-08239-w' \
+            -o source_context/article/source_article.html || true
+          curl -fL --retry 10 --retry-all-errors \
+            'https://media.springernature.com/full/springer-static/image/art%3A10.1186%2Fs12870-026-08239-w/MediaObjects/12870_2026_8239_Fig1_HTML.png' \
+            -o source_context/article/Figure1.png || true
+          curl -fL --retry 10 --retry-all-errors \
+            'https://media.springernature.com/full/springer-static/image/art%3A10.1186%2Fs12870-026-08239-w/MediaObjects/12870_2026_8239_MOESM1_ESM.docx' \
+            -o source_context/supplementary/Supplementary_Material_1.docx || true
+
+          python - <<'PY'
+          import csv,pathlib,subprocess,time
+          root=pathlib.Path('source_context')
+          rows=list(csv.DictReader(open(root/'ena_read_runs.tsv'),delimiter='\t'))
+          if not rows: raise SystemExit('No ENA rows retrieved')
+          for acc,sub in [(r.get('sample_accession'),'ena_samples') for r in rows] + [(r.get('experiment_accession'),'ena_experiments') for r in rows]:
+              if not acc: continue
+              out=root/sub/(acc+'.xml')
+              for _ in range(5):
+                  p=subprocess.run(['curl','-fL','--retry','5','--retry-all-errors',f'https://www.ebi.ac.uk/ena/browser/api/xml/{acc}','-o',str(out)])
+                  if p.returncode==0 and out.exists() and out.stat().st_size: break
+                  time.sleep(2)
+          PY
+
+      - name: Discover GSA downloads and source supplementary assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import pathlib,re,requests,urllib.parse
+          from bs4 import BeautifulSoup
+          root=pathlib.Path('source_context')
+          urls=[]
+          for html,base in [(root/'gsa/CRA029712.html','https://ngdc.cncb.ac.cn'),(root/'article/source_article.html','https://link.springer.com')]:
+              if not html.exists(): continue
+              text=html.read_text(errors='ignore')
+              soup=BeautifulSoup(text,'lxml')
+              for tag in soup.find_all(['a','link','script']):
+                  ref=tag.get('href') or tag.get('src')
+                  if not ref: continue
+                  url=urllib.parse.urljoin(base,ref)
+                  if any(x in url.lower() for x in ['cra029712','.xlsx','.xls','.csv','.tsv','supplement','moesm','fig1']): urls.append(url)
+          urls=list(dict.fromkeys(urls))
+          (root/'DISCOVERED_ASSET_URLS.txt').write_text('\n'.join(urls)+'\n')
+          headers={'User-Agent':'Mozilla/5.0 Panax-source-audit/1.0'}
+          for i,url in enumerate(urls,1):
+              try:
+                  r=requests.get(url,headers=headers,timeout=90,allow_redirects=True)
+                  if r.ok and len(r.content)>100:
+                      suffix=pathlib.Path(urllib.parse.urlparse(r.url).path).suffix
+                      if not suffix or len(suffix)>8: suffix='.bin'
+                      name=f'asset_{i:03d}{suffix}'
+                      p=root/'supplementary'/name; p.write_bytes(r.content)
+                      (root/'supplementary'/(name+'.url.txt')).write_text(r.url+'\n')
+              except Exception as e:
+                  (root/'supplementary'/f'asset_{i:03d}.error.txt').write_text(repr(e)+'\n'+url+'\n')
+          PY
+          find source_context -type f -exec file {} \; > source_context/FILE_TYPES.txt
+
+      - name: Parse exact group evidence conservatively
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv,json,pathlib,re,zipfile
+          import xml.etree.ElementTree as ET
+          import pandas as pd
+          from bs4 import BeautifulSoup
+          root=pathlib.Path('source_context')
+          rows=list(csv.DictReader(open(root/'ena_read_runs.tsv'),delimiter='\t'))
+          terms=['healthy','root rot','root-rot','diseased','disease','infected','control','ck','rot','zh','bh']
+          evidence=[]
+          def add(source,text):
+              low=text.lower()
+              if any(t in low for t in terms): evidence.append({'source':source,'text':' '.join(text.split())[:1000]})
+          for p in root.rglob('*'):
+              if not p.is_file(): continue
+              try:
+                  suf=p.suffix.lower()
+                  if suf in {'.html','.xml','.txt','.tsv','.csv','.json'}:
+                      text=p.read_text(errors='ignore')
+                      for line in text.splitlines(): add(str(p),line)
+                  elif suf in {'.xlsx','.xls'}:
+                      book=pd.ExcelFile(p)
+                      for sh in book.sheet_names:
+                          df=pd.read_excel(p,sheet_name=sh,header=None,dtype=str)
+                          for _,r in df.fillna('').iterrows(): add(f'{p}::{sh}',' | '.join(map(str,r.tolist())))
+                  elif suf=='.docx' and zipfile.is_zipfile(p):
+                      with zipfile.ZipFile(p) as z:
+                          for n in z.namelist():
+                              if n.endswith('.xml'): add(f'{p}::{n}',z.read(n).decode(errors='ignore'))
+              except Exception: pass
+          mapping={}
+          for r in rows:
+              title=r.get('sample_title','')
+              m=re.search(r'Sample_([A-Za-z]+)([A-Z])',title)
+              mapping[r['run_accession']]={'sample_accession':r.get('sample_accession'),'experiment_accession':r.get('experiment_accession'),'sample_title':title,
+                'deposited_group_token':m.group(1) if m else '', 'replicate_token':m.group(2) if m else ''}
+          explicit=[]
+          for e in evidence:
+              t=e['text']
+              if re.search(r'(?i)(zh|bh).{0,80}(healthy|root.?rot|diseas|infect|control|ck|rot)|(healthy|root.?rot|diseas|infect|control|ck|rot).{0,80}(zh|bh)',t): explicit.append(e)
+          result={'project':'PRJDB39299 / CRA029712','source_article_doi':'10.1186/s12870-026-08239-w','runs':mapping,
+            'explicit_group_mapping_evidence':explicit,
+            'group_mapping_status':'explicit_mapping_found' if explicit else 'not_explicitly_resolved',
+            'boundary':'Zh/Bh may not be assigned to healthy/root-rot groups without explicit deposited or source evidence.'}
+          (root/'SOURCE_CONTEXT_AUDIT.json').write_text(json.dumps(result,indent=2,ensure_ascii=False)+'\n')
+          with open(root/'EVIDENCE_SNIPPETS.tsv','w',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=['source','text'],delimiter='\t');w.writeheader();w.writerows(evidence)
+          md=['# Panax source-study context audit','',
+              '- Source study: `Identification and functional characterization of a novel gene conferring root rot resistance in Panax notoginseng`','- DOI: `10.1186/s12870-026-08239-w`','- Public transcriptome accession: `CRA029712` / archive mirror `PRJDB39299`','',
+              f"- Exact Zh/Bh-to-phenotype mapping status: **{result['group_mapping_status']}**",'',
+              '## Deposited runs','',
+              '| Run | BioSample | Experiment | Deposited title | Token | Replicate |','|---|---|---|---|---|---|']
+          for run,v in mapping.items(): md.append(f"| `{run}` | `{v['sample_accession']}` | `{v['experiment_accession']}` | {v['sample_title']} | `{v['deposited_group_token']}` | `{v['replicate_token']}` |")
+          md += ['', '## Explicit mapping snippets','']
+          if explicit:
+              for e in explicit[:30]: md.append(f"- `{e['source']}` — {e['text']}")
+          else: md.append('- No exact mapping was recovered from the downloaded public metadata/assets in this run.')
+          md += ['', '## Boundary','',result['boundary']]
+          (root/'SOURCE_CONTEXT_REPORT.md').write_text('\n'.join(md)+'\n')
+          PY
+          if [[ -s source_context/article/Figure1.png ]]; then
+            tesseract source_context/article/Figure1.png source_context/article/Figure1_OCR >/dev/null 2>&1 || true
+          fi
+          find source_context -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > source_context/SHA256SUMS.txt
+          cat source_context/SOURCE_CONTEXT_REPORT.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PANAX_SOURCE_CONTEXT_AUDIT_20260819
+          path: source_context
+          retention-days: 30
+          compression-level: 9
