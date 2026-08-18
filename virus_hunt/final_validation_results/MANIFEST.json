@@ -1,0 +1,117 @@
+[
+  {
+    "path": "CLAIM_BOUNDARY.md",
+    "bytes": 577,
+    "sha256": "fee3454d796a7b3a09ef289338aba616b6e5a977e2dbe43c10b09bb12d88fca2"
+  },
+  {
+    "path": "FINALIZER_CONSOLE.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "FINAL_CANDIDATE_DECISIONS.json",
+    "bytes": 5574,
+    "sha256": "370d97562a1aa3b8c12f4f0c9d809a58d23cca66cbeda44da92adbf47792ee93"
+  },
+  {
+    "path": "FINAL_CANDIDATE_DECISIONS.tsv",
+    "bytes": 1683,
+    "sha256": "8876baced28622b2321b6745ecf73dcefba9e08c3d07582fa1a2ff32a5a04251"
+  },
+  {
+    "path": "FINAL_VALIDATION_REPORT.md",
+    "bytes": 2517,
+    "sha256": "b0180f29b9314ea9ef5273dbd48d3de03d3187fca71dee218155e9a7c3c5bdef"
+  },
+  {
+    "path": "evidence/candidate_contigs.fna",
+    "bytes": 7054,
+    "sha256": "6a5c7951ecb2af04a9582f84c8cc362041ae3547275d5e32e40741a547ba52c5"
+  },
+  {
+    "path": "evidence/candidate_manifest.json",
+    "bytes": 2937,
+    "sha256": "fdbdff3d43af176f6304666a115845ff25d0f5f9dc17562afc6c643e29fa1420"
+  },
+  {
+    "path": "evidence/candidate_rdrp.faa",
+    "bytes": 1795,
+    "sha256": "994de803f1b079b7764d397d64316002e9d9dd625f5da38456146f654a70e966"
+  },
+  {
+    "path": "evidence/readmaps/panax-read-support-DRR853908/RAW_MAPPING_STATUS.json",
+    "bytes": 119,
+    "sha256": "c4b47bcd64b932ed112c179c6993fc84ea30d6583cd8a3b76a9d99fe5303f3c8"
+  },
+  {
+    "path": "evidence/readmaps/panax-read-support-DRR853908/SHA256SUMS_COMPLETE.txt",
+    "bytes": 437,
+    "sha256": "f171b893eccfd90bf9255c1da36b36f6066a98da0d12cb74e950245313a92031"
+  },
+  {
+    "path": "evidence/readmaps/panax-read-support-DRR853908/ena_run_metadata.tsv",
+    "bytes": 819,
+    "sha256": "a495288d990405b68e7b48763ab7ab2096620185bbf88ca161dfa29b52d7068d"
+  },
+  {
+    "path": "evidence/readmaps/panax-read-support-DRR853908/map_console.log",
+    "bytes": 827,
+    "sha256": "b829051dbe72f18f7d973b859b8195a76d05fde1606854008899964caf20b3d0"
+  },
+  {
+    "path": "evidence/readmaps/panax-read-support-DRR853910/RAW_MAPPING_STATUS.json",
+    "bytes": 119,
+    "sha256": "607bebb4269a6f558caf4f68db7202eaa093a6f0d4f28c199ac56da170a0e003"
+  },
+  {
+    "path": "evidence/readmaps/panax-read-support-DRR853910/SHA256SUMS_COMPLETE.txt",
+    "bytes": 437,
+    "sha256": "5bc64634e26af63ac7351f5c1750ae187587306e2e0d525e3f959ec89f5eea54"
+  },
+  {
+    "path": "evidence/readmaps/panax-read-support-DRR853910/ena_run_metadata.tsv",
+    "bytes": 819,
+    "sha256": "c5b524f9ec8515f95633d590c8ce7ce032273e70bb6432fdcb99b43555a4d719"
+  },
+  {
+    "path": "evidence/readmaps/panax-read-support-DRR853910/map_console.log",
+    "bytes": 859,
+    "sha256": "c923fc0b58f26ca7717925f60aeefff46677a8ee6c9857d7e69cf784bac021b3"
+  },
+  {
+    "path": "evidence/readmaps/panax-read-support-DRR853912/RAW_MAPPING_STATUS.json",
+    "bytes": 119,
+    "sha256": "2700079f09c85d0ced7e3daf3ebd5b7b50c83474847662fd1236cbc9903460b3"
+  },
+  {
+    "path": "evidence/readmaps/panax-read-support-DRR853912/SHA256SUMS_COMPLETE.txt",
+    "bytes": 437,
+    "sha256": "de7c33624b22f4e916fc8f2bdd48f169921e21a2bc05c0af452cc2ba7c4fd510"
+  },
+  {
+    "path": "evidence/readmaps/panax-read-support-DRR853912/ena_run_metadata.tsv",
+    "bytes": 819,
+    "sha256": "31290ed1e842a198d58c42e24f744345b191fbe21438fea10fd9f515e93d8c86"
+  },
+  {
+    "path": "evidence/readmaps/panax-read-support-DRR853912/map_console.log",
+    "bytes": 7969,
+    "sha256": "faff330e62b6a3a418d39d4ef38725e5d27eccf0ba3609f71bf47864df7e4667"
+  },
+  {
+    "path": "evidence/sequence/SHA256SUMS.txt",
+    "bytes": 218,
+    "sha256": "f4fa9d9abdd457b93a562ba8f2ab098603f753ddad4442778fd37b1d5a062e49"
+  },
+  {
+    "path": "evidence/sequence/provenance/SEQUENCE_AUDIT_PROVENANCE.txt",
+    "bytes": 2071,
+    "sha256": "65e690aed8164247f7532f0023b4f931a37de2bdb64c2076b23ffd0e730db6f1"
+  },
+  {
+    "path": "evidence/strict_candidate_members.tsv",
+    "bytes": 3062,
+    "sha256": "c81481b938ba72a658408ca844f452d86d3c507911c3dae9169a668fb9f7352f"
+  }
+]
