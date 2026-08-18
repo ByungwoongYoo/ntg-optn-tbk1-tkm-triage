@@ -36,18 +36,18 @@ def C (p q r : Fml) : Fml := I (I p (I q r)) (I p r)
 
 def Phi (x y z u : Fml) : Fml := I (I (I x y) z) (C y z u)
 
-lemma arr_inj {a b c d : Fml} (h : I a b = I c d) : a = c ∧ b = d := by
+theorem arr_inj {a b c d : Fml} (h : I a b = I c d) : a = c ∧ b = d := by
   cases h
   exact ⟨rfl, rfl⟩
 
-lemma no_self_left (p q : Fml) : p ≠ I p q := by
+theorem no_self_left (p q : Fml) : p ≠ I p q := by
   intro h
   have hs := congrArg Fml.size h
   have hq := Fml.size_pos q
   simp [Fml.size] at hs
   omega
 
-lemma no_self_right (p q : Fml) : p ≠ I q p := by
+theorem no_self_right (p q : Fml) : p ≠ I q p := by
   intro h
   have hs := congrArg Fml.size h
   have hq := Fml.size_pos q
@@ -62,7 +62,7 @@ inductive Pair : Fml → Fml → Prop where
 
 namespace Pair
 
-lemma interlocking {a b : Fml} (h : Pair a b) :
+theorem interlocking {a b : Fml} (h : Pair a b) :
     (∀ w, a ≠ I b w) ∧ (∀ w, b ≠ I a w) := by
   induction h with
   | base a b c =>
@@ -92,7 +92,7 @@ lemma interlocking {a b : Fml} (h : Pair a b) :
         have leftEq := (arr_inj eq).1
         exact ih.1 r leftEq
 
-lemma no_D_eq_C {a b c d : Fml} (hab : Pair a b) (hcd : Pair c d)
+theorem no_D_eq_C {a b c d : Fml} (hab : Pair a b) (hcd : Pair c d)
     (r s : Fml) : I a (I b r) ≠ C c d s := by
   intro eq
   have outer := arr_inj eq
@@ -102,7 +102,7 @@ lemma no_D_eq_C {a b c d : Fml} (hab : Pair a b) (hcd : Pair c d)
   rw [← hbc] at ha
   exact (interlocking hab).1 (I d s) ha
 
-lemma no_D_eq_Phi {a b : Fml} (hab : Pair a b) (r x y z u : Fml) :
+theorem no_D_eq_Phi {a b : Fml} (hab : Pair a b) (r x y z u : Fml) :
     I a (I b r) ≠ Phi x y z u := by
   induction hab with
   | base a b c =>
@@ -131,7 +131,7 @@ lemma no_D_eq_Phi {a b : Fml} (hab : Pair a b) (r x y z u : Fml) :
 
 end Pair
 
-lemma Phi_no_refl (x y z u q : Fml) : Phi x y z u ≠ I q q := by
+theorem Phi_no_refl (x y z u q : Fml) : Phi x y z u ≠ I q q := by
   intro eq
   have outer := arr_inj eq
   have both : I (I x y) z = C y z u := outer.1.trans outer.2.symm
@@ -144,7 +144,7 @@ lemma Phi_no_refl (x y z u q : Fml) : Phi x y z u ≠ I q q := by
   simp [C, Fml.size] at hsy hsz
   omega
 
-lemma C_no_refl (a b r q : Fml) : C a b r ≠ I q q := by
+theorem C_no_refl (a b r q : Fml) : C a b r ≠ I q q := by
   intro eq
   have outer := arr_inj eq
   have both : I a (I b r) = I a r := outer.1.trans outer.2.symm
@@ -156,13 +156,13 @@ def P (f : Fml) : Prop :=
   (∃ x y z u, Phi x y z u = f) ∨
   (∃ a b r, Pair a b ∧ C a b r = f)
 
-lemma P_phi (x y z u : Fml) : P (Phi x y z u) := by
+theorem P_phi (x y z u : Fml) : P (Phi x y z u) := by
   exact Or.inl ⟨x, y, z, u, rfl⟩
 
-lemma P_C {a b : Fml} (h : Pair a b) (r : Fml) : P (C a b r) := by
+theorem P_C {a b : Fml} (h : Pair a b) (r : Fml) : P (C a b r) := by
   exact Or.inr ⟨a, b, r, h, rfl⟩
 
-lemma P_mp {X Y : Fml} (hx : P X) (hxy : P (I X Y)) : P Y := by
+theorem P_mp {X Y : Fml} (hx : P X) (hxy : P (I X Y)) : P Y := by
   rcases hxy with hmaj | hmaj
   · rcases hmaj with ⟨x, y, z, u, hmaj⟩
     have majorParts := arr_inj hmaj
@@ -191,7 +191,7 @@ lemma P_mp {X Y : Fml} (hx : P X) (hxy : P (I X Y)) : P Y := by
       have bad : I a (I b r) = C c d s := majorParts.1.trans hmin.symm
       exact False.elim (Pair.no_D_eq_C hab hcd r s bad)
 
-lemma P_no_refl (q : Fml) : ¬ P (I q q) := by
+theorem P_no_refl (q : Fml) : ¬ P (I q q) := by
   intro h
   rcases h with h | h
   · rcases h with ⟨x, y, z, u, eq⟩
