@@ -1,0 +1,224 @@
+name: Panax impact finalization - full ORFs and companion segments
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/panax-impact-refseq-cp.yml'
+      - 'virus_hunt/finalization/**'
+      - 'virus_hunt/validation_inputs/candidate_contigs.fna'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install sequence tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq aria2 pigz zstd ncbi-blast+ mafft fasttree seqkit
+          python -m pip install biopython==1.85 pandas==2.3.1
+      - name: Download current RefSeq viral release and build databases
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=impact_refseq_cp
+          mkdir -p "$OUT/db" "$OUT/results" "$OUT/trees" "$OUT/cp_search" "$OUT/logan"
+          BASE='https://ftp.funet.fi/pub/mirrors/ftp.ncbi.nlm.nih.gov/refseq/release/viral/'
+          for f in viral.1.protein.faa.gz viral.1.1.genomic.fna.gz; do
+            aria2c --continue=true --allow-overwrite=true --auto-file-renaming=false \
+              --file-allocation=none --max-connection-per-server=4 --split=4 \
+              --max-tries=20 --retry-wait=5 --dir "$OUT/db" --out "$f" "$BASE$f"
+          done
+          pigz -dc "$OUT/db/viral.1.protein.faa.gz" > "$OUT/db/refseq_viral_proteins.faa"
+          pigz -dc "$OUT/db/viral.1.1.genomic.fna.gz" > "$OUT/db/refseq_viral_genomes.fna"
+          makeblastdb -in "$OUT/db/refseq_viral_proteins.faa" -dbtype prot -parse_seqids -out "$OUT/db/refseq_viral_prot" > "$OUT/results/makeblastdb_prot.log" 2>&1
+          makeblastdb -in "$OUT/db/refseq_viral_genomes.fna" -dbtype nucl -parse_seqids -out "$OUT/db/refseq_viral_nt" > "$OUT/results/makeblastdb_nt.log" 2>&1
+          sha256sum "$OUT"/db/viral.*.gz > "$OUT/results/DATABASE_SHA256.txt"
+          printf 'refseq_release=236\nrefseq_release_date=2026-07-10\nsource=%s\n' "$BASE" > "$OUT/results/REFSEQ_PROVENANCE.txt"
+      - name: Search full ORFs and nucleotide contigs
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=impact_refseq_cp
+          FMT='6 qseqid saccver pident length qlen slen qstart qend sstart send evalue bitscore qcovs stitle'
+          blastp -query virus_hunt/finalization/panax_four_full_orfs.faa -db "$OUT/db/refseq_viral_prot" \
+            -evalue 1e-5 -max_target_seqs 250 -seg yes -comp_based_stats 2 -outfmt "$FMT" \
+            -out "$OUT/results/full_orf_refseq_blastp.tsv"
+          blastn -query virus_hunt/validation_inputs/candidate_contigs.fna -db "$OUT/db/refseq_viral_nt" \
+            -evalue 1e-10 -max_target_seqs 250 -dust yes -soft_masking true -outfmt "$FMT" \
+            -out "$OUT/results/candidate_contig_refseq_blastn.tsv"
+          python - <<'PY'
+          import csv,json,pathlib
+          root=pathlib.Path('impact_refseq_cp/results')
+          fields=['query','subject','pident','length','qlen','slen','qstart','qend','sstart','send','evalue','bitscore','qcov','title']
+          rows=[]
+          for vals in csv.reader(open(root/'full_orf_refseq_blastp.tsv'),delimiter='\t'):
+              if len(vals)>=14: rows.append(dict(zip(fields,vals[:14])))
+          by={}
+          for r in rows: by.setdefault(r['query'],[]).append(r)
+          summary=[]
+          for q in ['PNX_Duplo_A','PNX_Duplo_B','PNX_Picorna_A','PNX_Picorna_B']:
+              rs=sorted(by.get(q,[]),key=lambda x:float(x['bitscore']),reverse=True)
+              top=rs[0] if rs else {}
+              near=[r for r in rs if float(r['pident'])>=90 and float(r['qcov'])>=80]
+              summary.append({'query':q,'hit_count':len(rs),'top_subject':top.get('subject',''),'top_identity':top.get('pident',''),'top_qcov':top.get('qcov',''),'top_evalue':top.get('evalue',''),'top_title':top.get('title',''),'near_identity_ge90_qcov80_count':len(near)})
+          with open(root/'full_orf_refseq_summary.tsv','w',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=list(summary[0]),delimiter='\t');w.writeheader();w.writerows(summary)
+          (root/'full_orf_refseq_summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+          PY
+      - name: Build full-ORF phylogenetic audit trees
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=impact_refseq_cp
+          python - <<'PY'
+          import csv,pathlib
+          src=pathlib.Path('impact_refseq_cp/results/full_orf_refseq_blastp.tsv')
+          out=pathlib.Path('impact_refseq_cp/trees')
+          fields=['query','subject','pident','length','qlen','slen','qstart','qend','sstart','send','evalue','bitscore','qcov','title']
+          by={}
+          for vals in csv.reader(open(src),delimiter='\t'):
+              if len(vals)<14: continue
+              r=dict(zip(fields,vals[:14])); by.setdefault(r['query'],[]).append(r)
+          for q,rs in by.items():
+              ids=[]
+              for r in sorted(rs,key=lambda x:float(x['bitscore']),reverse=True):
+                  if r['subject'] not in ids: ids.append(r['subject'])
+                  if len(ids)>=35: break
+              (out/f'{q}.top_ids.txt').write_text('\n'.join(ids)+'\n')
+          PY
+          for ids in "$OUT"/trees/*.top_ids.txt; do
+            q="$(basename "$ids" .top_ids.txt)"
+            blastdbcmd -db "$OUT/db/refseq_viral_prot" -entry_batch "$ids" > "$OUT/trees/${q}.homologs.faa" 2> "$OUT/trees/${q}.blastdbcmd.log" || true
+            seqkit grep -n -p "$q" virus_hunt/finalization/panax_four_full_orfs.faa > "$OUT/trees/${q}.query.faa"
+            cat "$OUT/trees/${q}.query.faa" "$OUT/trees/${q}.homologs.faa" > "$OUT/trees/${q}.combined.faa"
+            mafft --auto "$OUT/trees/${q}.combined.faa" > "$OUT/trees/${q}.aln.faa" 2> "$OUT/trees/${q}.mafft.log"
+            FastTree -wag "$OUT/trees/${q}.aln.faa" > "$OUT/trees/${q}.tree.nwk" 2> "$OUT/trees/${q}.fasttree.log"
+          done
+      - name: Extract known partitivirus coat/capsid proteins
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=impact_refseq_cp
+          python - <<'PY'
+          from Bio import SeqIO
+          import pathlib,json
+          src=pathlib.Path('impact_refseq_cp/db/refseq_viral_proteins.faa')
+          selected=[]; panax=[]
+          for r in SeqIO.parse(src,'fasta'):
+              d=r.description.lower()
+              is_cp=('coat protein' in d or 'capsid protein' in d or 'capsid' in d)
+              is_partiti=('cryptic virus' in d or 'partitivirus' in d or 'partiti-like' in d)
+              if is_cp and is_partiti: selected.append(r)
+              if 'panax cryptic virus' in d: panax.append(r)
+          SeqIO.write(selected,'impact_refseq_cp/cp_search/partitivirus_cp_queries.faa','fasta')
+          SeqIO.write(panax,'impact_refseq_cp/cp_search/panax_cryptic_all_refseq_proteins.faa','fasta')
+          pathlib.Path('impact_refseq_cp/cp_search/CP_QUERY_COUNTS.json').write_text(json.dumps({'partitivirus_cp_queries':len(selected),'panax_cryptic_refseq_proteins':len(panax)},indent=2)+'\n')
+          PY
+          cat "$OUT/cp_search/CP_QUERY_COUNTS.json"
+      - name: Search complete Logan assemblies for companion CP segments
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=impact_refseq_cp
+          for RUN in DRR853908 DRR853910 DRR853912; do
+            mkdir -p "$OUT/logan/$RUN"
+            URL="https://s3.amazonaws.com/logan-pub/c/${RUN}/${RUN}.contigs.fa.zst"
+            aria2c --continue=true --allow-overwrite=true --auto-file-renaming=false --file-allocation=none --max-connection-per-server=4 --split=4 --max-tries=20 --retry-wait=5 --dir "$OUT/logan/$RUN" --out "${RUN}.contigs.fa.zst" "$URL"
+            zstd -t "$OUT/logan/$RUN/${RUN}.contigs.fa.zst"
+            zstdcat "$OUT/logan/$RUN/${RUN}.contigs.fa.zst" > "$OUT/logan/$RUN/${RUN}.contigs.fna"
+            makeblastdb -in "$OUT/logan/$RUN/${RUN}.contigs.fna" -dbtype nucl -parse_seqids -out "$OUT/logan/$RUN/${RUN}.db" >/dev/null
+            tblastn -query "$OUT/cp_search/partitivirus_cp_queries.faa" -db "$OUT/logan/$RUN/${RUN}.db" \
+              -evalue 1e-5 -max_target_seqs 500 -seg yes -comp_based_stats 2 \
+              -outfmt '6 qseqid sseqid pident length qlen slen qstart qend sstart send evalue bitscore qcovs stitle' \
+              -out "$OUT/logan/$RUN/cp_tblastn_all.tsv" || true
+            python - "$RUN" <<'PY'
+          import csv,sys,pathlib
+          run=sys.argv[1]; root=pathlib.Path('impact_refseq_cp/logan')/run
+          src=root/'cp_tblastn_all.tsv'; ids=set(); rows=[]
+          if src.exists():
+            for v in csv.reader(open(src),delimiter='\t'):
+              if len(v)<14: continue
+              e=float(v[10]); qcov=float(v[12]); slen=int(v[5])
+              if e<=1e-5 and qcov>=20 and 600<=slen<=5000:
+                ids.add(v[1]); rows.append(v)
+          (root/'cp_candidate_contig_ids.txt').write_text('\n'.join(sorted(ids))+'\n' if ids else '')
+          with open(root/'cp_tblastn_filtered.tsv','w',newline='') as f:
+            csv.writer(f,delimiter='\t').writerows(rows)
+          PY
+            if [[ -s "$OUT/logan/$RUN/cp_candidate_contig_ids.txt" ]]; then
+              blastdbcmd -db "$OUT/logan/$RUN/${RUN}.db" -entry_batch "$OUT/logan/$RUN/cp_candidate_contig_ids.txt" > "$OUT/logan/$RUN/cp_candidate_contigs.fna"
+              blastx -query "$OUT/logan/$RUN/cp_candidate_contigs.fna" -db "$OUT/db/refseq_viral_prot" \
+                -evalue 1e-5 -max_target_seqs 50 -seg yes -outfmt '6 qseqid saccver pident length qlen slen qstart qend sstart send evalue bitscore qcovs stitle' \
+                -out "$OUT/logan/$RUN/cp_candidate_refseq_blastx.tsv" || true
+            else
+              : > "$OUT/logan/$RUN/cp_candidate_contigs.fna"
+              : > "$OUT/logan/$RUN/cp_candidate_refseq_blastx.tsv"
+            fi
+            rm -f "$OUT/logan/$RUN/${RUN}.contigs.fa.zst" "$OUT/logan/$RUN/${RUN}.contigs.fna" "$OUT/logan/$RUN/${RUN}.db"*
+          done
+      - name: Rank companion-segment candidates
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=impact_refseq_cp
+          python - <<'PY'
+          from Bio import SeqIO
+          import csv,pathlib,json,re
+          root=pathlib.Path('impact_refseq_cp')
+          rows=[]; recs=[]
+          fields=['qseqid','saccver','pident','length','qlen','slen','qstart','qend','sstart','send','evalue','bitscore','qcov','title']
+          for run in ['DRR853908','DRR853910','DRR853912']:
+              p=root/'logan'/run/'cp_candidate_refseq_blastx.tsv'
+              top={}
+              if p.exists():
+                  for v in csv.reader(open(p),delimiter='\t'):
+                      if len(v)<14: continue
+                      r=dict(zip(fields,v[:14])); q=r['qseqid']
+                      if q not in top or float(r['bitscore'])>float(top[q]['bitscore']): top[q]=r
+              fasta=root/'logan'/run/'cp_candidate_contigs.fna'
+              if fasta.exists():
+                  for rec in SeqIO.parse(fasta,'fasta'):
+                      t=top.get(rec.id,{}); title=t.get('title','')
+                      if re.search(r'coat protein|capsid',title,re.I):
+                          original=rec.id; rec.id=f'{run}|{original}'; rec.description=''; recs.append(rec)
+                          rows.append({'run':run,'contig':original,'nt_length':len(rec.seq),'top_accession':t.get('saccver',''),'top_identity':t.get('pident',''),'top_qcov':t.get('qcov',''),'top_evalue':t.get('evalue',''),'top_title':title})
+          SeqIO.write(recs,root/'cp_search'/'confirmed_cp_like_contigs.fna','fasta')
+          header=['run','contig','nt_length','top_accession','top_identity','top_qcov','top_evalue','top_title']
+          with open(root/'cp_search'/'confirmed_cp_like_contigs.tsv','w',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=header,delimiter='\t');w.writeheader();w.writerows(rows)
+          summary={'confirmed_cp_like_contig_count':len(recs),'runs_with_cp_like_contigs':sorted({x['run'] for x in rows}),'interpretation_boundary':'Sequence similarity and co-occurrence can nominate a companion segment but cannot prove segment pairing without stronger terminal, abundance, or biological evidence.'}
+          (root/'cp_search'/'CP_SEARCH_SUMMARY.json').write_text(json.dumps(summary,indent=2)+'\n')
+          PY
+          cat "$OUT/cp_search/CP_SEARCH_SUMMARY.json"
+      - name: Produce conservative scientific report
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=impact_refseq_cp
+          python - <<'PY'
+          import csv,json,pathlib
+          root=pathlib.Path('impact_refseq_cp')
+          rows=list(csv.DictReader(open(root/'results/full_orf_refseq_summary.tsv'),delimiter='\t'))
+          cp=json.load(open(root/'cp_search/CP_SEARCH_SUMMARY.json'))
+          lines=['# Full-ORF and companion-segment audit','', '## Full-ORF RefSeq viral comparison','', '| Lineage | Top RefSeq viral hit | Identity | Query coverage | Near-identical hit (>=90% aa, >=80% qcov) |','|---|---|---:|---:|---:|']
+          for r in rows:
+              lines.append(f"| `{r['query']}` | {r['top_title'] or 'none'} | {r['top_identity'] or 'NA'}% | {r['top_qcov'] or 'NA'}% | {r['near_identity_ge90_qcov80_count']} |")
+          lines += ['', '## Companion-segment screen','',f"Confirmed CP-like contigs after reciprocal RefSeq viral BLASTX: **{cp['confirmed_cp_like_contig_count']}**",'', '## Claim boundary','', 'This audit tests sequence support, divergence, and possible genome architecture. It does not establish a formal new virus species, the true host, active replication, pathogenicity, transmissibility, or a medical effect. Companion-segment candidates, if any, remain provisional until pairing is independently supported.']
+          (root/'FULL_ORF_AND_COMPANION_SEGMENT_REPORT.md').write_text('\n'.join(lines)+'\n')
+          PY
+          find "$OUT" -type f ! -path "$OUT/db/*" ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > "$OUT/SHA256SUMS.txt"
+          rm -rf "$OUT/db"
+          cat "$OUT/FULL_ORF_AND_COMPANION_SEGMENT_REPORT.md"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PANAX_FULL_ORF_COMPANION_SEGMENT_AUDIT_20260818
+          path: impact_refseq_cp
+          retention-days: 30
+          compression-level: 9
