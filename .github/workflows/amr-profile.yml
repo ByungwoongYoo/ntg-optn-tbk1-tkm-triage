@@ -1,0 +1,44 @@
+name: AMR unexplained-resistance release profile
+
+on:
+  push:
+    branches: [amr-unexplained-resistance-20260819]
+    paths:
+      - 'amr_discovery/profile_release.py'
+      - '.github/workflows/amr-profile.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  profile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install analysis dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install duckdb==1.3.2 pandas==2.3.1 pyarrow==21.0.0 tabulate==0.9.0
+      - name: Profile current EMBL-EBI AMR release
+        run: python amr_discovery/profile_release.py
+      - name: Record execution provenance
+        run: |
+          {
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
+            echo "repository=${GITHUB_REPOSITORY}"
+            echo "sha=${GITHUB_SHA}"
+            echo "ref=${GITHUB_REF}"
+            uname -a
+            python --version
+            pip freeze
+          } > amr_profile/PROVENANCE.txt
+          sha256sum amr_profile/* | sort > amr_profile/ALL_SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AMR_PORTAL_2026_07_PROFILE
+          path: amr_profile
+          retention-days: 90
+          compression-level: 9
