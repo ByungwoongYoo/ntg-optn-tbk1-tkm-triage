@@ -92,4 +92,10 @@ The next selected representative is unique. Consequently these child branches ar
 
 After affine normalization the set contains consecutive residues 0 and 1, so the minimum cyclic gap is 1. A checked proof that all 44 canonical `t` branches are UNSAT excludes every 14-element `B2[2]` subset of `Z/100Z`.
 
-Together with an independently checked 13-element witness, this yields `M=13`. Until every computational leaf is independently checked and the proof tree has no gap, the permitted status remains `partial computational resolution — pending external review`.
+Together with an independently checked 13-element witness, this yields `M=13` computationally once the full terminal search evidence is audited without gaps.
+
+## Evidence update — complete frozen-source replay
+
+GitHub Actions run `32100985982` freshly compiled the frozen exact-search sources and completed all 255 `(t,u)` branches for `t=2,3,4` and all 41 `t` branches for `t=5,...,45`. The aggregate records 13,668,473,356 search nodes, zero timeouts, and zero 14-set witnesses. This replay was performed by the same research project and therefore is not independent external reproduction. Its independent file-, coverage-, and result-level audit is performed by `b2_z100_verify_fresh_replay_v6.py`.
+
+The permitted successful internal status is therefore `COMPUTATIONAL PROOF CANDIDATE FOR M=13 — PENDING INDEPENDENT EXTERNAL REVIEW`, not `Lean proved`, `peer-reviewed solved`, or `independently externally verified`.
