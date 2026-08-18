@@ -1,0 +1,10 @@
+{
+  "run_id": 32100985982,
+  "run_attempt": 1,
+  "commit": "57486d19ef1088f755c5129131e187b5e2f5cb4b",
+  "status": "completed",
+  "result": "FRESH_FULL_EXACT_REPLAY_PASS",
+  "artifact_id": 9312169839,
+  "artifact_url": "https://github.com/ByungwoongYoo/ntg-optn-tbk1-tkm-triage/actions/runs/32100985982/artifacts/9312169839",
+  "artifact_digest": "8baab190689ed862cd87323e9fd72d6772cc62f22b1b54be2ca08d5b497879bf"
+}
