@@ -1,0 +1,39 @@
+name: Ulrich u4 Lean core proof check 20260818
+on:
+  workflow_dispatch:
+  push:
+    branches: [u4-resolution-20260818]
+    paths:
+      - 'u4_resolution/lean/**'
+      - '.github/workflows/u4-lean-core-check-20260818.yml'
+  pull_request:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'u4_resolution/lean/**'
+      - '.github/workflows/u4-lean-core-check-20260818.yml'
+
+jobs:
+  lean:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Lean toolchain
+        run: |
+          curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain leanprover/lean4:v4.30.0
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Check structural proof
+        run: |
+          mkdir -p artifact/u4_lean_core
+          cd u4_resolution/lean
+          lean --version | tee ../../artifact/u4_lean_core/LEAN_VERSION.txt
+          lean U4Core.lean 2>&1 | tee ../../artifact/u4_lean_core/U4Core.log
+          cp U4Core.lean ../../artifact/u4_lean_core/
+          cd ../..
+          find artifact/u4_lean_core -type f -print0 | sort -z | xargs -0 sha256sum > artifact/u4_lean_core/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: u4-lean-core-check-20260818
+          path: artifact/u4_lean_core
+          retention-days: 90
+          if-no-files-found: error
