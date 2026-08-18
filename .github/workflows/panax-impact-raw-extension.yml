@@ -1,0 +1,209 @@
+name: Panax impact finalization - raw-read extension and sample signatures
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/panax-impact-raw-extension.yml'
+      - 'virus_hunt/validation_inputs/candidate_contigs.fna'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  extend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        run: [DRR853908, DRR853910, DRR853912]
+    env:
+      RUN: ${{ matrix.run }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install read mapping, variant, and assembly tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq aria2 pigz minimap2 samtools bcftools seqkit spades ncbi-blast+
+          python -m pip install biopython==1.85 pandas==2.3.1
+      - name: Download complete paired FASTQ with ENA checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="impact_raw/${RUN}"
+          mkdir -p "$OUT/fastq" "$OUT/mapping" "$OUT/variants" "$OUT/assembly"
+          curl -fsSL --retry 8 --retry-all-errors -G 'https://www.ebi.ac.uk/ena/portal/api/filereport' \
+            --data-urlencode "accession=${RUN}" --data-urlencode 'result=read_run' \
+            --data-urlencode 'fields=run_accession,study_accession,sample_accession,experiment_accession,scientific_name,sample_title,library_strategy,library_source,library_selection,library_layout,instrument_platform,instrument_model,base_count,read_count,first_public,last_updated,country,collection_date,fastq_ftp,fastq_md5,fastq_bytes' \
+            --data-urlencode 'format=tsv' -o "$OUT/ena_run_metadata.tsv"
+          python - "$OUT/ena_run_metadata.tsv" "$OUT/fastq/urls.tsv" <<'PY'
+          import csv,sys
+          rows=list(csv.DictReader(open(sys.argv[1]),delimiter='\t'))
+          if len(rows)!=1: raise SystemExit(f'expected one run row, got {len(rows)}')
+          r=rows[0]; urls=r['fastq_ftp'].split(';'); md5=r['fastq_md5'].split(';'); sizes=r['fastq_bytes'].split(';')
+          if len(urls)!=2: raise SystemExit('paired FASTQ not found')
+          with open(sys.argv[2],'w') as f:
+            for i,(u,m,s) in enumerate(zip(urls,md5,sizes),1): f.write(f'{i}\thttps://{u}\t{m}\t{s}\n')
+          PY
+          while IFS=$'\t' read -r mate url md5 size; do
+            file="$OUT/fastq/${RUN}_${mate}.fastq.gz"
+            aria2c --continue=true --allow-overwrite=true --auto-file-renaming=false --file-allocation=none \
+              --max-connection-per-server=4 --split=4 --max-tries=30 --retry-wait=5 --dir "$OUT/fastq" \
+              --out "${RUN}_${mate}.fastq.gz" "$url"
+            [[ "$(stat -c %s "$file")" == "$size" ]]
+            echo "$md5  $file" | md5sum -c -
+            pigz -t "$file"
+          done < "$OUT/fastq/urls.tsv"
+          sha256sum "$OUT"/fastq/*.fastq.gz > "$OUT/FASTQ_SHA256.txt"
+      - name: Map complete reads and compute coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="impact_raw/${RUN}"
+          REF=virus_hunt/validation_inputs/candidate_contigs.fna
+          samtools faidx "$REF"
+          minimap2 -t 4 -ax sr "$REF" \
+            <(pigz -dc "$OUT/fastq/${RUN}_1.fastq.gz") \
+            <(pigz -dc "$OUT/fastq/${RUN}_2.fastq.gz") \
+            2> "$OUT/mapping/minimap2.stderr.txt" \
+            | samtools sort -@ 3 -o "$OUT/mapping/${RUN}.bam" -
+          samtools index "$OUT/mapping/${RUN}.bam"
+          samtools flagstat "$OUT/mapping/${RUN}.bam" > "$OUT/mapping/flagstat.txt"
+          samtools coverage "$OUT/mapping/${RUN}.bam" > "$OUT/mapping/samtools_coverage.tsv"
+          samtools idxstats "$OUT/mapping/${RUN}.bam" > "$OUT/mapping/idxstats.tsv"
+          python - "$RUN" <<'PY'
+          import csv,json,pathlib,sys
+          run=sys.argv[1]; root=pathlib.Path('impact_raw')/run
+          meta=list(csv.DictReader(open(root/'ena_run_metadata.tsv'),delimiter='\t'))[0]
+          total=int(meta.get('read_count') or 0)
+          rows=[]
+          for r in csv.DictReader(open(root/'mapping/samtools_coverage.tsv'),delimiter='\t'):
+            mapped=int(r.get('numreads') or 0)
+            rows.append({'run':run,'lineage':r['#rname'],'reference_length':int(r['endpos']),'mapped_reads':mapped,'mapped_reads_per_million':(mapped/total*1e6 if total else None),'coverage_percent':float(r['coverage']),'mean_depth':float(r['meandepth']),'mean_base_quality':float(r['meanbaseq']),'mean_mapping_quality':float(r['meanmapq'])})
+          with open(root/'mapping/coverage_normalized.tsv','w',newline='') as f:
+            w=csv.DictWriter(f,fieldnames=list(rows[0]),delimiter='\t');w.writeheader();w.writerows(rows)
+          (root/'mapping/coverage_normalized.json').write_text(json.dumps(rows,indent=2)+'\n')
+          PY
+      - name: Call high-confidence sample-specific variants and consensus
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="impact_raw/${RUN}"
+          REF=virus_hunt/validation_inputs/candidate_contigs.fna
+          for LIN in PNX_Duplo_A PNX_Duplo_B PNX_Picorna_A PNX_Picorna_B; do
+            mkdir -p "$OUT/variants/$LIN"
+            bcftools mpileup -Ou -f "$REF" -r "$LIN" -q 20 -Q 25 -a FORMAT/DP,FORMAT/AD "$OUT/mapping/${RUN}.bam" \
+              | bcftools call -mv -Oz -o "$OUT/variants/$LIN/raw.vcf.gz" || true
+            if [[ -s "$OUT/variants/$LIN/raw.vcf.gz" ]]; then
+              bcftools index -f "$OUT/variants/$LIN/raw.vcf.gz"
+              bcftools filter -i 'QUAL>=30 && FORMAT/DP>=10' "$OUT/variants/$LIN/raw.vcf.gz" -Oz -o "$OUT/variants/$LIN/high_confidence.vcf.gz" || true
+              bcftools index -f "$OUT/variants/$LIN/high_confidence.vcf.gz" || true
+              samtools faidx "$REF" "$LIN" > "$OUT/variants/$LIN/reference.fna"
+              bcftools consensus -f "$OUT/variants/$LIN/reference.fna" "$OUT/variants/$LIN/high_confidence.vcf.gz" > "$OUT/variants/$LIN/consensus.fna" 2> "$OUT/variants/$LIN/consensus.stderr.txt" || cp "$OUT/variants/$LIN/reference.fna" "$OUT/variants/$LIN/consensus.fna"
+              bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%QUAL[\t%DP\t%AD]\n' "$OUT/variants/$LIN/high_confidence.vcf.gz" > "$OUT/variants/$LIN/high_confidence_variants.tsv" || true
+            else
+              samtools faidx "$REF" "$LIN" > "$OUT/variants/$LIN/reference.fna"
+              cp "$OUT/variants/$LIN/reference.fna" "$OUT/variants/$LIN/consensus.fna"
+              : > "$OUT/variants/$LIN/high_confidence_variants.tsv"
+            fi
+          done
+          cat "$OUT"/variants/*/consensus.fna > "$OUT/variants/${RUN}_all_consensus.fna"
+      - name: Extract mapped read pairs and run targeted RNA assembly
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="impact_raw/${RUN}"
+          REF=virus_hunt/validation_inputs/candidate_contigs.fna
+          for LIN in PNX_Duplo_A PNX_Duplo_B PNX_Picorna_A PNX_Picorna_B; do
+            D="$OUT/assembly/$LIN"; mkdir -p "$D"
+            samtools view -F 0x904 -q 20 "$OUT/mapping/${RUN}.bam" "$LIN" | cut -f1 | sort -u > "$D/read_names.txt"
+            N=$(wc -l < "$D/read_names.txt")
+            echo "$N" > "$D/mapped_name_count.txt"
+            if [[ "$N" -lt 20 ]]; then
+              echo 'insufficient_mapped_read_names' > "$D/ASSEMBLY_STATUS.txt"
+              continue
+            fi
+            seqkit grep -f "$D/read_names.txt" "$OUT/fastq/${RUN}_1.fastq.gz" -o "$D/R1.fastq.gz"
+            seqkit grep -f "$D/read_names.txt" "$OUT/fastq/${RUN}_2.fastq.gz" -o "$D/R2.fastq.gz"
+            if command -v rnaviralspades.py >/dev/null 2>&1; then
+              ASSEMBLER=rnaviralspades.py
+            elif command -v rnaspades.py >/dev/null 2>&1; then
+              ASSEMBLER=rnaspades.py
+            else
+              ASSEMBLER=spades.py
+            fi
+            if [[ "$ASSEMBLER" == 'spades.py' ]]; then
+              timeout 90m "$ASSEMBLER" --rna -1 "$D/R1.fastq.gz" -2 "$D/R2.fastq.gz" -o "$D/spades" -t 4 -m 6 > "$D/assembly.log" 2>&1 || true
+            else
+              timeout 90m "$ASSEMBLER" -1 "$D/R1.fastq.gz" -2 "$D/R2.fastq.gz" -o "$D/spades" -t 4 -m 6 > "$D/assembly.log" 2>&1 || true
+            fi
+            ASM=''
+            for c in "$D/spades/transcripts.fasta" "$D/spades/scaffolds.fasta" "$D/spades/contigs.fasta"; do [[ -s "$c" ]] && ASM="$c" && break; done
+            if [[ -z "$ASM" ]]; then
+              echo 'assembler_no_output' > "$D/ASSEMBLY_STATUS.txt"
+              continue
+            fi
+            samtools faidx "$REF" "$LIN" > "$D/seed.fna"
+            blastn -query "$D/seed.fna" -subject "$ASM" -task dc-megablast -evalue 1e-10 \
+              -outfmt '6 qseqid sseqid pident length qlen slen qstart qend sstart send evalue bitscore qcovhsp' \
+              -out "$D/seed_to_assembly.tsv" || true
+            python - "$D" "$ASM" "$LIN" <<'PY'
+          from Bio import SeqIO
+          import csv,json,pathlib,sys
+          d=pathlib.Path(sys.argv[1]); asm=pathlib.Path(sys.argv[2]); lin=sys.argv[3]
+          hits=[]
+          p=d/'seed_to_assembly.tsv'
+          if p.exists():
+            for v in csv.reader(open(p),delimiter='\t'):
+              if len(v)>=13: hits.append(v)
+          best=max(hits,key=lambda v:(float(v[12]),float(v[11]),int(v[5]))) if hits else None
+          recs={r.id:r for r in SeqIO.parse(asm,'fasta')}
+          if best and best[1] in recs:
+            r=recs[best[1]]; r.id=f'{lin}|targeted_extension'; r.description=''
+            SeqIO.write([r],d/'best_extension.fna','fasta')
+            out={'status':'hit_bearing_assembly','subject':best[1],'seed_identity':float(best[2]),'alignment_length':int(best[3]),'seed_length':int(best[4]),'assembly_length':len(r.seq),'seed_query_coverage':float(best[12])}
+          else:
+            out={'status':'no_seed_bearing_assembly'}
+          (d/'ASSEMBLY_SUMMARY.json').write_text(json.dumps(out,indent=2)+'\n')
+          (d/'ASSEMBLY_STATUS.txt').write_text(out['status']+'\n')
+          PY
+            rm -rf "$D/spades" "$D/R1.fastq.gz" "$D/R2.fastq.gz"
+          done
+      - name: Summarize extension and variant evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="impact_raw/${RUN}"
+          python - "$RUN" <<'PY'
+          import csv,json,pathlib,sys
+          run=sys.argv[1]; root=pathlib.Path('impact_raw')/run
+          coverage={r['lineage']:r for r in csv.DictReader(open(root/'mapping/coverage_normalized.tsv'),delimiter='\t')}
+          rows=[]
+          for lin in ['PNX_Duplo_A','PNX_Duplo_B','PNX_Picorna_A','PNX_Picorna_B']:
+              d=root/'assembly'/lin
+              p=d/'ASSEMBLY_SUMMARY.json'
+              asm=json.load(open(p)) if p.exists() else {'status':(d/'ASSEMBLY_STATUS.txt').read_text().strip() if (d/'ASSEMBLY_STATUS.txt').exists() else 'missing'}
+              varfile=root/'variants'/lin/'high_confidence_variants.tsv'
+              nvar=sum(1 for _ in open(varfile)) if varfile.exists() else 0
+              c=coverage.get(lin,{})
+              rows.append({'run':run,'lineage':lin,'mapped_reads':c.get('mapped_reads',''),'mapped_reads_per_million':c.get('mapped_reads_per_million',''),'coverage_percent':c.get('coverage_percent',''),'mean_depth':c.get('mean_depth',''),'high_confidence_variant_count':nvar,'assembly_status':asm.get('status',''),'assembly_length':asm.get('assembly_length',''),'seed_query_coverage':asm.get('seed_query_coverage',''),'seed_identity':asm.get('seed_identity','')})
+          with open(root/'RAW_EXTENSION_SUMMARY.tsv','w',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=list(rows[0]),delimiter='\t');w.writeheader();w.writerows(rows)
+          (root/'RAW_EXTENSION_SUMMARY.json').write_text(json.dumps(rows,indent=2)+'\n')
+          md=['# Raw-read extension and sample-signature audit','',f'Run: `{run}`','', '| Lineage | Mapped reads | RPM | Coverage | Mean depth | HC variants | Assembly result | Assembly length |','|---|---:|---:|---:|---:|---:|---|---:|']
+          for r in rows: md.append(f"| `{r['lineage']}` | {r['mapped_reads']} | {r['mapped_reads_per_million']} | {r['coverage_percent']}% | {r['mean_depth']}x | {r['high_confidence_variant_count']} | {r['assembly_status']} | {r['assembly_length'] or 'NA'} |")
+          md += ['', 'Distinct consensus variants can weaken—but do not by themselves eliminate—the possibility of lane-level contamination or index hopping. Archive accessions do not prove independent biological infections.']
+          (root/'RAW_EXTENSION_REPORT.md').write_text('\n'.join(md)+'\n')
+          PY
+          find "$OUT" -type f ! -path "$OUT/fastq/*" ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > "$OUT/SHA256SUMS.txt"
+          rm -rf "$OUT/fastq" "$OUT/mapping/${RUN}.bam" "$OUT/mapping/${RUN}.bam.bai"
+          cat "$OUT/RAW_EXTENSION_REPORT.md"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PANAX_RAW_EXTENSION_${{ matrix.run }}_20260818
+          path: impact_raw/${{ matrix.run }}
+          retention-days: 30
+          compression-level: 9
