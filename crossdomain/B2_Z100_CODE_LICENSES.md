@@ -1,10 +1,13 @@
-# B2/Z100 proof-run file-specific licenses
+# B2/Z100 proof-chain file-specific licenses
 
 ## MIT License files
+
+The following newly authored proof and verification source files and GitHub Actions workflows are distributed under the MIT License:
 
 - `crossdomain/b2_z100_global_proof_cnf.py`
 - `crossdomain/b2_z100_verify_cadical_model.py`
 - `crossdomain/b2_z100_prefix_proof_cnf_v3.py`
+- `crossdomain/b2_z100_prefix_proof_cnf_v5.py`
 - `crossdomain/b2_z100_split_proof_batch_v3.py`
 - `crossdomain/b2_z100_recursive_proof_v4.py`
 - `crossdomain/b2_z100_finalize_proof_chain_v5.py`
@@ -15,6 +18,7 @@
 - `.github/workflows/b2-z100-adaptive-v-split-v3.yml`
 - `.github/workflows/b2-z100-recursive-residual-proof-v4.yml`
 - `.github/workflows/b2-z100-recursive-residual-proof-v4b.yml`
+- `.github/workflows/b2-z100-recursive-residual-proof-v4c.yml`
 - `.github/workflows/b2-z100-final-proof-chain-v5.yml`
 
 Copyright (c) 2026 Byungwoong Yoo
@@ -25,8 +29,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ## CC BY 4.0 files
 
-Author-created prose, tables, manifests, logs, and audit documentation in the B2/Z100 final-audit package may be distributed under Creative Commons Attribution 4.0 International, subject to any third-party software or proof-object licenses identified separately.
+Author-created prose, mathematical explanations, audit reports, tables, manifests, run pointers, summaries, and logs in the B2/Z100 final-audit and proof-chain packages may be distributed under Creative Commons Attribution 4.0 International, subject to any third-party software or proof-object licenses identified separately. This includes:
 
-## Third-party components
+- `crossdomain/B2_Z100_GLOBAL_NORMALIZATION_PROOF.md`
+- `crossdomain/B2_Z100_REDUNDANT_CUTS_PROOF.md`
+- generated `README.md`, JSON/CSV summaries, manifests, checksums, and run-index documents
 
-CaDiCaL and drat-trim remain under their own upstream licenses. This file does not relicense them.
+## Third-party components and generated proof objects
+
+CaDiCaL and drat-trim remain under their own upstream licenses. This file does not relicense them. Generated CNF and proof objects are factual computational artifacts; any embedded third-party notices and the corresponding generator/tool licenses remain applicable.
