@@ -1,0 +1,21 @@
+{
+  "query": "PNX_Picorna_A",
+  "program": "blastp",
+  "database": "uniprotkb",
+  "submitted_utc": "2026-08-18T13:08:43.416747+00:00",
+  "parameters": {
+    "program": "blastp",
+    "stype": "protein",
+    "database": "uniprotkb",
+    "alignments": "100",
+    "scores": "100",
+    "exp": "0.00001",
+    "filter": "T",
+    "gapalign": "true",
+    "matrix": "BLOSUM62"
+  },
+  "input_sha256": "59583b42198079b95cbaea18526ff589971874d2a5fdcc7b8667103b687e8ad1",
+  "success": false,
+  "completed_utc": "2026-08-18T13:10:57.911066+00:00",
+  "error": "HTTPError('400 Client Error: Bad Request for url: https://www.ebi.ac.uk/Tools/services/rest/ncbiblast/run')"
+}

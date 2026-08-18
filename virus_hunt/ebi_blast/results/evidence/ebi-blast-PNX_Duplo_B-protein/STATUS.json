@@ -1,0 +1,21 @@
+{
+  "query": "PNX_Duplo_B",
+  "program": "blastp",
+  "database": "uniprotkb",
+  "submitted_utc": "2026-08-18T13:08:46.118154+00:00",
+  "parameters": {
+    "program": "blastp",
+    "stype": "protein",
+    "database": "uniprotkb",
+    "alignments": "100",
+    "scores": "100",
+    "exp": "0.00001",
+    "filter": "T",
+    "gapalign": "true",
+    "matrix": "BLOSUM62"
+  },
+  "input_sha256": "d1e988c50a2142b8ae00130769dca0165f38a3dca1cde529528288aec2bc7751",
+  "success": false,
+  "completed_utc": "2026-08-18T13:11:01.908787+00:00",
+  "error": "HTTPError('400 Client Error: Bad Request for url: https://www.ebi.ac.uk/Tools/services/rest/ncbiblast/run')"
+}

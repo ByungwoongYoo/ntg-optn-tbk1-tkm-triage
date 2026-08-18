@@ -1,0 +1,21 @@
+{
+  "query": "PNX_Duplo_A",
+  "program": "blastn",
+  "database": "em_rel",
+  "submitted_utc": "2026-08-18T13:08:42.309219+00:00",
+  "parameters": {
+    "program": "blastn",
+    "stype": "dna",
+    "database": "em_rel",
+    "alignments": "100",
+    "scores": "100",
+    "exp": "0.00001",
+    "filter": "T",
+    "gapalign": "true",
+    "match_scores": "2,-3"
+  },
+  "input_sha256": "837d9b242db9092e47afea76b80bcdb688220e576cf7f29ecb5a1131d9b13960",
+  "success": false,
+  "completed_utc": "2026-08-18T13:10:56.578216+00:00",
+  "error": "HTTPError('400 Client Error: Bad Request for url: https://www.ebi.ac.uk/Tools/services/rest/ncbiblast/run')"
+}

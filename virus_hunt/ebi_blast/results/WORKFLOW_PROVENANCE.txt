@@ -1,0 +1,4 @@
+generated_utc=2026-08-18T13:11:16Z
+repository=ByungwoongYoo/ntg-optn-tbk1-tkm-triage
+workflow_sha=eb2eae88febdeabfc77fc5260fe6261c69513da7
+branch=panax-rdrp-validation-20260818

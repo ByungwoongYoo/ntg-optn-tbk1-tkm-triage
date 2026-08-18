@@ -1,0 +1,185 @@
+{
+  "generated_utc": "2026-08-18T13:11:16.260032+00:00",
+  "expected_searches": 8,
+  "status_files": 8,
+  "successful_searches": 0,
+  "failed_searches": [
+    {
+      "query": "PNX_Duplo_A",
+      "program": "blastn",
+      "database": "em_rel",
+      "submitted_utc": "2026-08-18T13:08:42.309219+00:00",
+      "parameters": {
+        "program": "blastn",
+        "stype": "dna",
+        "database": "em_rel",
+        "alignments": "100",
+        "scores": "100",
+        "exp": "0.00001",
+        "filter": "T",
+        "gapalign": "true",
+        "match_scores": "2,-3"
+      },
+      "input_sha256": "837d9b242db9092e47afea76b80bcdb688220e576cf7f29ecb5a1131d9b13960",
+      "success": false,
+      "completed_utc": "2026-08-18T13:10:56.578216+00:00",
+      "error": "HTTPError('400 Client Error: Bad Request for url: https://www.ebi.ac.uk/Tools/services/rest/ncbiblast/run')",
+      "artifact_path": "collected_ebi/ebi-blast-PNX_Duplo_A-nucleotide/STATUS.json"
+    },
+    {
+      "query": "PNX_Duplo_A",
+      "program": "blastp",
+      "database": "uniprotkb",
+      "submitted_utc": "2026-08-18T13:08:47.726645+00:00",
+      "parameters": {
+        "program": "blastp",
+        "stype": "protein",
+        "database": "uniprotkb",
+        "alignments": "100",
+        "scores": "100",
+        "exp": "0.00001",
+        "filter": "T",
+        "gapalign": "true",
+        "matrix": "BLOSUM62"
+      },
+      "input_sha256": "c59c91d29f0fe4b67a1911377b1afb0d68492f93de302030939b77153149c3d9",
+      "success": false,
+      "completed_utc": "2026-08-18T13:11:03.888063+00:00",
+      "error": "HTTPError('400 Client Error: Bad Request for url: https://www.ebi.ac.uk/Tools/services/rest/ncbiblast/run')",
+      "artifact_path": "collected_ebi/ebi-blast-PNX_Duplo_A-protein/STATUS.json"
+    },
+    {
+      "query": "PNX_Duplo_B",
+      "program": "blastn",
+      "database": "em_rel",
+      "submitted_utc": "2026-08-18T13:08:45.599557+00:00",
+      "parameters": {
+        "program": "blastn",
+        "stype": "dna",
+        "database": "em_rel",
+        "alignments": "100",
+        "scores": "100",
+        "exp": "0.00001",
+        "filter": "T",
+        "gapalign": "true",
+        "match_scores": "2,-3"
+      },
+      "input_sha256": "9ff7bc2ea260596b43bbe899fa87707788c85c0dfcfe3f33ffe58b950110ea07",
+      "success": false,
+      "completed_utc": "2026-08-18T13:11:01.152505+00:00",
+      "error": "HTTPError('400 Client Error: Bad Request for url: https://www.ebi.ac.uk/Tools/services/rest/ncbiblast/run')",
+      "artifact_path": "collected_ebi/ebi-blast-PNX_Duplo_B-nucleotide/STATUS.json"
+    },
+    {
+      "query": "PNX_Duplo_B",
+      "program": "blastp",
+      "database": "uniprotkb",
+      "submitted_utc": "2026-08-18T13:08:46.118154+00:00",
+      "parameters": {
+        "program": "blastp",
+        "stype": "protein",
+        "database": "uniprotkb",
+        "alignments": "100",
+        "scores": "100",
+        "exp": "0.00001",
+        "filter": "T",
+        "gapalign": "true",
+        "matrix": "BLOSUM62"
+      },
+      "input_sha256": "d1e988c50a2142b8ae00130769dca0165f38a3dca1cde529528288aec2bc7751",
+      "success": false,
+      "completed_utc": "2026-08-18T13:11:01.908787+00:00",
+      "error": "HTTPError('400 Client Error: Bad Request for url: https://www.ebi.ac.uk/Tools/services/rest/ncbiblast/run')",
+      "artifact_path": "collected_ebi/ebi-blast-PNX_Duplo_B-protein/STATUS.json"
+    },
+    {
+      "query": "PNX_Picorna_A",
+      "program": "blastn",
+      "database": "em_rel",
+      "submitted_utc": "2026-08-18T13:08:45.248009+00:00",
+      "parameters": {
+        "program": "blastn",
+        "stype": "dna",
+        "database": "em_rel",
+        "alignments": "100",
+        "scores": "100",
+        "exp": "0.00001",
+        "filter": "T",
+        "gapalign": "true",
+        "match_scores": "2,-3"
+      },
+      "input_sha256": "b370ca1515bf680e27198ff6562b0d9aa19a1983d86b902bc8d5f27c7474d078",
+      "success": false,
+      "completed_utc": "2026-08-18T13:11:01.789724+00:00",
+      "error": "HTTPError('400 Client Error: Bad Request for url: https://www.ebi.ac.uk/Tools/services/rest/ncbiblast/run')",
+      "artifact_path": "collected_ebi/ebi-blast-PNX_Picorna_A-nucleotide/STATUS.json"
+    },
+    {
+      "query": "PNX_Picorna_A",
+      "program": "blastp",
+      "database": "uniprotkb",
+      "submitted_utc": "2026-08-18T13:08:43.416747+00:00",
+      "parameters": {
+        "program": "blastp",
+        "stype": "protein",
+        "database": "uniprotkb",
+        "alignments": "100",
+        "scores": "100",
+        "exp": "0.00001",
+        "filter": "T",
+        "gapalign": "true",
+        "matrix": "BLOSUM62"
+      },
+      "input_sha256": "59583b42198079b95cbaea18526ff589971874d2a5fdcc7b8667103b687e8ad1",
+      "success": false,
+      "completed_utc": "2026-08-18T13:10:57.911066+00:00",
+      "error": "HTTPError('400 Client Error: Bad Request for url: https://www.ebi.ac.uk/Tools/services/rest/ncbiblast/run')",
+      "artifact_path": "collected_ebi/ebi-blast-PNX_Picorna_A-protein/STATUS.json"
+    },
+    {
+      "query": "PNX_Picorna_B",
+      "program": "blastn",
+      "database": "em_rel",
+      "submitted_utc": "2026-08-18T13:08:43.500607+00:00",
+      "parameters": {
+        "program": "blastn",
+        "stype": "dna",
+        "database": "em_rel",
+        "alignments": "100",
+        "scores": "100",
+        "exp": "0.00001",
+        "filter": "T",
+        "gapalign": "true",
+        "match_scores": "2,-3"
+      },
+      "input_sha256": "38c13384a9e574efc76467062a3f58fd572bdf45bc3c8c5376f411d0b0fef925",
+      "success": false,
+      "completed_utc": "2026-08-18T13:10:58.832951+00:00",
+      "error": "HTTPError('400 Client Error: Bad Request for url: https://www.ebi.ac.uk/Tools/services/rest/ncbiblast/run')",
+      "artifact_path": "collected_ebi/ebi-blast-PNX_Picorna_B-nucleotide/STATUS.json"
+    },
+    {
+      "query": "PNX_Picorna_B",
+      "program": "blastp",
+      "database": "uniprotkb",
+      "submitted_utc": "2026-08-18T13:08:46.004706+00:00",
+      "parameters": {
+        "program": "blastp",
+        "stype": "protein",
+        "database": "uniprotkb",
+        "alignments": "100",
+        "scores": "100",
+        "exp": "0.00001",
+        "filter": "T",
+        "gapalign": "true",
+        "matrix": "BLOSUM62"
+      },
+      "input_sha256": "beaecfaaa542f20ecb7c9567bbcf67d34c6444911216a3bea2bb9bacc0e70f47",
+      "success": false,
+      "completed_utc": "2026-08-18T13:11:00.787421+00:00",
+      "error": "HTTPError('400 Client Error: Bad Request for url: https://www.ebi.ac.uk/Tools/services/rest/ncbiblast/run')",
+      "artifact_path": "collected_ebi/ebi-blast-PNX_Picorna_B-protein/STATUS.json"
+    }
+  ],
+  "parsed_alignment_rows": 0
+}
