@@ -2,7 +2,7 @@ name: Finalize PRJDB39299 metadata and sample independence
 
 on:
   push:
-    branches: [panax-rdrp-validation-20260818]
+    branches: [panax-impact-finalization-20260818]
     paths:
       - '.github/workflows/panax-project-metadata-finalization.yml'
   workflow_dispatch:
@@ -21,65 +21,123 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p project_metadata/xml/samples project_metadata/xml/experiments project_metadata/raw
-          fields='run_accession,study_accession,secondary_study_accession,sample_accession,secondary_sample_accession,experiment_accession,scientific_name,sample_title,experiment_title,study_title,study_abstract,library_name,library_strategy,library_source,library_selection,library_layout,instrument_platform,instrument_model,base_count,read_count,first_public,last_updated,country,location,collection_date,host,host_tax_id,host_status,environment_biome,environment_feature,environment_material,fastq_ftp,fastq_md5,fastq_bytes,submitted_ftp,submitted_md5,submitted_bytes'
-          curl -fsSL --retry 8 --retry-all-errors -G 'https://www.ebi.ac.uk/ena/portal/api/search' \
+
+          # Use the stable filereport endpoint and fields already accepted for individual runs.
+          fields='run_accession,study_accession,sample_accession,experiment_accession,scientific_name,sample_title,library_name,library_strategy,library_source,library_selection,library_layout,instrument_platform,instrument_model,base_count,read_count,first_public,last_updated,country,collection_date,fastq_ftp,fastq_md5,fastq_bytes'
+          curl -fsSL --retry 10 --retry-all-errors -G 'https://www.ebi.ac.uk/ena/portal/api/filereport' \
+            --data-urlencode 'accession=PRJDB39299' \
             --data-urlencode 'result=read_run' \
-            --data-urlencode 'query=study_accession="PRJDB39299" OR secondary_study_accession="PRJDB39299"' \
             --data-urlencode "fields=${fields}" \
             --data-urlencode 'format=tsv' \
-            --data-urlencode 'limit=0' \
             -o project_metadata/ena_read_runs.tsv
-          curl -fsSL --retry 8 --retry-all-errors 'https://www.ebi.ac.uk/ena/browser/api/xml/PRJDB39299?download=true' -o project_metadata/xml/PRJDB39299.xml || true
-          curl -fsSL --retry 8 --retry-all-errors 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=bioproject&term=PRJDB39299&retmode=json' -o project_metadata/raw/ncbi_bioproject_esearch.json || true
-          curl -fsSL --retry 8 --retry-all-errors 'https://ddbj.nig.ac.jp/search/entry/bioproject/PRJDB39299' -o project_metadata/raw/ddbj_bioproject.html || true
+          test "$(wc -l < project_metadata/ena_read_runs.tsv)" -gt 1
+
+          curl -fsSL --retry 10 --retry-all-errors 'https://www.ebi.ac.uk/ena/browser/api/xml/PRJDB39299' \
+            -o project_metadata/xml/PRJDB39299.xml || true
+          curl -fsSL --retry 10 --retry-all-errors \
+            'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=bioproject&term=PRJDB39299&retmode=json' \
+            -o project_metadata/raw/ncbi_bioproject_esearch.json || true
+          curl -fsSL --retry 10 --retry-all-errors \
+            'https://ddbj.nig.ac.jp/search/entry/bioproject/PRJDB39299' \
+            -o project_metadata/raw/ddbj_bioproject.html || true
 
           python - <<'PY'
           import csv, json, pathlib, re, subprocess, time
+          import xml.etree.ElementTree as ET
+
           root=pathlib.Path('project_metadata')
           rows=list(csv.DictReader(open(root/'ena_read_runs.tsv'), delimiter='\t'))
+          if not rows:
+              raise SystemExit('ENA returned no run rows')
+
           def fetch(acc, kind):
               out=root/'xml'/kind/(acc+'.xml')
-              if out.exists() and out.stat().st_size: return
-              url=f'https://www.ebi.ac.uk/ena/browser/api/xml/{acc}?download=true'
-              for _ in range(5):
+              url=f'https://www.ebi.ac.uk/ena/browser/api/xml/{acc}'
+              for _ in range(6):
                   p=subprocess.run(['curl','-fsSL','--retry','5','--retry-all-errors',url,'-o',str(out)])
-                  if p.returncode==0 and out.exists() and out.stat().st_size: return
+                  if p.returncode==0 and out.exists() and out.stat().st_size:
+                      return True
                   time.sleep(2)
-          for acc in sorted({r.get('sample_accession','') for r in rows if r.get('sample_accession')}): fetch(acc,'samples')
-          for acc in sorted({r.get('experiment_accession','') for r in rows if r.get('experiment_accession')}): fetch(acc,'experiments')
-          # Extract a conservative prefix token only; do not infer biological groups from it.
+              return False
+
+          for acc in sorted({r['sample_accession'] for r in rows if r.get('sample_accession')}):
+              fetch(acc,'samples')
+          for acc in sorted({r['experiment_accession'] for r in rows if r.get('experiment_accession')}):
+              fetch(acc,'experiments')
+
+          def texts_from_xml(path):
+              if not path.exists() or path.stat().st_size == 0:
+                  return {}
+              try:
+                  tree=ET.parse(path)
+              except Exception:
+                  return {}
+              out={}
+              for elem in tree.iter():
+                  tag=elem.tag.rsplit('}',1)[-1]
+                  text=' '.join((elem.text or '').split())
+                  if text and tag not in out:
+                      out[tag]=text
+              return out
+
+          project_xml=texts_from_xml(root/'xml'/'PRJDB39299.xml')
+          sample_xml={p.stem:texts_from_xml(p) for p in (root/'xml'/'samples').glob('*.xml')}
+          experiment_xml={p.stem:texts_from_xml(p) for p in (root/'xml'/'experiments').glob('*.xml')}
+
           for r in rows:
               title=r.get('sample_title','')
-              m=re.match(r'([^\s_(\-]+(?:[-_][^\s_(]+)?)', title)
-              r['sample_title_prefix']=m.group(1) if m else ''
+              m=re.search(r'Sample_([A-Za-z]+)([A-Z])', title)
+              r['deposited_title_group_token']=m.group(1) if m else ''
+              r['deposited_title_replicate_token']=m.group(2) if m else ''
+              sx=sample_xml.get(r.get('sample_accession',''),{})
+              ex=experiment_xml.get(r.get('experiment_accession',''),{})
+              r['sample_description_xml']=sx.get('DESCRIPTION','')
+              r['experiment_title_xml']=ex.get('TITLE','')
+
+          run_ids=[r['run_accession'] for r in rows]
           summary={
               'project':'PRJDB39299',
+              'project_title_xml':project_xml.get('TITLE',''),
+              'project_abstract_xml':project_xml.get('STUDY_ABSTRACT','') or project_xml.get('ABSTRACT',''),
               'run_count':len(rows),
-              'runs':[r.get('run_accession') for r in rows],
+              'runs':run_ids,
               'sample_count':len({r.get('sample_accession') for r in rows if r.get('sample_accession')}),
               'experiment_count':len({r.get('experiment_accession') for r in rows if r.get('experiment_accession')}),
               'scientific_names':sorted({r.get('scientific_name') for r in rows if r.get('scientific_name')}),
-              'sample_titles':{r.get('run_accession'):r.get('sample_title') for r in rows},
-              'experiment_titles':{r.get('run_accession'):r.get('experiment_title') for r in rows},
+              'sample_titles':{r['run_accession']:r.get('sample_title') for r in rows},
+              'sample_descriptions_xml':{r['run_accession']:r.get('sample_description_xml') for r in rows},
+              'experiment_titles_xml':{r['run_accession']:r.get('experiment_title_xml') for r in rows},
+              'deposited_title_group_tokens':{r['run_accession']:r.get('deposited_title_group_token') for r in rows},
+              'deposited_title_replicate_tokens':{r['run_accession']:r.get('deposited_title_replicate_token') for r in rows},
               'countries':sorted({r.get('country') for r in rows if r.get('country')}),
               'collection_dates':sorted({r.get('collection_date') for r in rows if r.get('collection_date')}),
-              'host_values':sorted({r.get('host') for r in rows if r.get('host')}),
-              'missing_country_runs':[r.get('run_accession') for r in rows if not r.get('country')],
-              'missing_collection_date_runs':[r.get('run_accession') for r in rows if not r.get('collection_date')],
-              'independence_boundary':'Distinct run, experiment, and BioSample accessions demonstrate separate archive objects only; they do not by themselves establish separate plants, extraction batches, or independent infections.'
+              'missing_country_runs':[r['run_accession'] for r in rows if not r.get('country')],
+              'missing_collection_date_runs':[r['run_accession'] for r in rows if not r.get('collection_date')],
+              'independence_boundary':'Distinct run, experiment, and BioSample accessions demonstrate separate archive objects only; they do not by themselves establish separate plants, extraction batches, or independent infections. Deposited title tokens are reported verbatim and are not assigned a biological meaning without explicit metadata.'
           }
           (root/'PROJECT_METADATA_SUMMARY.json').write_text(json.dumps(summary,indent=2,ensure_ascii=False)+'\n')
-          fields=list(rows[0].keys()) if rows else []
-          if rows:
-              with open(root/'ena_read_runs_enriched.tsv','w',newline='') as f:
-                  w=csv.DictWriter(f,fieldnames=fields,delimiter='\t'); w.writeheader(); w.writerows(rows)
-          md=['# PRJDB39299 project metadata audit','',f'- Runs: **{summary["run_count"]}**',f'- Distinct archive BioSamples: **{summary["sample_count"]}**',f'- Distinct experiments: **{summary["experiment_count"]}**','', '## Runs']
+
+          fields_out=list(rows[0].keys())
+          with open(root/'ena_read_runs_enriched.tsv','w',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=fields_out,delimiter='\t')
+              w.writeheader(); w.writerows(rows)
+
+          md=['# PRJDB39299 project metadata audit','']
+          md += [f'- Project title in deposited XML: **{summary["project_title_xml"] or "not supplied/retrieved"}**',
+                 f'- Runs: **{summary["run_count"]}**',
+                 f'- Distinct archive BioSamples: **{summary["sample_count"]}**',
+                 f'- Distinct experiments: **{summary["experiment_count"]}**','',
+                 '## Runs','',
+                 '| Run | BioSample | Experiment | Deposited sample title | Deposited group token | Replicate token |',
+                 '|---|---|---|---|---|---|']
           for r in rows:
-              md.append(f'- `{r.get("run_accession")}` / `{r.get("sample_accession")}` / `{r.get("experiment_accession")}` — {r.get("sample_title") or "title missing"}')
-          md += ['', '## Interpretation boundary','',summary['independence_boundary'],'','No treatment, disease, cultivar, organ, or biological-group label is inferred unless it is explicitly present in deposited metadata.']
+              md.append(f'| `{r.get("run_accession")}` | `{r.get("sample_accession")}` | `{r.get("experiment_accession")}` | {r.get("sample_title") or "title missing"} | {r.get("deposited_title_group_token") or "NA"} | {r.get("deposited_title_replicate_token") or "NA"} |')
+          md += ['', '## Interpretation boundary','',summary['independence_boundary'],'',
+                 'No treatment, disease, cultivar, organ, or biological-group meaning is inferred unless it is explicitly present in deposited metadata.']
           (root/'PROJECT_METADATA_REPORT.md').write_text('\n'.join(md)+'\n')
           PY
-          find project_metadata -type f -print0 | sort -z | xargs -0 sha256sum > project_metadata/SHA256SUMS.txt
+
+          find project_metadata -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > project_metadata/SHA256SUMS.txt
           cat project_metadata/PROJECT_METADATA_REPORT.md
       - uses: actions/upload-artifact@v4
         with:
