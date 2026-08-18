@@ -1,6 +1,6 @@
-generated_utc=2026-08-18T12:08:51Z
+generated_utc=2026-08-18T12:17:00Z
 repository=ByungwoongYoo/ntg-optn-tbk1-tkm-triage
-workflow_sha=b820abb0de2dccfcf2e6d4e0b893ccb545711d00
+workflow_sha=9de21722b08df28d7b814aaff426ad82e42dc23a
 workflow_ref=refs/heads/panax-rdrp-validation-20260818
 runner_os=Linux
 runner_arch=X64

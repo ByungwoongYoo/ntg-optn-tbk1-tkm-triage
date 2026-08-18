@@ -1,6 +1,6 @@
 # Final Panax-associated RdRP validation report
 
-Generated (UTC): 2026-08-18T12:10:41.444153+00:00
+Generated (UTC): 2026-08-18T12:18:42.001779+00:00
 
 ## Overall result
 
