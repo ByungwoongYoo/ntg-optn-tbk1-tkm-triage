@@ -23,16 +23,16 @@ jobs:
           export PATH="$HOME/.elan/bin:$PATH"
           lean --version > crossdomain/u4/lean_ci/LEAN_VERSION.txt 2>&1
           set +e
-          lean crossdomain/u4/U4NonDerivability.lean > crossdomain/u4/lean_ci/LEAN_CHECK.log 2>&1
+          lean crossdomain/u4/U4NonDerivability.lean > crossdomain/u4/lean_ci/LEAN_CHECK.txt 2>&1
           rc=$?
           set -e
           echo "$rc" > crossdomain/u4/lean_ci/LEAN_EXIT_CODE.txt
           if [ "$rc" -eq 0 ]; then echo SOLVED_NEGATIVE_FORMAL_PROOF_CHECKED > crossdomain/u4/lean_ci/STATUS.txt; else echo LEAN_CHECK_FAILED > crossdomain/u4/lean_ci/STATUS.txt; fi
-          sha256sum crossdomain/u4/U4NonDerivability.lean crossdomain/u4/lean_ci/LEAN_VERSION.txt crossdomain/u4/lean_ci/LEAN_CHECK.log crossdomain/u4/lean_ci/LEAN_EXIT_CODE.txt crossdomain/u4/lean_ci/STATUS.txt > crossdomain/u4/lean_ci/SHA256SUMS.txt
+          sha256sum crossdomain/u4/U4NonDerivability.lean crossdomain/u4/lean_ci/LEAN_VERSION.txt crossdomain/u4/lean_ci/LEAN_CHECK.txt crossdomain/u4/lean_ci/LEAN_EXIT_CODE.txt crossdomain/u4/lean_ci/STATUS.txt > crossdomain/u4/lean_ci/SHA256SUMS.txt
       - name: Commit exact checker output to branch
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add crossdomain/u4/lean_ci
+          git add -f crossdomain/u4/lean_ci
           git commit -m 'Record Lean checker output for Ulrich u4' || exit 0
           git push origin HEAD:crossdomain-open-problem-tournament-20260817
