@@ -172,7 +172,7 @@ theorem P_mp {X Y : Fml} (hx : P X) (hxy : P (I X Y)) : P Y := by
       have commonParts := arr_inj common
       have anteParts := arr_inj commonParts.1
       have hp : P (C z' (C y' z' u') u) := P_C (Pair.base z' y' u') u
-      rw [anteParts.2, commonParts.2, majorParts.2] at hp
+      rw [commonParts.2, anteParts.2, majorParts.2] at hp
       exact hp
     · rcases hmin with ⟨a, b, r, hab, hmin⟩
       have common : C a b r = I (I x y) z := hmin.trans majorParts.1.symm
