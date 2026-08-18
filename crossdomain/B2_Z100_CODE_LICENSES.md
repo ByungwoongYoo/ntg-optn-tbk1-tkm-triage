@@ -4,7 +4,10 @@
 
 - `crossdomain/b2_z100_global_proof_cnf.py`
 - `crossdomain/b2_z100_verify_cadical_model.py`
+- `crossdomain/b2_z100_prefix_proof_cnf_v3.py`
+- `crossdomain/b2_z100_split_proof_batch_v3.py`
 - `.github/workflows/b2-z100-global-drat-proof-20260818.yml`
+- `.github/workflows/b2-z100-third-branch-drat-v2-20260818.yml`
 
 Copyright (c) 2026 Byungwoong Yoo
 
