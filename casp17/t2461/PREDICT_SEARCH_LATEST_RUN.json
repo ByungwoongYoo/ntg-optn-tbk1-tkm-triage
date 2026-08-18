@@ -1,0 +1,9 @@
+{
+  "artifact_digest": "06e345ff0f22592eb3f3d6f8238f5a6d4f860e7182eda5285d7b53ea4d4e9408",
+  "artifact_id": 9317017803,
+  "artifact_url": "https://github.com/ByungwoongYoo/ntg-optn-tbk1-tkm-triage/actions/runs/32116211347/artifacts/9317017803",
+  "commit": "8b6cd626065c2e3ce3ac853911fa0bb2b6930176",
+  "run_attempt": 1,
+  "run_id": 32116211347,
+  "schema": "casp17-t2461-predict-search-v1"
+}
