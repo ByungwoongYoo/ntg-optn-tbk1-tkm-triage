@@ -9,7 +9,7 @@ on:
 
 permissions:
   actions: read
-  contents: read
+  contents: write
 
 jobs:
   collect:
@@ -17,8 +17,26 @@ jobs:
     timeout-minutes: 360
     env:
       GH_TOKEN: ${{ github.token }}
+      POINTER: crossdomain/B2_RAW_PACKAGE_LATEST_RUN.json
     steps:
       - uses: actions/checkout@v4
+      - name: Publish this run ID for external monitoring
+        run: |
+          python - <<'PY'
+          import json, os
+          json.dump({
+            "run_id": int(os.environ["GITHUB_RUN_ID"]),
+            "run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+            "status": "running",
+            "commit": os.environ["GITHUB_SHA"],
+            "workflow": os.environ["GITHUB_WORKFLOW"],
+          }, open("run_pointer.json","w"), indent=2)
+          PY
+          encoded=$(base64 -w0 run_pointer.json)
+          sha=$(gh api "repos/${GITHUB_REPOSITORY}/contents/${POINTER}?ref=${GITHUB_REF_NAME}" --jq .sha 2>/dev/null || true)
+          args=(--method PUT "repos/${GITHUB_REPOSITORY}/contents/${POINTER}" -f message="Record B2 raw evidence package run ${GITHUB_RUN_ID}" -f content="$encoded" -f branch="${GITHUB_REF_NAME}")
+          if [ -n "$sha" ]; then args+=(-f sha="$sha"); fi
+          gh api "${args[@]}" >/dev/null
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -31,10 +49,35 @@ jobs:
           find B2_RAW_COLLECTED -type f -printf '%s\t%p\n' | sort -k2 > B2_RAW_COLLECTED/manifest/FILE_LIST.tsv
           find B2_RAW_COLLECTED -type f -print0 | sort -z | xargs -0 sha256sum > B2_RAW_COLLECTED/manifest/PRE_UPLOAD_SHA256SUMS.txt
           echo "${GITHUB_SHA}" > B2_RAW_COLLECTED/environment/PACKAGE_BUILDER_COMMIT.txt
-      - uses: actions/upload-artifact@v4
+      - id: upload
+        uses: actions/upload-artifact@v4
         with:
           name: B2-Z100-RAW-EVIDENCE-20260818
           path: B2_RAW_COLLECTED
           retention-days: 90
           compression-level: 6
           if-no-files-found: error
+      - name: Publish completed artifact pointer
+        if: success()
+        env:
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+        run: |
+          python - <<'PY'
+          import json, os
+          json.dump({
+            "run_id": int(os.environ["GITHUB_RUN_ID"]),
+            "run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+            "status": "completed",
+            "conclusion": "success",
+            "commit": os.environ["GITHUB_SHA"],
+            "workflow": os.environ["GITHUB_WORKFLOW"],
+            "artifact_id": int(os.environ["ARTIFACT_ID"]),
+            "artifact_url": os.environ["ARTIFACT_URL"],
+            "artifact_digest": os.environ["ARTIFACT_DIGEST"],
+          }, open("run_pointer.json","w"), indent=2)
+          PY
+          encoded=$(base64 -w0 run_pointer.json)
+          sha=$(gh api "repos/${GITHUB_REPOSITORY}/contents/${POINTER}?ref=${GITHUB_REF_NAME}" --jq .sha)
+          gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/${POINTER}" -f message="Complete B2 raw evidence package run ${GITHUB_RUN_ID}" -f content="$encoded" -f branch="${GITHUB_REF_NAME}" -f sha="$sha" >/dev/null
