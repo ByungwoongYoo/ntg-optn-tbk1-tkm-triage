@@ -1,0 +1,200 @@
+name: B2 Z100 fresh full exact replay 20260818
+on:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - '.github/workflows/b2-z100-fresh-full-exact-replay-20260818.yml'
+permissions:
+  actions: read
+  contents: write
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      v10: ${{ steps.matrix.outputs.v10 }}
+      v8: ${{ steps.matrix.outputs.v8 }}
+    steps:
+      - id: matrix
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          v10=[{'t':t,'u':u} for t in (2,3,4) for u in range(t+1,92-t)]
+          v8=[{'t':t} for t in range(5,46)]
+          assert len(v10)==255 and len(v8)==41
+          print('v10='+json.dumps({'include':v10},separators=(',',':')))
+          print('v8='+json.dumps({'include':v8},separators=(',',':')))
+          PY
+  v10:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(needs.prepare.outputs.v10) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Freeze source and compiler
+        run: |
+          set -euo pipefail
+          echo '3000f45f9a699445f736815a01bde93dd174353e69c0892c2e3fd9578f3988a1  crossdomain/b2_gap1_v_split_v10.cpp' | sha256sum -c -
+          mkdir -p artifact
+          g++ --version > artifact/GXX_VERSION.txt
+          uname -a > artifact/UNAME.txt
+          sha256sum crossdomain/b2_gap1_v_split_v10.cpp > artifact/SOURCE_SHA256.txt
+          g++ -std=c++20 -O3 -pthread -DNDEBUG crossdomain/b2_gap1_v_split_v10.cpp -o artifact/solver
+          sha256sum artifact/solver > artifact/BINARY_SHA256.txt
+      - name: Replay exact branch
+        run: |
+          set -euo pipefail
+          d="artifact/t${{ matrix.t }}_u${{ matrix.u }}"
+          mkdir -p "$d"
+          set +e
+          /usr/bin/time -v artifact/solver '${{ matrix.t }}' '${{ matrix.u }}' 600 4 "$d/RESULT.json" "$d/BRANCHES.tsv" > "$d/STDOUT.log" 2> "$d/TIME.log"
+          rc=$?
+          set -e
+          echo "$rc" > "$d/EXIT_CODE.txt"
+          test "$rc" -eq 0
+          python - "$d/RESULT.json" '${{ matrix.t }}' '${{ matrix.u }}' <<'PY'
+          import json,sys
+          p,t,u=sys.argv[1],int(sys.argv[2]),int(sys.argv[3]); d=json.load(open(p))
+          assert d['third']==t and d['fourth']==u
+          assert d['completed_exhaustively'] is True
+          assert d['timed_out'] is False
+          assert d['witness_found'] is False
+          assert d['witness_verified'] is False
+          assert d['observed_fifth_branches']==d['expected_fifth_branches']
+          assert [b['fifth'] for b in d['branches']]==list(range(u+1,93-t))
+          assert all(b['completed'] and not b['timed'] and not b['found'] for b in d['branches'])
+          PY
+          sha256sum "$d"/* > "$d/SHA256SUMS.txt"
+          rm artifact/solver
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fresh-v10-t${{ matrix.t }}-u${{ matrix.u }}
+          path: artifact
+          retention-days: 30
+          if-no-files-found: error
+          compression-level: 9
+  v8:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix: ${{ fromJSON(needs.prepare.outputs.v8) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+      - name: Freeze source and compiler
+        run: |
+          set -euo pipefail
+          echo '93cf177dcfe3f92e24c5f5750af97a73e90cd17673a154188ee7333c466c1d13  crossdomain/b2_gap1_u_split_v8.cpp' | sha256sum -c -
+          mkdir -p artifact
+          g++ --version > artifact/GXX_VERSION.txt
+          uname -a > artifact/UNAME.txt
+          sha256sum crossdomain/b2_gap1_u_split_v8.cpp > artifact/SOURCE_SHA256.txt
+          g++ -std=c++20 -O3 -pthread -DNDEBUG crossdomain/b2_gap1_u_split_v8.cpp -o artifact/solver
+          sha256sum artifact/solver > artifact/BINARY_SHA256.txt
+      - name: Replay exact branch
+        run: |
+          set -euo pipefail
+          d="artifact/t${{ matrix.t }}"
+          mkdir -p "$d"
+          set +e
+          /usr/bin/time -v artifact/solver '${{ matrix.t }}' 3300 4 "$d/RESULT.json" "$d/BRANCHES.tsv" > "$d/STDOUT.log" 2> "$d/TIME.log"
+          rc=$?
+          set -e
+          echo "$rc" > "$d/EXIT_CODE.txt"
+          test "$rc" -eq 0
+          python - "$d/RESULT.json" '${{ matrix.t }}' <<'PY'
+          import json,sys
+          p,t=sys.argv[1],int(sys.argv[2]); d=json.load(open(p))
+          assert d['third']==t
+          assert d['completed_exhaustively'] is True
+          assert d['timed_out'] is False
+          assert d['witness_found'] is False
+          assert d['witness_verified'] is False
+          assert d['observed_fourth_branches']==d['expected_fourth_branches']
+          assert [b['fourth'] for b in d['branches']]==list(range(t+1,92-t))
+          assert all(b['completed'] and not b['timed'] and not b['found'] for b in d['branches'])
+          PY
+          sha256sum "$d"/* > "$d/SHA256SUMS.txt"
+          rm artifact/solver
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fresh-v8-t${{ matrix.t }}
+          path: artifact
+          retention-days: 30
+          if-no-files-found: error
+          compression-level: 9
+  aggregate:
+    if: always()
+    needs: [v10,v8]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: fresh-v*
+          path: aggregate
+          merge-multiple: false
+      - name: Verify complete replay and build summary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,pathlib,hashlib
+          root=pathlib.Path('aggregate')
+          v10=[];v8=[]
+          for p in root.rglob('RESULT.json'):
+            d=json.loads(p.read_text())
+            if 'fourth' in d: v10.append(d)
+            else: v8.append(d)
+          assert len(v10)==255, len(v10)
+          assert len(v8)==41, len(v8)
+          got10={(d['third'],d['fourth']) for d in v10}
+          exp10={(t,u) for t in (2,3,4) for u in range(t+1,92-t)}
+          assert got10==exp10
+          assert {d['third'] for d in v8}==set(range(5,46))
+          assert all(d['completed_exhaustively'] and not d['timed_out'] and not d['witness_found'] for d in v10+v8)
+          nodes10=sum(d['aggregate_nodes_including_fourth_root'] for d in v10)
+          nodes8=sum(d['aggregate_nodes_including_third_root'] for d in v8)
+          assert nodes10==5880602065,(nodes10,5880602065)
+          assert nodes8==7787871291,(nodes8,7787871291)
+          summary={'schema':'b2-z100-fresh-full-exact-replay-v1','v10_branches':len(v10),'v8_branches':len(v8),
+                   'v10_nodes':nodes10,'v8_nodes':nodes8,'total_nodes':nodes10+nodes8,
+                   'timeouts':0,'witnesses':0,'status':'FRESH_FULL_EXACT_REPLAY_PASS',
+                   'claim_boundary':'Fresh replay by the same research project is not independent external reproduction.'}
+          pathlib.Path('aggregate/FRESH_REPLAY_SUMMARY.json').write_text(json.dumps(summary,indent=2)+'\n')
+          print(json.dumps(summary,indent=2))
+          PY
+          find aggregate -type f -print0 | sort -z | xargs -0 sha256sum > aggregate/ALL_FILES_SHA256SUMS.txt
+      - id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: b2-z100-fresh-full-exact-replay-20260818
+          path: aggregate
+          retention-days: 30
+          if-no-files-found: error
+          compression-level: 9
+      - name: Publish run pointer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+        run: |
+          python - <<'PY'
+          import json,os
+          p={'run_id':int(os.environ['GITHUB_RUN_ID']),'run_attempt':int(os.environ['GITHUB_RUN_ATTEMPT']),
+             'commit':os.environ['GITHUB_SHA'],'status':'completed','result':'FRESH_FULL_EXACT_REPLAY_PASS',
+             'artifact_id':int(os.environ['ARTIFACT_ID']),'artifact_url':os.environ['ARTIFACT_URL'],
+             'artifact_digest':os.environ['ARTIFACT_DIGEST']}
+          open('pointer.json','w').write(json.dumps(p,indent=2)+'\n')
+          PY
+          encoded=$(base64 -w0 pointer.json)
+          path='crossdomain/B2_FRESH_FULL_EXACT_REPLAY_LATEST_RUN.json'
+          sha=$(gh api "repos/${GITHUB_REPOSITORY}/contents/${path}?ref=${GITHUB_REF_NAME}" --jq .sha 2>/dev/null || true)
+          args=(--method PUT "repos/${GITHUB_REPOSITORY}/contents/${path}" -f message="Record B2 fresh full replay ${GITHUB_RUN_ID}" -f content="$encoded" -f branch="${GITHUB_REF_NAME}")
+          if [ -n "$sha" ]; then args+=(-f sha="$sha"); fi
+          gh api "${args[@]}" >/dev/null
