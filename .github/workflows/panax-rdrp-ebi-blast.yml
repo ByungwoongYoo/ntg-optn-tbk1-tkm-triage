@@ -1,0 +1,151 @@
+name: Parallel EMBL-EBI BLAST audit of Panax RdRP candidates
+
+on:
+  push:
+    branches: [panax-rdrp-validation-20260818]
+    paths:
+      - '.github/workflows/panax-rdrp-ebi-blast.yml'
+      - 'virus_hunt/ebi_blast/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: panax-rdrp-ebi-blast-20260818
+  cancel-in-progress: true
+
+jobs:
+  search:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        query: [PNX_Duplo_A, PNX_Duplo_B, PNX_Picorna_A, PNX_Picorna_B]
+        search: [protein, nucleotide]
+    steps:
+      - name: Checkout isolated branch
+        uses: actions/checkout@v4
+        with:
+          ref: panax-rdrp-validation-20260818
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install biopython==1.85 requests==2.32.5
+
+      - name: Run one current EBI search
+        env:
+          QUERY: ${{ matrix.query }}
+          SEARCH: ${{ matrix.search }}
+        run: |
+          set -euo pipefail
+          out="ebi_blast/${QUERY}_${SEARCH}"
+          if [[ "$SEARCH" == protein ]]; then
+            program=blastp
+            database=uniprotkb
+            fasta=virus_hunt/validation_inputs/candidate_rdrp.faa
+          else
+            program=blastn
+            database=em_rel
+            fasta=virus_hunt/validation_inputs/candidate_contigs.fna
+          fi
+          python virus_hunt/ebi_blast/run_ebi_blast.py \
+            --query-id "$QUERY" --program "$program" --database "$database" \
+            --fasta "$fasta" --email yoonge3@gmail.com \
+            --out "$out" --max-minutes 60 \
+            2>&1 | tee "$out/console.log"
+
+      - name: Upload search evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ebi-blast-${{ matrix.query }}-${{ matrix.search }}
+          path: ebi_blast/${{ matrix.query }}_${{ matrix.search }}
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 9
+
+  aggregate:
+    needs: [search]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout isolated branch
+        uses: actions/checkout@v4
+        with:
+          ref: panax-rdrp-validation-20260818
+
+      - name: Download all EBI searches
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ebi-blast-*
+          path: collected_ebi
+          merge-multiple: false
+
+      - name: Aggregate exact statuses and top hits
+        run: |
+          python - <<'PY'
+          import csv,json,pathlib
+          from datetime import datetime,timezone
+          root=pathlib.Path('collected_ebi')
+          out=pathlib.Path('virus_hunt/ebi_blast/results');out.mkdir(parents=True,exist_ok=True)
+          statuses=[];hits=[]
+          for p in sorted(root.rglob('STATUS.json')):
+              data=json.load(open(p));data['artifact_path']=str(p);statuses.append(data)
+          for p in sorted(root.rglob('hits.tsv')):
+              with open(p) as f:
+                  for row in csv.DictReader(f,delimiter='\t'):
+                      row['artifact_path']=str(p);hits.append(row)
+          (out/'COMBINED_STATUS.json').write_text(json.dumps(statuses,indent=2)+'\n')
+          fields=[]
+          for row in hits:
+              for k in row:
+                  if k not in fields: fields.append(k)
+          with (out/'COMBINED_HITS.tsv').open('w',newline='') as f:
+              if fields:
+                  w=csv.DictWriter(f,fieldnames=fields,delimiter='\t',extrasaction='ignore');w.writeheader();w.writerows(hits)
+              else:
+                  f.write('query\tprogram\tdatabase\taccession\n')
+          summary={
+            'generated_utc':datetime.now(timezone.utc).isoformat(),
+            'expected_searches':8,
+            'status_files':len(statuses),
+            'successful_searches':sum(bool(x.get('success')) for x in statuses),
+            'failed_searches':[x for x in statuses if not x.get('success')],
+            'parsed_alignment_rows':len(hits),
+          }
+          (out/'AGGREGATE_SUMMARY.json').write_text(json.dumps(summary,indent=2)+'\n')
+          print(json.dumps(summary,indent=2))
+          PY
+          cp -a collected_ebi virus_hunt/ebi_blast/results/evidence
+          {
+            echo "generated_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "repository=${GITHUB_REPOSITORY}"
+            echo "workflow_sha=${GITHUB_SHA}"
+            echo "branch=panax-rdrp-validation-20260818"
+          } > virus_hunt/ebi_blast/results/WORKFLOW_PROVENANCE.txt
+          find virus_hunt/ebi_blast/results -type f ! -name SHA256SUMS_COMPLETE.txt -print0 \
+            | sort -z | xargs -0 sha256sum > virus_hunt/ebi_blast/results/SHA256SUMS_COMPLETE.txt
+
+      - name: Commit complete EBI audit to isolated branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f virus_hunt/ebi_blast/results
+          git commit -m "Store parallel EBI BLAST candidate audit [skip ci]" || exit 0
+          git pull --rebase origin panax-rdrp-validation-20260818
+          git push origin HEAD:panax-rdrp-validation-20260818
+
+      - name: Upload aggregate EBI audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PANAX_RDRP_EBI_BLAST_AUDIT_20260818
+          path: virus_hunt/ebi_blast/results
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 9
