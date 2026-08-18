@@ -1,7 +1,11 @@
 {
   "run_id": 32087886076,
   "run_attempt": 1,
-  "status": "running",
+  "status": "completed",
+  "conclusion": "success",
   "commit": "b6e63ec224a5a0ab8c0c6f4ba7de5f3d0920ceda",
-  "workflow": "B2 Z100 full raw evidence package 20260818"
+  "workflow": "B2 Z100 full raw evidence package 20260818",
+  "artifact_id": 9307336189,
+  "artifact_url": "https://github.com/ByungwoongYoo/ntg-optn-tbk1-tkm-triage/actions/runs/32087886076/artifacts/9307336189",
+  "artifact_digest": "0e02012ff461a57bc646c080bd30b94951babd92977ed501f0ec803a02a19a9c"
 }
