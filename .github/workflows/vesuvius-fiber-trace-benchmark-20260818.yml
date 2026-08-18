@@ -1,0 +1,77 @@
+name: Vesuvius conservative CPU fiber tracing benchmark 20260818
+on:
+  workflow_dispatch:
+  push:
+    branches: [vesuvius-fiber-tracing-20260818]
+    paths:
+      - 'crossdomain/vesuvius_fiber_trace_benchmark.py'
+      - 'crossdomain/vesuvius_fiber_trace_verify.py'
+      - '.github/workflows/vesuvius-fiber-trace-benchmark-20260818.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      POINTER: crossdomain/VESUVIUS_FIBER_BENCHMARK_LATEST_RUN.json
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish running pointer
+        run: |
+          printf '{"run_id":%s,"status":"running","commit":"%s"}\n' "$GITHUB_RUN_ID" "$GITHUB_SHA" > pointer.json
+          encoded=$(base64 -w0 pointer.json)
+          sha=$(gh api "repos/${GITHUB_REPOSITORY}/contents/${POINTER}?ref=${GITHUB_REF_NAME}" --jq .sha 2>/dev/null || true)
+          args=(--method PUT "repos/${GITHUB_REPOSITORY}/contents/${POINTER}" -f message="Record Vesuvius fiber benchmark run ${GITHUB_RUN_ID}" -f content="$encoded" -f branch="${GITHUB_REF_NAME}")
+          if [ -n "$sha" ]; then args+=(-f sha="$sha"); fi
+          gh api "${args[@]}" >/dev/null
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Environment and dependencies
+        run: |
+          mkdir -p artifact/vesuvius_fiber_benchmark data
+          {
+            echo "github_run_id=${GITHUB_RUN_ID}"
+            echo "github_sha=${GITHUB_SHA}"
+            echo "runner_image=${ImageOS:-unknown}"
+            uname -a
+            python --version
+            gcc --version | head -1
+          } | tee artifact/vesuvius_fiber_benchmark/ENVIRONMENT.txt
+          pip install numpy scipy scikit-learn tifffile imagecodecs
+          pip freeze > artifact/vesuvius_fiber_benchmark/PIP_FREEZE.txt
+      - name: Download public fiber-skeleton positive-control archive
+        run: |
+          curl -fL --retry 20 --retry-all-errors --retry-delay 3 'https://dl.ash2txt.org/datasets/fiber-skeletons/fiber-skeletons.zip' -o data/fiber-skeletons.zip
+          sha256sum data/fiber-skeletons.zip | tee artifact/vesuvius_fiber_benchmark/ARCHIVE_SHA256.txt
+          unzip -q data/fiber-skeletons.zip -d data/fiber-skeletons
+      - name: Run cube-held-out tracing benchmark
+        run: |
+          python crossdomain/vesuvius_fiber_trace_benchmark.py data/fiber-skeletons artifact/vesuvius_fiber_benchmark --segments-per-cube 16 | tee artifact/vesuvius_fiber_benchmark/STDOUT.log
+          test "$(python -c 'import json;print(json.load(open("artifact/vesuvius_fiber_benchmark/RESULT.json"))["status"])')" = BENCHMARK_COMPLETED
+      - name: Independent verification
+        run: |
+          python crossdomain/vesuvius_fiber_trace_verify.py artifact/vesuvius_fiber_benchmark/RESULT.json artifact/vesuvius_fiber_benchmark/TRACE_RECORDS.json artifact/vesuvius_fiber_benchmark/INDEPENDENT_VERIFICATION.json | tee artifact/vesuvius_fiber_benchmark/VERIFIER.log
+          cp crossdomain/vesuvius_fiber_trace_benchmark.py crossdomain/vesuvius_fiber_trace_verify.py artifact/vesuvius_fiber_benchmark/
+          find artifact/vesuvius_fiber_benchmark -type f -print0 | sort -z | xargs -0 sha256sum > artifact/vesuvius_fiber_benchmark/SHA256SUMS.txt
+      - id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: vesuvius-fiber-trace-benchmark-20260818
+          path: artifact/vesuvius_fiber_benchmark
+          retention-days: 90
+          if-no-files-found: error
+      - name: Publish completed pointer
+        if: success()
+        env:
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+          ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+        run: |
+          printf '{"run_id":%s,"status":"completed","conclusion":"success","commit":"%s","artifact_id":%s,"artifact_digest":"%s"}\n' "$GITHUB_RUN_ID" "$GITHUB_SHA" "$ARTIFACT_ID" "$ARTIFACT_DIGEST" > pointer.json
+          encoded=$(base64 -w0 pointer.json)
+          sha=$(gh api "repos/${GITHUB_REPOSITORY}/contents/${POINTER}?ref=${GITHUB_REF_NAME}" --jq .sha)
+          gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/${POINTER}" -f message="Complete Vesuvius fiber benchmark run ${GITHUB_RUN_ID}" -f content="$encoded" -f branch="${GITHUB_REF_NAME}" -f sha="$sha" >/dev/null
