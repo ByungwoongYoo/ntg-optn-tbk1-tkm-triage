@@ -1,5 +1,7 @@
 import Std.Tactic.Omega
 
+/- First kernel-checked fragment of the explicit infinite-model proof. -/
+
 inductive Form where
   | v : Nat → Form
   | arr : Form → Form → Form
