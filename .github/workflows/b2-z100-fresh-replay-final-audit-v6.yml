@@ -1,0 +1,201 @@
+name: B2 Z100 final fresh-replay computational proof audit v6
+
+on:
+  push:
+    branches: [b2-z100-final-proof-audit-20260818]
+    paths:
+      - 'crossdomain/b2_z100_verify_fresh_replay_v6.py'
+      - '.github/workflows/b2-z100-fresh-replay-final-audit-v6.yml'
+      - 'crossdomain/B2_Z100_GLOBAL_NORMALIZATION_PROOF.md'
+      - 'crossdomain/B2_Z100_REDUNDANT_CUTS_PROOF.md'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      REPLAY_RUN_ID: 32100985982
+      REPLAY_ARTIFACT_ID: 9312169839
+      REPLAY_ARTIFACT_DIGEST: 8baab190689ed862cd87323e9fd72d6772cc62f22b1b54be2ca08d5b497879bf
+      REPLAY_COMMIT: 57486d19ef1088f755c5129131e187b5e2f5cb4b
+      V10_SOURCE_SHA256: 3000f45f9a699445f736815a01bde93dd174353e69c0892c2e3fd9578f3988a1
+      V8_SOURCE_SHA256: 93cf177dcfe3f92e24c5f5750af97a73e90cd17673a154188ee7333c466c1d13
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Verify frozen source files and proof documents
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifact
+          echo "$V10_SOURCE_SHA256  crossdomain/b2_gap1_v_split_v10.cpp" | sha256sum -c -
+          echo "$V8_SOURCE_SHA256  crossdomain/b2_gap1_u_split_v8.cpp" | sha256sum -c -
+          python -m py_compile crossdomain/b2_z100_verify_fresh_replay_v6.py
+          test -s crossdomain/B2_Z100_GLOBAL_NORMALIZATION_PROOF.md
+          test -s crossdomain/B2_Z100_REDUNDANT_CUTS_PROOF.md
+          {
+            date -u +'%Y-%m-%dT%H:%M:%SZ'
+            uname -a
+            lscpu
+            python --version
+            printf 'repository=%s\nref=%s\ncommit=%s\nrun_id=%s\n' "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" "$GITHUB_SHA" "$GITHUB_RUN_ID"
+          } > artifact/AUDIT_ENVIRONMENT.txt 2>&1
+
+      - name: Confirm original fresh-replay run and artifact metadata through GitHub API
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${REPLAY_RUN_ID}" > artifact/REPLAY_RUN_API.json
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${REPLAY_ARTIFACT_ID}" > artifact/REPLAY_ARTIFACT_API.json
+          python - <<'PY'
+          import json,os
+          r=json.load(open('artifact/REPLAY_RUN_API.json'))
+          a=json.load(open('artifact/REPLAY_ARTIFACT_API.json'))
+          assert r['id']==int(os.environ['REPLAY_RUN_ID']),r
+          assert r['status']=='completed' and r['conclusion']=='success',r
+          assert r['head_sha']==os.environ['REPLAY_COMMIT'],r
+          assert a['id']==int(os.environ['REPLAY_ARTIFACT_ID']),a
+          assert a['expired'] is False,a
+          assert a.get('digest')=='sha256:'+os.environ['REPLAY_ARTIFACT_DIGEST'],a
+          assert a['workflow_run']['id']==int(os.environ['REPLAY_RUN_ID']),a
+          print('PUBLIC_REPLAY_PROVENANCE_PASS')
+          PY
+
+      - name: Download the complete fresh replay aggregate
+        uses: actions/download-artifact@v4
+        with:
+          name: b2-z100-fresh-full-exact-replay-20260818
+          path: replay
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 32100985982
+
+      - name: Independently audit all 296 replay results
+        shell: bash
+        run: |
+          set -euo pipefail
+          python crossdomain/b2_z100_verify_fresh_replay_v6.py replay \
+            --v10-source crossdomain/b2_gap1_v_split_v10.cpp \
+            --v8-source crossdomain/b2_gap1_u_split_v8.cpp \
+            --output artifact/FINAL_PROOF_AUDIT.json \
+            --counts-csv artifact/WITNESS_DIFFERENCE_COUNTS.csv \
+            > artifact/verifier_stdout.log 2> artifact/verifier_stderr.log
+          test "$(python -c "import json;print(json.load(open('artifact/FINAL_PROOF_AUDIT.json'))['status'])")" = COMPUTATIONAL_PROOF_CANDIDATE_FOR_M_13_PENDING_INDEPENDENT_EXTERNAL_REVIEW
+          cp replay/FRESH_REPLAY_SUMMARY.json artifact/
+          cp replay/ALL_FILES_SHA256SUMS.txt artifact/REPLAY_ALL_FILES_SHA256SUMS.txt
+          cp crossdomain/b2_gap1_v_split_v10.cpp artifact/
+          cp crossdomain/b2_gap1_u_split_v8.cpp artifact/
+          cp crossdomain/b2_z100_verify_fresh_replay_v6.py artifact/
+          cp crossdomain/B2_Z100_GLOBAL_NORMALIZATION_PROOF.md artifact/
+          cp crossdomain/B2_Z100_REDUNDANT_CUTS_PROOF.md artifact/
+          cp .github/workflows/b2-z100-fresh-full-exact-replay-20260818.yml artifact/ORIGINAL_FRESH_REPLAY_WORKFLOW.yml
+          cp .github/workflows/b2-z100-fresh-replay-final-audit-v6.yml artifact/FINAL_AUDIT_WORKFLOW.yml
+
+      - name: Write final result statement and reproduction instructions
+        shell: bash
+        run: |
+          cat > artifact/README.md <<'EOF'
+          # B2[2]/Z100 computational proof candidate
+
+          ## Result
+
+          The independently checked 13-element witness establishes `M >= 13`.
+          The affine normalization maps every hypothetical 14-set to a canonical
+          set containing `{0,1}`; reflection reduces the third selected point to
+          `t=2,...,45`. The frozen exact-search programs were freshly compiled and
+          replayed over all 255 hard `(t,u)` branches and all 41 remaining `t`
+          branches. All 296 final descriptors completed, with zero timeouts and
+          zero 14-set witnesses, over 13,668,473,356 search nodes.
+
+          The final internal technical status is:
+
+          `COMPUTATIONAL PROOF CANDIDATE FOR M=13 — PENDING INDEPENDENT EXTERNAL REVIEW`.
+
+          This is not a Lean proof, peer review, or independent external
+          reproduction. The full replay was performed by the same research
+          project, although its source, compiler environment, branch outputs,
+          hashes, and audit are public and reproducible.
+
+          ## Source public run
+
+          - replay run: 32100985982
+          - replay aggregate artifact: 9312169839
+          - replay artifact SHA-256: 8baab190689ed862cd87323e9fd72d6772cc62f22b1b54be2ca08d5b497879bf
+          - source commit: 57486d19ef1088f755c5129131e187b5e2f5cb4b
+
+          ## Reproduction
+
+          Download the source replay artifact, extract it as `replay/`, and run:
+
+          ```bash
+          python b2_z100_verify_fresh_replay_v6.py replay \
+            --v10-source b2_gap1_v_split_v10.cpp \
+            --v8-source b2_gap1_u_split_v8.cpp \
+            --output FINAL_PROOF_AUDIT.json \
+            --counts-csv WITNESS_DIFFERENCE_COUNTS.csv
+          ```
+          EOF
+          printf 'COMPUTATIONAL_PROOF_CANDIDATE_FOR_M_13_PENDING_INDEPENDENT_EXTERNAL_REVIEW\n' > artifact/STATUS.txt
+          find artifact -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > artifact/SHA256SUMS.txt
+          find artifact -maxdepth 1 -type f -printf '%f\t%s bytes\n' | sort > artifact/FILE_LIST.txt
+
+      - id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: b2-z100-fresh-replay-final-proof-audit-v6
+          path: artifact
+          retention-days: 90
+          compression-level: 6
+          if-no-files-found: error
+
+      - name: Publish immutable final-result pointer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os,pathlib
+          p=json.load(open('artifact/FINAL_PROOF_AUDIT.json'))
+          p.update({
+            'schema':'b2-z100-fresh-replay-final-public-pointer-v6',
+            'audit_run_id':int(os.environ['GITHUB_RUN_ID']),
+            'audit_run_attempt':int(os.environ['GITHUB_RUN_ATTEMPT']),
+            'audit_commit':os.environ['GITHUB_SHA'],
+            'audit_artifact_id':int(os.environ['ARTIFACT_ID']),
+            'audit_artifact_url':os.environ['ARTIFACT_URL'],
+            'audit_artifact_digest':os.environ['ARTIFACT_DIGEST'],
+            'fresh_replay_run_id':int(os.environ['REPLAY_RUN_ID']),
+            'fresh_replay_artifact_id':int(os.environ['REPLAY_ARTIFACT_ID']),
+            'fresh_replay_artifact_digest':'sha256:'+os.environ['REPLAY_ARTIFACT_DIGEST'],
+            'fresh_replay_commit':os.environ['REPLAY_COMMIT']})
+          pathlib.Path('pointer.json').write_text(json.dumps(p,indent=2,sort_keys=True)+'\n')
+          PY
+          encoded=$(base64 -w0 pointer.json)
+          path='crossdomain/B2_FRESH_REPLAY_COMPUTATIONAL_PROOF_V6_LATEST_RUN.json'
+          sha=$(gh api "repos/${GITHUB_REPOSITORY}/contents/${path}?ref=${GITHUB_REF_NAME}" --jq .sha 2>/dev/null || true)
+          args=(--method PUT "repos/${GITHUB_REPOSITORY}/contents/${path}" -f message="Record B2 fresh-replay computational proof audit ${GITHUB_RUN_ID}" -f content="$encoded" -f branch="${GITHUB_REF_NAME}")
+          if [ -n "$sha" ];then args+=(-f sha="$sha");fi
+          gh api "${args[@]}" >/dev/null
+
+      - name: Enforce final claim gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(cat artifact/STATUS.txt)" = COMPUTATIONAL_PROOF_CANDIDATE_FOR_M_13_PENDING_INDEPENDENT_EXTERNAL_REVIEW
