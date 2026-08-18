@@ -6,8 +6,16 @@
 - `crossdomain/b2_z100_verify_cadical_model.py`
 - `crossdomain/b2_z100_prefix_proof_cnf_v3.py`
 - `crossdomain/b2_z100_split_proof_batch_v3.py`
+- `crossdomain/b2_z100_recursive_proof_v4.py`
+- `crossdomain/b2_z100_finalize_proof_chain_v5.py`
 - `.github/workflows/b2-z100-global-drat-proof-20260818.yml`
 - `.github/workflows/b2-z100-third-branch-drat-v2-20260818.yml`
+- `.github/workflows/b2-z100-adaptive-tools-smoke-v3.yml`
+- `.github/workflows/b2-z100-adaptive-u-split-v3.yml`
+- `.github/workflows/b2-z100-adaptive-v-split-v3.yml`
+- `.github/workflows/b2-z100-recursive-residual-proof-v4.yml`
+- `.github/workflows/b2-z100-recursive-residual-proof-v4b.yml`
+- `.github/workflows/b2-z100-final-proof-chain-v5.yml`
 
 Copyright (c) 2026 Byungwoong Yoo
 
