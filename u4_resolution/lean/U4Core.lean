@@ -1,4 +1,4 @@
-import Std.Tactic.Omega
+import Lean.Elab.Tactic.Omega
 
 /- First kernel-checked fragment of the explicit infinite-model proof. -/
 
