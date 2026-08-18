@@ -1,0 +1,219 @@
+name: PR-visible six-run Panax viral quantification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/panax-six-run-quantification-pr.yml'
+      - 'virus_hunt/validation_inputs/candidate_contigs.fna'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quantify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        run: [DRR853907, DRR853908, DRR853909, DRR853910, DRR853911, DRR853912]
+    env:
+      RUN: ${{ matrix.run }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq pigz minimap2 samtools bcftools
+          python -m pip install biopython==1.85
+
+      - name: Download, verify, map, quantify, and call stringent variants
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="six_run/${RUN}"
+          mkdir -p "$OUT/fastq" "$OUT/variants"
+          REF=virus_hunt/validation_inputs/candidate_contigs.fna
+
+          curl -fsSL --retry 12 --retry-all-errors -G 'https://www.ebi.ac.uk/ena/portal/api/filereport' \
+            --data-urlencode "accession=${RUN}" --data-urlencode 'result=read_run' \
+            --data-urlencode 'fields=run_accession,study_accession,sample_accession,experiment_accession,scientific_name,sample_title,library_strategy,library_source,library_selection,library_layout,instrument_platform,instrument_model,base_count,read_count,first_public,last_updated,country,collection_date,fastq_ftp,fastq_md5,fastq_bytes' \
+            --data-urlencode 'format=tsv' -o "$OUT/ena_metadata.tsv"
+
+          python - "$OUT/ena_metadata.tsv" "$OUT/urls.tsv" <<'PY'
+          import csv,sys
+          rows=list(csv.DictReader(open(sys.argv[1]),delimiter='\t'))
+          if len(rows)!=1: raise SystemExit(f'Expected one run row, got {len(rows)}')
+          r=rows[0]
+          urls=r['fastq_ftp'].split(';'); md5s=r['fastq_md5'].split(';'); sizes=r['fastq_bytes'].split(';')
+          if not (len(urls)==len(md5s)==len(sizes)==2): raise SystemExit('Paired FASTQ metadata incomplete')
+          with open(sys.argv[2],'w') as f:
+              for i,(u,m,s) in enumerate(zip(urls,md5s,sizes),1): f.write(f'{i}\thttps://{u}\t{m}\t{s}\n')
+          PY
+
+          while IFS=$'\t' read -r mate url md5 size; do
+            file="$OUT/fastq/${RUN}_${mate}.fastq.gz"
+            ok=0
+            for attempt in 1 2 3 4 5; do
+              curl -fL --retry 20 --retry-all-errors --retry-delay 3 --connect-timeout 30 \
+                --speed-time 120 --speed-limit 1024 --continue-at - --output "$file" "$url" || true
+              if [[ "$(stat -c %s "$file" 2>/dev/null || echo 0)" == "$size" ]] \
+                 && echo "$md5  $file" | md5sum -c - \
+                 && pigz -t "$file"; then ok=1; break; fi
+              sleep 5
+            done
+            [[ "$ok" == 1 ]] || { echo "Verified download failed for mate $mate" >&2; exit 2; }
+          done < "$OUT/urls.tsv"
+          sha256sum "$OUT"/fastq/*.fastq.gz > "$OUT/FASTQ_SHA256.txt"
+
+          samtools faidx "$REF"
+          minimap2 -t 4 -ax sr "$REF" \
+            <(pigz -dc "$OUT/fastq/${RUN}_1.fastq.gz") \
+            <(pigz -dc "$OUT/fastq/${RUN}_2.fastq.gz") \
+            2> "$OUT/minimap2.stderr.txt" | samtools sort -@ 3 -o "$OUT/${RUN}.bam" -
+          samtools index "$OUT/${RUN}.bam"
+          samtools flagstat "$OUT/${RUN}.bam" > "$OUT/flagstat.txt"
+          samtools coverage "$OUT/${RUN}.bam" > "$OUT/coverage.tsv"
+
+          for LIN in PNX_Duplo_A PNX_Duplo_B PNX_Picorna_A PNX_Picorna_B; do
+            D="$OUT/variants/$LIN"; mkdir -p "$D"
+            samtools depth -aa -q 20 -Q 25 -r "$LIN" "$OUT/${RUN}.bam" > "$D/depth.tsv"
+            awk '$3<5 {print $1"\t"$2-1"\t"$2}' "$D/depth.tsv" > "$D/low_depth_lt5.bed"
+            bcftools mpileup -Ou -f "$REF" -r "$LIN" -q 20 -Q 25 -d 100000 \
+              -a FORMAT/DP,FORMAT/AD "$OUT/${RUN}.bam" \
+              | bcftools call -mv -Oz -o "$D/raw.vcf.gz" || true
+            if [[ -s "$D/raw.vcf.gz" ]]; then
+              bcftools index -f "$D/raw.vcf.gz"
+              bcftools filter -i 'QUAL>=30 && FORMAT/DP>=10 && (FORMAT/AD[1]/FORMAT/DP)>=0.80' \
+                "$D/raw.vcf.gz" -Oz -o "$D/high_confidence.vcf.gz" || true
+              bcftools index -f "$D/high_confidence.vcf.gz" || true
+              samtools faidx "$REF" "$LIN" > "$D/reference.fna"
+              bcftools consensus -m "$D/low_depth_lt5.bed" -f "$D/reference.fna" "$D/high_confidence.vcf.gz" \
+                > "$D/consensus_masked.fna" 2> "$D/consensus.stderr.txt" || cp "$D/reference.fna" "$D/consensus_masked.fna"
+              bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%QUAL[\t%DP\t%AD]\n' "$D/high_confidence.vcf.gz" \
+                > "$D/high_confidence_variants.tsv" || true
+            else
+              samtools faidx "$REF" "$LIN" > "$D/reference.fna"
+              cp "$D/reference.fna" "$D/consensus_masked.fna"
+              : > "$D/high_confidence_variants.tsv"
+            fi
+            sed -i "1s/.*/>${RUN}|${LIN}/" "$D/consensus_masked.fna"
+          done
+          cat "$OUT"/variants/*/consensus_masked.fna > "$OUT/${RUN}_all_masked_consensus.fna"
+
+          python - "$RUN" <<'PY'
+          import csv,json,pathlib,sys
+          run=sys.argv[1]; root=pathlib.Path('six_run')/run
+          meta=list(csv.DictReader(open(root/'ena_metadata.tsv'),delimiter='\t'))[0]
+          total=int(meta.get('read_count') or 0)
+          cov={r['#rname']:r for r in csv.DictReader(open(root/'coverage.tsv'),delimiter='\t')}
+          rows=[]
+          for lin in ['PNX_Duplo_A','PNX_Duplo_B','PNX_Picorna_A','PNX_Picorna_B']:
+              r=cov[lin]; mapped=int(r.get('numreads') or 0)
+              depth=list(csv.reader(open(root/'variants'/lin/'depth.tsv'),delimiter='\t'))
+              callable_bases=sum(1 for v in depth if len(v)>=3 and int(v[2])>=5)
+              vf=root/'variants'/lin/'high_confidence_variants.tsv'
+              nvar=sum(1 for line in open(vf) if line.strip())
+              rows.append({'run':run,'study_accession':meta.get('study_accession',''),
+                'sample_accession':meta.get('sample_accession',''),'experiment_accession':meta.get('experiment_accession',''),
+                'sample_title':meta.get('sample_title',''),'lineage':lin,'input_read_count':total,
+                'mapped_reads':mapped,'mapped_reads_per_million':mapped/total*1e6 if total else None,
+                'coverage_percent':float(r['coverage']),'mean_depth':float(r['meandepth']),
+                'mean_mapping_quality':float(r['meanmapq']),'callable_bases_dp5':callable_bases,
+                'high_confidence_variant_count':nvar})
+          with open(root/'RUN_SUMMARY.tsv','w',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=list(rows[0]),delimiter='\t'); w.writeheader(); w.writerows(rows)
+          (root/'RUN_SUMMARY.json').write_text(json.dumps(rows,indent=2)+'\n')
+          md=['# Full-FASTQ viral-candidate audit','',f'Run: `{run}`; deposited title: **{meta.get("sample_title","")}**','',
+              '| Lineage | Mapped reads | RPM | Breadth | Mean depth | Callable DP>=5 | HC variants |',
+              '|---|---:|---:|---:|---:|---:|---:|']
+          for r in rows: md.append(f"| `{r['lineage']}` | {r['mapped_reads']} | {r['mapped_reads_per_million']:.4f} | {r['coverage_percent']}% | {r['mean_depth']}x | {r['callable_bases_dp5']} | {r['high_confidence_variant_count']} |")
+          md += ['', 'These are archive-read support metrics. They do not prove the biological host, active replication, pathogenicity, or independent infections.']
+          (root/'RUN_REPORT.md').write_text('\n'.join(md)+'\n')
+          PY
+          find "$OUT" -type f ! -path "$OUT/fastq/*" ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > "$OUT/SHA256SUMS.txt"
+          rm -rf "$OUT/fastq" "$OUT/${RUN}.bam" "$OUT/${RUN}.bam.bai"
+          cat "$OUT/RUN_REPORT.md"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PANAX_SIX_RUN_${{ matrix.run }}_20260819
+          path: six_run/${{ matrix.run }}
+          retention-days: 30
+          compression-level: 9
+
+  aggregate:
+    needs: quantify
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: PANAX_SIX_RUN_*_20260819
+          path: all_runs
+      - name: Aggregate run-level evidence
+        shell: bash
+        run: |
+          python -m pip install biopython==1.85
+          python - <<'PY'
+          from Bio import SeqIO
+          import csv,json,itertools,pathlib,re,statistics
+          out=pathlib.Path('aggregate'); out.mkdir()
+          rows=[]; seqs={}
+          for p in pathlib.Path('all_runs').rglob('RUN_SUMMARY.tsv'):
+              rows += list(csv.DictReader(open(p),delimiter='\t'))
+          for p in pathlib.Path('all_runs').rglob('*_all_masked_consensus.fna'):
+              for r in SeqIO.parse(p,'fasta'):
+                  run,lin=r.id.split('|',1); seqs[(lin,run)]=str(r.seq).upper()
+          rows.sort(key=lambda r:(r['lineage'],r['run']))
+          if rows:
+              with open(out/'ALL_RUN_SUMMARIES.tsv','w',newline='') as f:
+                  w=csv.DictWriter(f,fieldnames=list(rows[0]),delimiter='\t'); w.writeheader(); w.writerows(rows)
+          pairs=[]
+          for lin in sorted({k[0] for k in seqs}):
+              runs=sorted(k[1] for k in seqs if k[0]==lin)
+              for a,b in itertools.combinations(runs,2):
+                  compared=matches=diff=0
+                  for x,y in zip(seqs[(lin,a)],seqs[(lin,b)]):
+                      if x in 'ACGT' and y in 'ACGT':
+                          compared+=1; matches+=(x==y); diff+=(x!=y)
+                  pairs.append({'lineage':lin,'run_a':a,'run_b':b,'joint_callable_bases':compared,
+                    'differences':diff,'identity_percent':100*matches/compared if compared else None})
+          with open(out/'PAIRWISE_MASKED_CONSENSUS.tsv','w',newline='') as f:
+              fields=['lineage','run_a','run_b','joint_callable_bases','differences','identity_percent']
+              w=csv.DictWriter(f,fieldnames=fields,delimiter='\t'); w.writeheader(); w.writerows(pairs)
+          prefixes={}
+          for r in rows:
+              m=re.search(r'Sample_([A-Za-z]+)([A-Z])',r['sample_title'])
+              prefixes[r['run']]={'group_token':m.group(1) if m else '', 'replicate_token':m.group(2) if m else ''}
+          group=[]
+          for lin in sorted({r['lineage'] for r in rows}):
+              for token in sorted({v['group_token'] for v in prefixes.values() if v['group_token']}):
+                  rs=[r for r in rows if r['lineage']==lin and prefixes.get(r['run'],{}).get('group_token')==token]
+                  vals=[float(r['mapped_reads_per_million']) for r in rs]
+                  group.append({'lineage':lin,'deposited_title_group_token':token,'n':len(vals),
+                    'mean_rpm':statistics.mean(vals) if vals else None,'median_rpm':statistics.median(vals) if vals else None,
+                    'runs':';'.join(r['run'] for r in rs)})
+          with open(out/'GROUP_TOKEN_DESCRIPTIVES.tsv','w',newline='') as f:
+              fields=['lineage','deposited_title_group_token','n','mean_rpm','median_rpm','runs']
+              w=csv.DictWriter(f,fieldnames=fields,delimiter='\t'); w.writeheader(); w.writerows(group)
+          (out/'AGGREGATE.json').write_text(json.dumps({'rows':rows,'pairs':pairs,'group_token_descriptives':group},indent=2)+'\n')
+          md=['# Six-run aggregate audit','',f'- Run-lineage rows: **{len(rows)}**',f'- Pairwise masked-consensus comparisons: **{len(pairs)}**','',
+              '## Deposited-title group-token descriptives','',
+              '| Lineage | Token | n | Mean RPM | Median RPM | Runs |','|---|---|---:|---:|---:|---|']
+          for r in group: md.append(f"| `{r['lineage']}` | `{r['deposited_title_group_token']}` | {r['n']} | {r['mean_rpm']:.4f} | {r['median_rpm']:.4f} | {r['runs']} |")
+          md += ['', 'The Zh/Bh tokens are reported exactly as deposited. No healthy/diseased meaning is assigned here unless independently documented by source metadata. Descriptive differences are not causal evidence.']
+          (out/'AGGREGATE_REPORT.md').write_text('\n'.join(md)+'\n')
+          PY
+          find aggregate -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > aggregate/SHA256SUMS.txt
+          cat aggregate/AGGREGATE_REPORT.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PANAX_SIX_RUN_AGGREGATE_20260819
+          path: aggregate
+          retention-days: 30
+          compression-level: 9
