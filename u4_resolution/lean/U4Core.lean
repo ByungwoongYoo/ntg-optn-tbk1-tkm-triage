@@ -67,12 +67,12 @@ theorem E_base_AB : E (A 0) (B 0) := by
 
 theorem E_base_BA : E (B 0) (A 0) := by
   intro σ W h
-  have hs := congrArg Form.size h
-  simp [A, B, C, Form.subst, Form.size] at hs
+  simp [A, B, C, Form.subst] at h
+  have hs := congrArg Form.size h.1
   have ha := Form.size_pos (σ 4)
   have hb := Form.size_pos (σ 5)
   have hc := Form.size_pos (σ 6)
-  have hw := Form.size_pos W
+  simp [Form.size] at hs
   omega
 
 theorem interlocking : ∀ n, E (A n) (B n) ∧ E (B n) (A n)
@@ -82,11 +82,9 @@ theorem interlocking : ∀ n, E (A n) (B n) ∧ E (B n) (A n)
       constructor
       · intro σ W h
         simp [A, B, Form.subst] at h
-        injection h with hleft hright
-        exact ih.2 σ (σ (rv n)) hleft
+        exact ih.2 σ (σ (rv n)) h.1
       · intro σ W h
         simp [A, B, Form.subst] at h
-        injection h with hleft hright
-        exact ih.1 σ (σ (rv n)) hleft
+        exact ih.1 σ (σ (rv n)) h.1
 
 example : ∀ n, E (A n) (B n) := fun n => (interlocking n).1
