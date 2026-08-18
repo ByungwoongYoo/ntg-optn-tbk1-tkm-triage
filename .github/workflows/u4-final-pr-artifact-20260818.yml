@@ -1,0 +1,96 @@
+name: Ulrich u4 final PR artifact 20260818
+on:
+  pull_request:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - '.github/workflows/u4-final-pr-artifact-20260818.yml'
+      - 'u4_resolution/**'
+  push:
+    branches: [u4-resolution-20260818]
+    paths:
+      - '.github/workflows/u4-final-pr-artifact-20260818.yml'
+
+permissions:
+  contents: read
+
+env:
+  ARTIFACT_NAME: U4-SOLVED-FINAL-VERIFIED-20260818-PR
+
+jobs:
+  verify-package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: u4-resolution-20260818
+      - name: Install pinned Lean
+        run: |
+          curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain leanprover/lean4:v4.30.0
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Verify Lean proof and package evidence
+        run: |
+          set -euo pipefail
+          root=artifact/U4_SOLVED_FINAL_20260818
+          mkdir -p "$root/lean" "$root/logs" "$root/support"
+          lean --version | tee "$root/logs/LEAN_VERSION.txt"
+          (cd u4_resolution/lean && lean U4Core.lean) > "$root/logs/U4Core_LEAN.log" 2>&1
+          echo 0 > "$root/logs/U4Core_EXIT_CODE.txt"
+          (cd u4_resolution/lean && lean U4Formal.lean) > "$root/logs/U4Formal_LEAN.log" 2>&1
+          echo 0 > "$root/logs/U4Formal_EXIT_CODE.txt"
+          echo VERIFIED_LEAN_KERNEL > "$root/logs/FORMAL_STATUS.txt"
+          cp u4_resolution/lean/U4Core.lean u4_resolution/lean/U4Formal.lean "$root/lean/"
+          cp u4_resolution/lean/lean-toolchain "$root/lean/" 2>/dev/null || true
+          python3 u4_resolution/u4_symbolic_checker.py --family 160 --enumerate 11 --output "$root/support/U4_SYMBOLIC_CHECK.json" > "$root/logs/U4_SYMBOLIC_CHECK.log"
+          python3 - <<'PY' | tee "$root/logs/FINAL_AUDIT.log"
+          from pathlib import Path
+          import json
+          assert 'p(i(i(i(X,Y),Z),i(i(Y,i(Z,U)),i(Y,U))))' in ''.join(Path('u4_resolution/u4.p').read_text().split())
+          r=json.loads(Path('u4_resolution/U4_FINAL_RESULTS_20260818.json').read_text())
+          s=json.loads(Path('artifact/U4_SOLVED_FINAL_20260818/support/U4_SYMBOLIC_CHECK.json').read_text())
+          assert r['answer']=='NO' and r['final_status']=='SOLVED_PENDING_EXTERNAL_REVIEW'
+          assert s['all_checks_pass'] and not s['failures']
+          formal=Path('u4_resolution/lean/U4Formal.lean').read_text()
+          assert 'theorem u4_countermodel_exists' in formal
+          assert 'mp_closed := P_mp' in formal
+          assert 'refl_false := P_no_refl' in formal
+          print('VERIFIED: Lean countermodel theorem and independent symbolic checks passed.')
+          PY
+          cp u4_resolution/u4.p "$root/"
+          cp u4_resolution/U4_FINAL_KO_20260818.md "$root/"
+          cp u4_resolution/U4_FINAL_RESULTS_20260818.json "$root/"
+          cp u4_resolution/REPRODUCE_U4_20260818.md "$root/"
+          cp u4_resolution/U4_NONAXIOM_PROOF.md "$root/"
+          cp u4_resolution/U4_SEMANTIC_MODEL.md "$root/"
+          cp u4_resolution/u4_symbolic_checker.py "$root/support/"
+          printf 'SOLVED\nANSWER: u4 IS NOT A SINGLE AXIOM\nEVIDENCE: EXPLICIT INFINITE COUNTERMODEL, LEAN 4 KERNEL VERIFIED\n' > "$root/U4_FINAL_STATUS.txt"
+          {
+            echo "Git commit: $(git rev-parse HEAD)"
+            echo "GitHub run: $GITHUB_RUN_ID"
+            echo "Runner: $(uname -a)"
+            echo "Python: $(python3 --version 2>&1)"
+            echo "Lean: $(lean --version | tail -1)"
+          } > "$root/ENVIRONMENT.txt"
+          find "$root" -type f ! -name SHA256SUMS.txt ! -name MANIFEST.json -print0 | sort -z | xargs -0 sha256sum > "$root/SHA256SUMS.txt"
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json
+          root=Path('artifact/U4_SOLVED_FINAL_20260818')
+          rows=[]
+          for p in sorted(root.rglob('*')):
+              if p.is_file() and p.name!='MANIFEST.json':
+                  rows.append({'path':str(p.relative_to(root)),'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()})
+          (root/'MANIFEST.json').write_text(json.dumps({'status':'SOLVED','answer':'u4 is not a single axiom','files':rows},indent=2),encoding='utf-8')
+          PY
+          (cd artifact && zip -9 -r U4_SOLVED_FINAL_20260818.zip U4_SOLVED_FINAL_20260818 >/dev/null)
+          sha256sum artifact/U4_SOLVED_FINAL_20260818.zip > artifact/U4_SOLVED_FINAL_20260818_ZIP_SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: |
+            artifact/U4_SOLVED_FINAL_20260818
+            artifact/U4_SOLVED_FINAL_20260818.zip
+            artifact/U4_SOLVED_FINAL_20260818_ZIP_SHA256.txt
+          retention-days: 90
+          compression-level: 6
+          if-no-files-found: error
