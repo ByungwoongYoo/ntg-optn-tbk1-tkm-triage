@@ -1,0 +1,76 @@
+{
+  "range": [
+    7,
+    12
+  ],
+  "rows": [
+    {
+      "n": 10,
+      "status": "NO_VERIFIED_COUNTERMODEL_IN_THIS_RUN",
+      "verified_model": null,
+      "cases_run": 16,
+      "solver_results": {
+        "sat": 0,
+        "unsat": 0,
+        "unknown": 16
+      }
+    },
+    {
+      "n": 11,
+      "status": "NO_VERIFIED_COUNTERMODEL_IN_THIS_RUN",
+      "verified_model": null,
+      "cases_run": 16,
+      "solver_results": {
+        "sat": 0,
+        "unsat": 0,
+        "unknown": 16
+      }
+    },
+    {
+      "n": 12,
+      "status": "NO_VERIFIED_COUNTERMODEL_IN_THIS_RUN",
+      "verified_model": null,
+      "cases_run": 15,
+      "solver_results": {
+        "sat": 0,
+        "unsat": 0,
+        "unknown": 15
+      }
+    },
+    {
+      "n": 7,
+      "status": "NO_VERIFIED_COUNTERMODEL_IN_THIS_RUN",
+      "verified_model": null,
+      "cases_run": 12,
+      "solver_results": {
+        "sat": 0,
+        "unsat": 1,
+        "unknown": 11
+      }
+    },
+    {
+      "n": 8,
+      "status": "NO_VERIFIED_COUNTERMODEL_IN_THIS_RUN",
+      "verified_model": null,
+      "cases_run": 14,
+      "solver_results": {
+        "sat": 0,
+        "unsat": 1,
+        "unknown": 13
+      }
+    },
+    {
+      "n": 9,
+      "status": "NO_VERIFIED_COUNTERMODEL_IN_THIS_RUN",
+      "verified_model": null,
+      "cases_run": 16,
+      "solver_results": {
+        "sat": 0,
+        "unsat": 1,
+        "unknown": 15
+      }
+    }
+  ],
+  "verified_countermodels": [],
+  "claim_boundary": "Only independently verified explicit tables count. Negative solver outcomes do not prove nonexistence."
+}

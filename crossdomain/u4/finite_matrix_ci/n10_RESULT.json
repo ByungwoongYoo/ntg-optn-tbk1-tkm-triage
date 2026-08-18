@@ -1,0 +1,289 @@
+{
+  "problem": "Ulrich u4 finite-matrix countermodel search",
+  "n": 10,
+  "status": "NO_VERIFIED_COUNTERMODEL_IN_THIS_RUN",
+  "verified_model": null,
+  "runs": [
+    {
+      "n": 10,
+      "designated_count": 1,
+      "designated_values": [
+        0
+      ],
+      "witness": 0,
+      "timeout_ms": 90000,
+      "solver_result": "unknown",
+      "elapsed_seconds": 90.09796357154846,
+      "z3_version": "5.1.0",
+      "independent_verifier_ok": false,
+      "note": "UNSAT or UNKNOWN is logged only; it is not accepted as a u4 conclusion."
+    },
+    {
+      "n": 10,
+      "designated_count": 1,
+      "designated_values": [
+        0
+      ],
+      "witness": 1,
+      "timeout_ms": 90000,
+      "solver_result": "unknown",
+      "elapsed_seconds": 90.12613725662231,
+      "z3_version": "5.1.0",
+      "independent_verifier_ok": false,
+      "note": "UNSAT or UNKNOWN is logged only; it is not accepted as a u4 conclusion."
+    },
+    {
+      "n": 10,
+      "designated_count": 2,
+      "designated_values": [
+        0,
+        1
+      ],
+      "witness": 0,
+      "timeout_ms": 90000,
+      "solver_result": "unknown",
+      "elapsed_seconds": 90.09998774528503,
+      "z3_version": "5.1.0",
+      "independent_verifier_ok": false,
+      "note": "UNSAT or UNKNOWN is logged only; it is not accepted as a u4 conclusion."
+    },
+    {
+      "n": 10,
+      "designated_count": 2,
+      "designated_values": [
+        0,
+        1
+      ],
+      "witness": 2,
+      "timeout_ms": 90000,
+      "solver_result": "unknown",
+      "elapsed_seconds": 90.12388157844543,
+      "z3_version": "5.1.0",
+      "independent_verifier_ok": false,
+      "note": "UNSAT or UNKNOWN is logged only; it is not accepted as a u4 conclusion."
+    },
+    {
+      "n": 10,
+      "designated_count": 3,
+      "designated_values": [
+        0,
+        1,
+        2
+      ],
+      "witness": 0,
+      "timeout_ms": 90000,
+      "solver_result": "unknown",
+      "elapsed_seconds": 90.12425470352173,
+      "z3_version": "5.1.0",
+      "independent_verifier_ok": false,
+      "note": "UNSAT or UNKNOWN is logged only; it is not accepted as a u4 conclusion."
+    },
+    {
+      "n": 10,
+      "designated_count": 3,
+      "designated_values": [
+        0,
+        1,
+        2
+      ],
+      "witness": 3,
+      "timeout_ms": 90000,
+      "solver_result": "unknown",
+      "elapsed_seconds": 90.09226655960083,
+      "z3_version": "5.1.0",
+      "independent_verifier_ok": false,
+      "note": "UNSAT or UNKNOWN is logged only; it is not accepted as a u4 conclusion."
+    },
+    {
+      "n": 10,
+      "designated_count": 4,
+      "designated_values": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "witness": 0,
+      "timeout_ms": 90000,
+      "solver_result": "unknown",
+      "elapsed_seconds": 90.08759474754333,
+      "z3_version": "5.1.0",
+      "independent_verifier_ok": false,
+      "note": "UNSAT or UNKNOWN is logged only; it is not accepted as a u4 conclusion."
+    },
+    {
+      "n": 10,
+      "designated_count": 4,
+      "designated_values": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "witness": 4,
+      "timeout_ms": 90000,
+      "solver_result": "unknown",
+      "elapsed_seconds": 90.28623867034912,
+      "z3_version": "5.1.0",
+      "independent_verifier_ok": false,
+      "note": "UNSAT or UNKNOWN is logged only; it is not accepted as a u4 conclusion."
+    },
+    {
+      "n": 10,
+      "designated_count": 5,
+      "designated_values": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "witness": 0,
+      "timeout_ms": 90000,
+      "solver_result": "unknown",
+      "elapsed_seconds": 90.07369422912598,
+      "z3_version": "5.1.0",
+      "independent_verifier_ok": false,
+      "note": "UNSAT or UNKNOWN is logged only; it is not accepted as a u4 conclusion."
+    },
+    {
+      "n": 10,
+      "designated_count": 5,
+      "designated_values": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "witness": 5,
+      "timeout_ms": 90000,
+      "solver_result": "unknown",
+      "elapsed_seconds": 90.10704755783081,
+      "z3_version": "5.1.0",
+      "independent_verifier_ok": false,
+      "note": "UNSAT or UNKNOWN is logged only; it is not accepted as a u4 conclusion."
+    },
+    {
+      "n": 10,
+      "designated_count": 6,
+      "designated_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "witness": 0,
+      "timeout_ms": 90000,
+      "solver_result": "unknown",
+      "elapsed_seconds": 90.09037137031555,
+      "z3_version": "5.1.0",
+      "independent_verifier_ok": false,
+      "note": "UNSAT or UNKNOWN is logged only; it is not accepted as a u4 conclusion."
+    },
+    {
+      "n": 10,
+      "designated_count": 6,
+      "designated_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "witness": 6,
+      "timeout_ms": 90000,
+      "solver_result": "unknown",
+      "elapsed_seconds": 90.08954000473022,
+      "z3_version": "5.1.0",
+      "independent_verifier_ok": false,
+      "note": "UNSAT or UNKNOWN is logged only; it is not accepted as a u4 conclusion."
+    },
+    {
+      "n": 10,
+      "designated_count": 7,
+      "designated_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "witness": 0,
+      "timeout_ms": 90000,
+      "solver_result": "unknown",
+      "elapsed_seconds": 90.10804390907288,
+      "z3_version": "5.1.0",
+      "independent_verifier_ok": false,
+      "note": "UNSAT or UNKNOWN is logged only; it is not accepted as a u4 conclusion."
+    },
+    {
+      "n": 10,
+      "designated_count": 7,
+      "designated_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "witness": 7,
+      "timeout_ms": 90000,
+      "solver_result": "unknown",
+      "elapsed_seconds": 90.10681486129761,
+      "z3_version": "5.1.0",
+      "independent_verifier_ok": false,
+      "note": "UNSAT or UNKNOWN is logged only; it is not accepted as a u4 conclusion."
+    },
+    {
+      "n": 10,
+      "designated_count": 8,
+      "designated_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "witness": 0,
+      "timeout_ms": 90000,
+      "solver_result": "unknown",
+      "elapsed_seconds": 90.15310907363892,
+      "z3_version": "5.1.0",
+      "independent_verifier_ok": false,
+      "note": "UNSAT or UNKNOWN is logged only; it is not accepted as a u4 conclusion."
+    },
+    {
+      "n": 10,
+      "designated_count": 8,
+      "designated_values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "witness": 8,
+      "timeout_ms": 62000,
+      "solver_result": "unknown",
+      "elapsed_seconds": 62.10180997848511,
+      "z3_version": "5.1.0",
+      "independent_verifier_ok": false,
+      "note": "UNSAT or UNKNOWN is logged only; it is not accepted as a u4 conclusion."
+    }
+  ],
+  "claim_boundary": "Only a SAT table passing verify() is a result. UNSAT, UNKNOWN, and timeout are not conclusions."
+}
