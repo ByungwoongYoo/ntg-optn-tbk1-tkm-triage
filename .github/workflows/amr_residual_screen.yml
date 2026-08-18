@@ -1,0 +1,85 @@
+name: AMR residual phenotype-genotype screen
+
+on:
+  push:
+    branches:
+      - amr-residual-marker-discovery-20260819
+    paths:
+      - 'amr_discovery/01_screen_residual_pairs.py'
+      - 'amr_discovery/PROTOCOL_FREEZE_V1.md'
+      - '.github/workflows/amr_residual_screen.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'amr_discovery/01_screen_residual_pairs.py'
+      - 'amr_discovery/PROTOCOL_FREEZE_V1.md'
+      - '.github/workflows/amr_residual_screen.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: amr-stage1-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  AMR_RELEASE: '2026-07'
+  BASE_URL: 'https://ftp.ebi.ac.uk/pub/databases/amr_portal/releases/2026-07'
+
+jobs:
+  screen:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pinned analysis dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install duckdb==1.3.2
+
+      - name: Download and verify pinned EMBL-EBI AMR release
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p amr_data
+          for f in phenotype.parquet genotype.parquet phenotype_genotype_merged.parquet md5sums manifest.yaml; do
+            curl -fL --retry 12 --retry-all-errors --retry-delay 3 \
+              "${BASE_URL}/${f}" -o "amr_data/${f}"
+          done
+          (
+            cd amr_data
+            grep -E '(^|[[:space:]])(phenotype\.parquet|genotype\.parquet|phenotype_genotype_merged\.parquet)$' md5sums \
+              | md5sum -c -
+          )
+          sha256sum amr_data/*.parquet > amr_data/INPUT_SHA256SUMS.txt
+          ls -lh amr_data
+
+      - name: Run preregistered residual-pair screen
+        run: |
+          python amr_discovery/01_screen_residual_pairs.py \
+            --release "${AMR_RELEASE}" \
+            --data-dir amr_data \
+            --out-dir amr_results/screen
+
+      - name: Emit compact audit summary
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat amr_results/screen/release_census.json
+          cat amr_results/screen/TOP_PAIR.json
+          echo '--- top strict pairs ---'
+          head -n 21 amr_results/screen/screened_pairs_strict.tsv || true
+          cp amr_data/INPUT_SHA256SUMS.txt amr_results/screen/
+          cp amr_data/md5sums amr_results/screen/UPSTREAM_MD5SUMS.txt
+          cp amr_data/manifest.yaml amr_results/screen/UPSTREAM_MANIFEST.yaml
+
+      - name: Upload complete Stage-1 evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: AMR_STAGE1_RESIDUAL_SCREEN_2026-07
+          path: amr_results/screen
+          if-no-files-found: error
+          retention-days: 30
