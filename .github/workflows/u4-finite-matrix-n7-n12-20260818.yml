@@ -1,0 +1,80 @@
+name: Ulrich u4 finite matrix n7 through n12 20260818
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/u4/u4_finite_matrix_z3.py'
+      - '.github/workflows/u4-finite-matrix-n7-n12-20260818.yml'
+permissions:
+  contents: write
+jobs:
+  search:
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        n: [7,8,9,10,11,12]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 32
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install z3-solver
+      - name: Search with explicit independent verifier
+        run: |
+          mkdir -p artifact/u4_matrix_n${{ matrix.n }}
+          set +e
+          python crossdomain/u4/u4_finite_matrix_z3.py --n ${{ matrix.n }} --case-seconds 90 --global-seconds 1500 --out artifact/u4_matrix_n${{ matrix.n }}/RESULT.json > artifact/u4_matrix_n${{ matrix.n }}/RUN.txt 2>&1
+          rc=$?
+          set -e
+          echo "$rc" > artifact/u4_matrix_n${{ matrix.n }}/EXIT_CODE.txt
+          cp crossdomain/u4/u4_finite_matrix_z3.py artifact/u4_matrix_n${{ matrix.n }}/
+          sha256sum artifact/u4_matrix_n${{ matrix.n }}/* > artifact/u4_matrix_n${{ matrix.n }}/SHA256SUMS.txt
+          test "$rc" -eq 0 -o "$rc" -eq 10
+      - uses: actions/upload-artifact@v4
+        with:
+          name: u4-matrix-n${{ matrix.n }}-20260818
+          path: artifact/u4_matrix_n${{ matrix.n }}
+          retention-days: 90
+          if-no-files-found: error
+  aggregate:
+    needs: search
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: crossdomain-open-problem-tournament-20260817
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: u4-matrix-n*-20260818
+          path: downloaded
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Aggregate and record exact outcomes
+        run: |
+          python - <<'PY'
+          import json, pathlib, shutil, hashlib
+          root=pathlib.Path('downloaded'); out=pathlib.Path('crossdomain/u4/finite_matrix_ci'); out.mkdir(parents=True,exist_ok=True)
+          rows=[]
+          for p in sorted(root.rglob('RESULT.json')):
+              d=json.loads(p.read_text())
+              shutil.copy2(p,out/f'n{d["n"]}_RESULT.json')
+              rows.append({'n':d['n'],'status':d['status'],'verified_model':d['verified_model'],'cases_run':len(d['runs']),'solver_results':{s:sum(r['solver_result']==s for r in d['runs']) for s in ['sat','unsat','unknown']}})
+          summary={'range':[7,12],'rows':rows,'verified_countermodels':[r for r in rows if r['status']=='VERIFIED_FINITE_COUNTERMODEL'],'claim_boundary':'Only independently verified explicit tables count. Negative solver outcomes do not prove nonexistence.'}
+          (out/'SUMMARY.json').write_text(json.dumps(summary,indent=2),encoding='utf-8')
+          (out/'STATUS.txt').write_text(('VERIFIED_FINITE_COUNTERMODEL\n' if summary['verified_countermodels'] else 'NO_VERIFIED_COUNTERMODEL_N7_N12\n'),encoding='utf-8')
+          with (out/'SHA256SUMS.txt').open('w') as f:
+              for q in sorted(out.glob('*')):
+                  if q.name!='SHA256SUMS.txt': f.write(hashlib.sha256(q.read_bytes()).hexdigest()+'  '+q.name+'\n')
+          print(json.dumps(summary,indent=2))
+          PY
+      - name: Commit finite-matrix results
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -f crossdomain/u4/finite_matrix_ci
+          git commit -m 'Record finite-matrix n7-n12 search for Ulrich u4' || exit 0
+          git push origin HEAD:crossdomain-open-problem-tournament-20260817
