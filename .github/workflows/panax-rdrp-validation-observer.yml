@@ -1,0 +1,64 @@
+name: Observe Panax RdRP validation completion
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/panax-rdrp-validation-observer.yml'
+      - 'virus_hunt/final_validation_results/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: panax-rdrp-observer-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXPECTED_WORKFLOW_SHA: 1d277f493d64df008bcbd06c74100fb6d5c7ef20
+
+jobs:
+  observe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - name: Wait for the repaired validation result, not the stale package
+        run: |
+          set -euo pipefail
+          mkdir -p observation
+          branch="panax-rdrp-validation-20260818"
+          base="https://raw.githubusercontent.com/ByungwoongYoo/ntg-optn-tbk1-tkm-triage/${branch}/virus_hunt/final_validation_results"
+          found=0
+          for attempt in $(seq 1 90); do
+            echo "[$(date -u +%FT%TZ)] poll ${attempt}/90" | tee -a observation/poll.log
+            if curl -fsSL --retry 3 "${base}/WORKFLOW_PROVENANCE.txt" -o observation/WORKFLOW_PROVENANCE.txt; then
+              if grep -q "workflow_sha=${EXPECTED_WORKFLOW_SHA}" observation/WORKFLOW_PROVENANCE.txt; then
+                curl -fsSL --retry 3 "${base}/FINAL_VALIDATION_REPORT.md" -o observation/FINAL_VALIDATION_REPORT.md
+                curl -fsSL --retry 3 "${base}/FINAL_CANDIDATE_DECISIONS.tsv" -o observation/FINAL_CANDIDATE_DECISIONS.tsv
+                curl -fsSL --retry 3 "${base}/OUTER_SHA256SUMS.txt" -o observation/OUTER_SHA256SUMS.txt
+                found=1
+                break
+              fi
+            fi
+            sleep 180
+          done
+          {
+            echo "found=${found}"
+            echo "expected_workflow_sha=${EXPECTED_WORKFLOW_SHA}"
+            echo "completed_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "source_branch=${branch}"
+          } > observation/OBSERVER_STATUS.txt
+          curl -fsSL "https://api.github.com/repos/ByungwoongYoo/ntg-optn-tbk1-tkm-triage/branches/${branch}" \
+            -o observation/BRANCH_AT_COMPLETION.json || true
+          find observation -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > observation/SHA256SUMS.txt
+          [[ "$found" == 1 ]]
+
+      - name: Upload observable final evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PANAX_RDRP_VALIDATION_OBSERVATION
+          path: observation
+          if-no-files-found: error
+          retention-days: 30
