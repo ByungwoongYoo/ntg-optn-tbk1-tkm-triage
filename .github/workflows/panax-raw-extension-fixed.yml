@@ -1,0 +1,323 @@
+name: Panax six-library raw-read variant and extension audit
+
+on:
+  push:
+    branches: [panax-impact-finalization-20260818]
+    paths:
+      - '.github/workflows/panax-raw-extension-fixed.yml'
+      - 'virus_hunt/validation_inputs/candidate_contigs.fna'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  extend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        run: [DRR853907, DRR853908, DRR853909, DRR853910, DRR853911, DRR853912]
+    env:
+      RUN: ${{ matrix.run }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install mapping, variant, and targeted-assembly tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq pigz minimap2 samtools bcftools seqkit spades
+          python -m pip install biopython==1.85
+
+      - name: Download and verify complete paired FASTQ files resiliently
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="raw_extension_fixed/${RUN}"
+          mkdir -p "$OUT/fastq" "$OUT/mapping" "$OUT/variants" "$OUT/assembly"
+          curl -fsSL --retry 12 --retry-all-errors -G 'https://www.ebi.ac.uk/ena/portal/api/filereport' \
+            --data-urlencode "accession=${RUN}" \
+            --data-urlencode 'result=read_run' \
+            --data-urlencode 'fields=run_accession,study_accession,sample_accession,experiment_accession,scientific_name,sample_title,library_strategy,library_source,library_selection,library_layout,instrument_platform,instrument_model,base_count,read_count,first_public,last_updated,country,collection_date,fastq_ftp,fastq_md5,fastq_bytes' \
+            --data-urlencode 'format=tsv' \
+            -o "$OUT/ena_run_metadata.tsv"
+          python - "$OUT/ena_run_metadata.tsv" "$OUT/fastq/urls.tsv" <<'PY'
+          import csv,sys
+          rows=list(csv.DictReader(open(sys.argv[1]),delimiter='\t'))
+          if len(rows)!=1:
+              raise SystemExit(f'expected one ENA row, got {len(rows)}')
+          r=rows[0]
+          urls=r['fastq_ftp'].split(';'); md5s=r['fastq_md5'].split(';'); sizes=r['fastq_bytes'].split(';')
+          if len(urls)!=2 or len(md5s)!=2 or len(sizes)!=2:
+              raise SystemExit('complete paired FASTQ metadata not found')
+          with open(sys.argv[2],'w') as f:
+              for mate,(url,md5,size) in enumerate(zip(urls,md5s,sizes),1):
+                  f.write(f'{mate}\thttps://{url}\t{md5}\t{size}\n')
+          PY
+
+          while IFS=$'\t' read -r mate url expected_md5 expected_size; do
+            file="$OUT/fastq/${RUN}_${mate}.fastq.gz"
+            ok=0
+            for attempt in 1 2 3 4 5; do
+              echo "download attempt ${attempt}: ${url}"
+              curl -fL --retry 20 --retry-all-errors --retry-delay 3 \
+                --connect-timeout 30 --speed-time 120 --speed-limit 1024 \
+                --continue-at - --output "$file" "$url" || true
+              actual_size=$(stat -c %s "$file" 2>/dev/null || echo 0)
+              if [[ "$actual_size" == "$expected_size" ]] \
+                 && echo "$expected_md5  $file" | md5sum -c - \
+                 && pigz -t "$file"; then
+                ok=1; break
+              fi
+              sleep 5
+            done
+            [[ "$ok" == 1 ]] || { echo "failed to obtain verified FASTQ mate ${mate}" >&2; exit 2; }
+          done < "$OUT/fastq/urls.tsv"
+          sha256sum "$OUT"/fastq/*.fastq.gz > "$OUT/FASTQ_SHA256.txt"
+
+      - name: Map full read pairs and calculate normalized support
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="raw_extension_fixed/${RUN}"
+          REF=virus_hunt/validation_inputs/candidate_contigs.fna
+          samtools faidx "$REF"
+          minimap2 -t 4 -ax sr "$REF" \
+            <(pigz -dc "$OUT/fastq/${RUN}_1.fastq.gz") \
+            <(pigz -dc "$OUT/fastq/${RUN}_2.fastq.gz") \
+            2> "$OUT/mapping/minimap2.stderr.txt" \
+            | samtools sort -@ 3 -o "$OUT/mapping/${RUN}.bam" -
+          samtools index "$OUT/mapping/${RUN}.bam"
+          samtools flagstat "$OUT/mapping/${RUN}.bam" > "$OUT/mapping/flagstat.txt"
+          samtools coverage "$OUT/mapping/${RUN}.bam" > "$OUT/mapping/samtools_coverage.tsv"
+          samtools idxstats "$OUT/mapping/${RUN}.bam" > "$OUT/mapping/idxstats.tsv"
+          python - "$RUN" <<'PY'
+          import csv,json,pathlib,sys
+          run=sys.argv[1]; root=pathlib.Path('raw_extension_fixed')/run
+          meta=list(csv.DictReader(open(root/'ena_run_metadata.tsv'),delimiter='\t'))[0]
+          total=int(meta.get('read_count') or 0)
+          rows=[]
+          for r in csv.DictReader(open(root/'mapping/samtools_coverage.tsv'),delimiter='\t'):
+              mapped=int(r.get('numreads') or 0)
+              rows.append({
+                  'run':run,'lineage':r['#rname'],'reference_length':int(r['endpos']),
+                  'input_read_count':total,'mapped_reads':mapped,
+                  'mapped_reads_per_million':mapped/total*1e6 if total else None,
+                  'coverage_percent':float(r['coverage']),'mean_depth':float(r['meandepth']),
+                  'mean_base_quality':float(r['meanbaseq']),'mean_mapping_quality':float(r['meanmapq'])})
+          with open(root/'mapping/coverage_normalized.tsv','w',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=list(rows[0]),delimiter='\t'); w.writeheader(); w.writerows(rows)
+          (root/'mapping/coverage_normalized.json').write_text(json.dumps(rows,indent=2)+'\n')
+          PY
+
+      - name: Call stringent variants and create low-depth-masked consensuses
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="raw_extension_fixed/${RUN}"
+          REF=virus_hunt/validation_inputs/candidate_contigs.fna
+          for LIN in PNX_Duplo_A PNX_Duplo_B PNX_Picorna_A PNX_Picorna_B; do
+            D="$OUT/variants/$LIN"; mkdir -p "$D"
+            samtools depth -aa -q 20 -Q 25 -r "$LIN" "$OUT/mapping/${RUN}.bam" > "$D/depth.tsv"
+            awk '$3<5 {print $1"\t"$2-1"\t"$2}' "$D/depth.tsv" > "$D/low_depth_lt5.bed"
+            bcftools mpileup -Ou -f "$REF" -r "$LIN" -q 20 -Q 25 -d 100000 \
+              -a FORMAT/DP,FORMAT/AD "$OUT/mapping/${RUN}.bam" \
+              | bcftools call -mv -Oz -o "$D/raw.vcf.gz" || true
+            if [[ -s "$D/raw.vcf.gz" ]]; then
+              bcftools index -f "$D/raw.vcf.gz"
+              bcftools filter -i 'QUAL>=30 && FORMAT/DP>=10 && (FORMAT/AD[1]/FORMAT/DP)>=0.80' \
+                "$D/raw.vcf.gz" -Oz -o "$D/high_confidence.vcf.gz" || true
+              bcftools index -f "$D/high_confidence.vcf.gz" || true
+            else
+              bcftools view -h "$D/raw.vcf.gz" 2>/dev/null | bgzip -c > "$D/high_confidence.vcf.gz" || true
+            fi
+            samtools faidx "$REF" "$LIN" > "$D/reference.fna"
+            if [[ -s "$D/high_confidence.vcf.gz" ]]; then
+              bcftools consensus -m "$D/low_depth_lt5.bed" -f "$D/reference.fna" \
+                "$D/high_confidence.vcf.gz" > "$D/consensus_masked.fna" 2> "$D/consensus.stderr.txt" \
+                || cp "$D/reference.fna" "$D/consensus_masked.fna"
+              bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%QUAL[\t%DP\t%AD]\n' \
+                "$D/high_confidence.vcf.gz" > "$D/high_confidence_variants.tsv" || true
+            else
+              cp "$D/reference.fna" "$D/consensus_masked.fna"
+              : > "$D/high_confidence_variants.tsv"
+            fi
+            sed -i "1s/.*/>${RUN}|${LIN}/" "$D/consensus_masked.fna"
+          done
+          cat "$OUT"/variants/*/consensus_masked.fna > "$OUT/variants/${RUN}_all_masked_consensus.fna"
+
+      - name: Targeted read-pair assembly for the two divergent Picornavirales-like candidates
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="raw_extension_fixed/${RUN}"
+          REF=virus_hunt/validation_inputs/candidate_contigs.fna
+          for LIN in PNX_Picorna_A PNX_Picorna_B; do
+            D="$OUT/assembly/$LIN"; mkdir -p "$D"
+            samtools view -F 0x904 -q 20 "$OUT/mapping/${RUN}.bam" "$LIN" | cut -f1 | sort -u > "$D/read_names.txt"
+            N=$(wc -l < "$D/read_names.txt")
+            echo "$N" > "$D/mapped_name_count.txt"
+            if [[ "$N" -lt 20 ]]; then
+              echo 'insufficient_mapped_read_names' > "$D/ASSEMBLY_STATUS.txt"
+              continue
+            fi
+            seqkit grep -f "$D/read_names.txt" "$OUT/fastq/${RUN}_1.fastq.gz" -o "$D/R1.fastq.gz"
+            seqkit grep -f "$D/read_names.txt" "$OUT/fastq/${RUN}_2.fastq.gz" -o "$D/R2.fastq.gz"
+            if command -v rnaviralspades.py >/dev/null 2>&1; then ASSEMBLER=rnaviralspades.py; else ASSEMBLER=rnaspades.py; fi
+            timeout 100m "$ASSEMBLER" -1 "$D/R1.fastq.gz" -2 "$D/R2.fastq.gz" -o "$D/spades" -t 4 -m 7 \
+              > "$D/assembly.log" 2>&1 || true
+            ASM=''
+            for c in "$D/spades/transcripts.fasta" "$D/spades/scaffolds.fasta" "$D/spades/contigs.fasta"; do
+              [[ -s "$c" ]] && ASM="$c" && break
+            done
+            if [[ -z "$ASM" ]]; then
+              echo 'assembler_no_output' > "$D/ASSEMBLY_STATUS.txt"
+              rm -f "$D/R1.fastq.gz" "$D/R2.fastq.gz"; rm -rf "$D/spades"
+              continue
+            fi
+            samtools faidx "$REF" "$LIN" > "$D/seed.fna"
+            blastn -query "$D/seed.fna" -subject "$ASM" -task dc-megablast -evalue 1e-10 \
+              -outfmt '6 qseqid sseqid pident length qlen slen qstart qend sstart send evalue bitscore qcovhsp' \
+              -out "$D/seed_to_assembly.tsv" || true
+            python - "$D" "$ASM" "$LIN" <<'PY'
+          from Bio import SeqIO
+          import csv,json,pathlib,sys
+          d=pathlib.Path(sys.argv[1]); asm=pathlib.Path(sys.argv[2]); lin=sys.argv[3]
+          hits=[]
+          p=d/'seed_to_assembly.tsv'
+          if p.exists():
+              for v in csv.reader(open(p),delimiter='\t'):
+                  if len(v)>=13: hits.append(v)
+          best=max(hits,key=lambda v:(float(v[12]),float(v[11]),int(v[5]))) if hits else None
+          recs={r.id:r for r in SeqIO.parse(asm,'fasta')}
+          if best and best[1] in recs:
+              r=recs[best[1]]; r.id=f'{lin}|{d.parent.parent.name}|targeted_extension'; r.description=''
+              SeqIO.write([r],d/'best_extension.fna','fasta')
+              out={'status':'hit_bearing_assembly','subject':best[1],'seed_identity':float(best[2]),
+                   'alignment_length':int(best[3]),'seed_length':int(best[4]),'assembly_length':len(r.seq),
+                   'seed_query_coverage':float(best[12])}
+          else:
+              out={'status':'no_seed_bearing_assembly'}
+          (d/'ASSEMBLY_SUMMARY.json').write_text(json.dumps(out,indent=2)+'\n')
+          (d/'ASSEMBLY_STATUS.txt').write_text(out['status']+'\n')
+          PY
+            rm -f "$D/R1.fastq.gz" "$D/R2.fastq.gz"; rm -rf "$D/spades"
+          done
+
+      - name: Summarize and preserve compact evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="raw_extension_fixed/${RUN}"
+          python - "$RUN" <<'PY'
+          import csv,json,pathlib,sys
+          run=sys.argv[1]; root=pathlib.Path('raw_extension_fixed')/run
+          coverage={r['lineage']:r for r in csv.DictReader(open(root/'mapping/coverage_normalized.tsv'),delimiter='\t')}
+          rows=[]
+          for lin in ['PNX_Duplo_A','PNX_Duplo_B','PNX_Picorna_A','PNX_Picorna_B']:
+              p=root/'assembly'/lin/'ASSEMBLY_SUMMARY.json'
+              statusp=root/'assembly'/lin/'ASSEMBLY_STATUS.txt'
+              asm=json.load(open(p)) if p.exists() else {'status':statusp.read_text().strip() if statusp.exists() else 'not_attempted'}
+              varfile=root/'variants'/lin/'high_confidence_variants.tsv'
+              nvar=sum(1 for line in open(varfile) if line.strip()) if varfile.exists() else 0
+              depth=list(csv.reader(open(root/'variants'/lin/'depth.tsv'),delimiter='\t'))
+              callable_bases=sum(1 for v in depth if len(v)>=3 and int(v[2])>=5)
+              c=coverage.get(lin,{})
+              rows.append({'run':run,'lineage':lin,'mapped_reads':c.get('mapped_reads',''),
+                  'mapped_reads_per_million':c.get('mapped_reads_per_million',''),
+                  'coverage_percent':c.get('coverage_percent',''),'mean_depth':c.get('mean_depth',''),
+                  'callable_bases_dp5':callable_bases,'high_confidence_variant_count':nvar,
+                  'assembly_status':asm.get('status',''),'assembly_length':asm.get('assembly_length',''),
+                  'seed_query_coverage':asm.get('seed_query_coverage',''),'seed_identity':asm.get('seed_identity','')})
+          with open(root/'RAW_EXTENSION_SUMMARY.tsv','w',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=list(rows[0]),delimiter='\t'); w.writeheader(); w.writerows(rows)
+          (root/'RAW_EXTENSION_SUMMARY.json').write_text(json.dumps(rows,indent=2)+'\n')
+          md=['# Six-library raw-read variant and extension audit','',f'Run: `{run}`','',
+              '| Lineage | Mapped reads | RPM | Coverage | Mean depth | Callable DP>=5 | HC variants | Targeted assembly | Length |',
+              '|---|---:|---:|---:|---:|---:|---:|---|---:|']
+          for r in rows:
+              md.append(f"| `{r['lineage']}` | {r['mapped_reads']} | {r['mapped_reads_per_million']} | {r['coverage_percent']}% | {r['mean_depth']}x | {r['callable_bases_dp5']} | {r['high_confidence_variant_count']} | {r['assembly_status']} | {r['assembly_length'] or 'NA'} |")
+          md += ['', 'Consensus sequences are reference-guided and positions below 5x depth are masked. Distinct high-confidence variants weaken, but do not eliminate, lane-level contamination or index-hopping explanations. Archive objects do not prove independent infections or the true biological host.']
+          (root/'RAW_EXTENSION_REPORT.md').write_text('\n'.join(md)+'\n')
+          PY
+          find "$OUT" -type f ! -path "$OUT/fastq/*" ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > "$OUT/SHA256SUMS.txt"
+          rm -rf "$OUT/fastq" "$OUT/mapping/${RUN}.bam" "$OUT/mapping/${RUN}.bam.bai"
+          cat "$OUT/RAW_EXTENSION_REPORT.md"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PANAX_RAW_EXTENSION_FIXED_${{ matrix.run }}_20260818
+          path: raw_extension_fixed/${{ matrix.run }}
+          retention-days: 30
+          compression-level: 9
+
+  aggregate:
+    needs: extend
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: PANAX_RAW_EXTENSION_FIXED_*_20260818
+          path: all_runs
+          merge-multiple: false
+      - name: Aggregate coverage, variants, and masked-consensus identities
+        shell: bash
+        run: |
+          python -m pip install biopython==1.85
+          python - <<'PY'
+          from Bio import SeqIO
+          from Bio.Align import PairwiseAligner
+          import csv,json,pathlib,itertools,hashlib
+          root=pathlib.Path('all_runs'); out=pathlib.Path('aggregate'); out.mkdir()
+          summaries=[]; consensuses={}; extensions=[]
+          for p in root.rglob('RAW_EXTENSION_SUMMARY.tsv'):
+              summaries += list(csv.DictReader(open(p),delimiter='\t'))
+          for p in root.rglob('*_all_masked_consensus.fna'):
+              for r in SeqIO.parse(p,'fasta'):
+                  run,lin=r.id.split('|',1); consensuses[(lin,run)]=str(r.seq).upper()
+          for p in root.rglob('best_extension.fna'):
+              for r in SeqIO.parse(p,'fasta'):
+                  extensions.append({'id':r.id,'length':len(r.seq),'path':str(p)})
+          if summaries:
+              with open(out/'ALL_RUN_SUMMARIES.tsv','w',newline='') as f:
+                  w=csv.DictWriter(f,fieldnames=list(summaries[0]),delimiter='\t'); w.writeheader(); w.writerows(summaries)
+          pair_rows=[]
+          for lin in sorted({k[0] for k in consensuses}):
+              runs=sorted(k[1] for k in consensuses if k[0]==lin)
+              for a,b in itertools.combinations(runs,2):
+                  s1=consensuses[(lin,a)]; s2=consensuses[(lin,b)]
+                  n=min(len(s1),len(s2)); compared=matches=diff=0
+                  for x,y in zip(s1[:n],s2[:n]):
+                      if x in 'ACGT' and y in 'ACGT':
+                          compared+=1; matches += (x==y); diff += (x!=y)
+                  pair_rows.append({'lineage':lin,'run_a':a,'run_b':b,'joint_callable_bases':compared,
+                      'differences':diff,'identity_percent':100*matches/compared if compared else None})
+          with open(out/'PAIRWISE_MASKED_CONSENSUS_IDENTITY.tsv','w',newline='') as f:
+              fields=['lineage','run_a','run_b','joint_callable_bases','differences','identity_percent']
+              w=csv.DictWriter(f,fieldnames=fields,delimiter='\t'); w.writeheader(); w.writerows(pair_rows)
+          (out/'TARGETED_EXTENSIONS.json').write_text(json.dumps(extensions,indent=2)+'\n')
+          md=['# Aggregate six-library audit','',f'- Run-lineage summary rows: **{len(summaries)}**',
+              f'- Masked-consensus pair comparisons: **{len(pair_rows)}**',
+              f'- Targeted extension contigs recovered: **{len(extensions)}**','',
+              '## Picornavirales-like pairwise differences','',
+              '| Lineage | Run A | Run B | Joint callable bases | Differences | Identity |',
+              '|---|---|---|---:|---:|---:|']
+          for r in pair_rows:
+              if r['lineage'] in {'PNX_Picorna_A','PNX_Picorna_B'}:
+                  ident='NA' if r['identity_percent'] is None else f"{r['identity_percent']:.4f}%"
+                  md.append(f"| `{r['lineage']}` | `{r['run_a']}` | `{r['run_b']}` | {r['joint_callable_bases']} | {r['differences']} | {ident} |")
+          md += ['', 'Pairwise consensus evidence is reference-guided and positions with depth below 5x are excluded. It is evidence about sequence recurrence and within-project variation, not proof of the host, active replication, pathogenicity, or epidemiological independence.']
+          (out/'AGGREGATE_REPORT.md').write_text('\n'.join(md)+'\n')
+          PY
+          find aggregate -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > aggregate/SHA256SUMS.txt
+          cat aggregate/AGGREGATE_REPORT.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PANAX_RAW_EXTENSION_FIXED_AGGREGATE_20260818
+          path: aggregate
+          retention-days: 30
+          compression-level: 9
