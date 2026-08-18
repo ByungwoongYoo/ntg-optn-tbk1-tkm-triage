@@ -1,0 +1,64 @@
+name: PR-visible HMMER audit of Panax RdRP candidates
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/panax-rdrp-hmmer-pr.yml'
+      - 'virus_hunt/hmmer_audit/**'
+      - 'virus_hunt/validation_inputs/candidate_rdrp.faa'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: panax-rdrp-hmmer-pr-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Checkout candidate branch
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install biopython==1.85 requests==2.32.5
+
+      - name: Query current UniProtKB and Pfam through HMMER-web API
+        run: |
+          set -o pipefail
+          rm -rf hmmer_pr_results
+          mkdir -p hmmer_pr_results
+          python virus_hunt/hmmer_audit/run_hmmer_api.py \
+            --fasta virus_hunt/validation_inputs/candidate_rdrp.faa \
+            --out hmmer_pr_results \
+            2>&1 | tee hmmer_pr_results/console.log
+
+      - name: Record provenance and checksums
+        if: always()
+        run: |
+          {
+            echo "generated_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "repository=${GITHUB_REPOSITORY}"
+            echo "workflow_sha=${GITHUB_SHA}"
+            echo "pull_request_head=${{ github.event.pull_request.head.sha }}"
+            python --version
+            python -m pip freeze
+          } > hmmer_pr_results/WORKFLOW_PROVENANCE.txt
+          find hmmer_pr_results -type f ! -name SHA256SUMS_COMPLETE.txt -print0 \
+            | sort -z | xargs -0 sha256sum > hmmer_pr_results/SHA256SUMS_COMPLETE.txt
+
+      - name: Upload immutable HMMER audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PANAX_RDRP_HMMER_AUDIT_PR_20260818
+          path: hmmer_pr_results
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 9
