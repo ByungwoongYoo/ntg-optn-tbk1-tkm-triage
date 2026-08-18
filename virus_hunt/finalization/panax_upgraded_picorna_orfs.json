@@ -1,0 +1,30 @@
+[
+  {
+    "name": "PNX_Picorna_A_long",
+    "source_run": "DRR853912",
+    "source_contig": "DRR853912_10707",
+    "source_contig_nt_length": 1988,
+    "orf_aa_length": 606,
+    "orf_nt_length": 1818,
+    "strand": "-",
+    "frame": 1,
+    "original_coordinates_1based": "171-1988",
+    "five_prime_boundary": "contig boundary/no upstream stop",
+    "three_prime_boundary": "stop codon immediately downstream",
+    "interpretation": "partial C-terminal polyprotein ORF containing RdRP; not a complete viral genome"
+  },
+  {
+    "name": "PNX_Picorna_B_long",
+    "source_run": "DRR853910",
+    "source_contig": "DRR853910_21434",
+    "source_contig_nt_length": 3458,
+    "orf_aa_length": 1135,
+    "orf_nt_length": 3405,
+    "strand": "-",
+    "frame": 3,
+    "original_coordinates_1based": "52-3456",
+    "five_prime_boundary": "contig boundary/no upstream stop",
+    "three_prime_boundary": "stop codon immediately downstream",
+    "interpretation": "partial C-terminal polyprotein ORF containing RdRP; not a complete viral genome"
+  }
+]
