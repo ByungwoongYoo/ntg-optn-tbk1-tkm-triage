@@ -1,0 +1,107 @@
+name: PR-visible parallel EBI BLAST audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/panax-rdrp-ebi-blast-pr.yml'
+      - 'virus_hunt/ebi_blast/**'
+      - 'virus_hunt/validation_inputs/candidate_*.f*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: panax-rdrp-ebi-blast-pr-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  search:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        query: [PNX_Duplo_A, PNX_Duplo_B, PNX_Picorna_A, PNX_Picorna_B]
+        search: [protein, nucleotide]
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          python -m pip install --upgrade pip
+          python -m pip install biopython==1.85 requests==2.32.5
+      - name: Run current EBI BLAST
+        env:
+          QUERY: ${{ matrix.query }}
+          SEARCH: ${{ matrix.search }}
+        run: |
+          set -euo pipefail
+          out="ebi_blast_pr/${QUERY}_${SEARCH}"
+          mkdir -p "$out"
+          if [[ "$SEARCH" == protein ]]; then
+            program=blastp; database=uniprotkb; fasta=virus_hunt/validation_inputs/candidate_rdrp.faa
+          else
+            program=blastn; database=em_rel; fasta=virus_hunt/validation_inputs/candidate_contigs.fna
+          fi
+          python virus_hunt/ebi_blast/run_ebi_blast.py \
+            --query-id "$QUERY" --program "$program" --database "$database" \
+            --fasta "$fasta" --email yoonge3@gmail.com \
+            --out "$out" --max-minutes 60 \
+            2>&1 | tee "$out/console.log"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ebi-blast-pr-${{ matrix.query }}-${{ matrix.search }}
+          path: ebi_blast_pr/${{ matrix.query }}_${{ matrix.search }}
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 9
+
+  aggregate:
+    needs: [search]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ebi-blast-pr-*
+          path: aggregate
+          merge-multiple: false
+      - name: Build aggregate tables
+        run: |
+          python - <<'PY'
+          import csv,json,pathlib
+          from datetime import datetime,timezone
+          root=pathlib.Path('aggregate');out=pathlib.Path('final');out.mkdir()
+          statuses=[];hits=[]
+          for p in sorted(root.rglob('STATUS.json')):
+              d=json.load(open(p));d['artifact_path']=str(p);statuses.append(d)
+          for p in sorted(root.rglob('hits.tsv')):
+              with open(p) as f:
+                  for r in csv.DictReader(f,delimiter='\t'):
+                      r['artifact_path']=str(p);hits.append(r)
+          (out/'COMBINED_STATUS.json').write_text(json.dumps(statuses,indent=2)+'\n')
+          fields=[]
+          for r in hits:
+              for k in r:
+                  if k not in fields: fields.append(k)
+          with (out/'COMBINED_HITS.tsv').open('w',newline='') as f:
+              if fields:
+                  w=csv.DictWriter(f,fieldnames=fields,delimiter='\t');w.writeheader();w.writerows(hits)
+              else:f.write('query\tprogram\tdatabase\taccession\n')
+          summary={'generated_utc':datetime.now(timezone.utc).isoformat(),'expected':8,
+                   'statuses':len(statuses),'successes':sum(bool(x.get('success')) for x in statuses),
+                   'failures':[x for x in statuses if not x.get('success')],'alignment_rows':len(hits)}
+          (out/'SUMMARY.json').write_text(json.dumps(summary,indent=2)+'\n');print(json.dumps(summary,indent=2))
+          PY
+          cp -a aggregate final/evidence
+          find final -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > final/SHA256SUMS.txt
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PANAX_RDRP_EBI_BLAST_PR_AUDIT_20260818
+          path: final
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 9
