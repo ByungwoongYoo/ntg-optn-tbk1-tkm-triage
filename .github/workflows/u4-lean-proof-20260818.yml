@@ -1,0 +1,34 @@
+name: Ulrich u4 Lean non-derivability proof 20260818
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/u4/U4NonDerivability.lean'
+      - '.github/workflows/u4-lean-proof-20260818.yml'
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install current stable Lean 4
+        run: |
+          curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain stable
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Check the formal proof
+        run: |
+          mkdir -p artifact/u4_lean
+          lean --version | tee artifact/u4_lean/LEAN_VERSION.txt
+          set -o pipefail
+          lean crossdomain/u4/U4NonDerivability.lean 2>&1 | tee artifact/u4_lean/LEAN_CHECK.log
+          cp crossdomain/u4/U4NonDerivability.lean artifact/u4_lean/
+          printf '%s\n' 'SOLVED_NEGATIVE_FORMAL_PROOF_CHECKED' > artifact/u4_lean/STATUS.txt
+          sha256sum artifact/u4_lean/U4NonDerivability.lean artifact/u4_lean/LEAN_VERSION.txt artifact/u4_lean/LEAN_CHECK.log artifact/u4_lean/STATUS.txt > artifact/u4_lean/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: U4-LEAN-FORMAL-PROOF-20260818
+          path: artifact/u4_lean
+          retention-days: 90
+          if-no-files-found: error
