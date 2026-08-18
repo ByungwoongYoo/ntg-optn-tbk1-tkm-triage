@@ -1,0 +1,194 @@
+name: B2 Z100 global normalized DRAT proof 20260818
+
+on:
+  push:
+    branches: [b2-z100-final-proof-audit-20260818]
+    paths:
+      - 'crossdomain/b2_z100_global_proof_cnf.py'
+      - 'crossdomain/b2_z100_verify_cadical_model.py'
+      - '.github/workflows/b2-z100-global-drat-proof-20260818.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      CADICAL_COMMIT: c60730422e758ef1cebe7aeddf2dda31c996bf04
+      DRAT_TRIM_COMMIT: 2e3b2dc0ecf938addbd779d42877b6ed69d9a985
+      EXPECTED_GENERATOR_SHA256: 26c5a76f931db2445615abc9fe3d0dea5106d1976c008a1e3cfb221125d9a35c
+      EXPECTED_MODEL_CHECKER_SHA256: b97f351e7ebe89b259b648c9e541439ba79aa41146ed9398564123de5750e10a
+      EXPECTED_CNF_SHA256: 8b16e02825ca792cbca87ae49a1dbb6cf610ff102eb7144bfa25c98aa2be1662
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Freeze environment and verify submitted sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifact
+          {
+            date -u +'%Y-%m-%dT%H:%M:%SZ'
+            uname -a
+            lscpu
+            python --version
+            gcc --version
+            g++ --version
+            df -h
+            printf 'repository=%s\nref=%s\nsha=%s\nrun_id=%s\n' "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" "$GITHUB_SHA" "$GITHUB_RUN_ID"
+          } > artifact/ENVIRONMENT.txt 2>&1
+          echo "$EXPECTED_GENERATOR_SHA256  crossdomain/b2_z100_global_proof_cnf.py" | sha256sum -c -
+          echo "$EXPECTED_MODEL_CHECKER_SHA256  crossdomain/b2_z100_verify_cadical_model.py" | sha256sum -c -
+
+      - name: Generate the independent global normalized CNF twice
+        shell: bash
+        run: |
+          set -euo pipefail
+          python crossdomain/b2_z100_global_proof_cnf.py             --output artifact/b2_z100_global_normalized.cnf             --metadata artifact/b2_z100_global_normalized.metadata.json             > artifact/generator_stdout.log
+          python crossdomain/b2_z100_global_proof_cnf.py             --output artifact/b2_z100_global_normalized.second.cnf             --metadata artifact/b2_z100_global_normalized.second.metadata.json             > artifact/generator_second_stdout.log
+          cmp artifact/b2_z100_global_normalized.cnf artifact/b2_z100_global_normalized.second.cnf
+          echo "$EXPECTED_CNF_SHA256  artifact/b2_z100_global_normalized.cnf" | sha256sum -c -
+          rm artifact/b2_z100_global_normalized.second.cnf artifact/b2_z100_global_normalized.second.metadata.json
+          python - <<'PY'
+          import json
+          p='artifact/b2_z100_global_normalized.metadata.json'
+          d=json.load(open(p))
+          assert d['variables']==24701, d
+          assert d['clauses']==59053, d
+          assert d['cnf_sha256']=='8b16e02825ca792cbca87ae49a1dbb6cf610ff102eb7144bfa25c98aa2be1662', d
+          assert d['normalization']==[0,1], d
+          print('GLOBAL_CNF_METADATA_CHECK_PASS')
+          PY
+
+      - name: Build pinned CaDiCaL and drat-trim
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone https://github.com/arminbiere/cadical.git /tmp/cadical
+          git -C /tmp/cadical checkout "$CADICAL_COMMIT"
+          test "$(git -C /tmp/cadical rev-parse HEAD)" = "$CADICAL_COMMIT"
+          (cd /tmp/cadical && ./configure && make -j2)
+          git clone https://github.com/marijnheule/drat-trim.git /tmp/drat-trim
+          git -C /tmp/drat-trim checkout "$DRAT_TRIM_COMMIT"
+          test "$(git -C /tmp/drat-trim rev-parse HEAD)" = "$DRAT_TRIM_COMMIT"
+          make -C /tmp/drat-trim -j2
+          /tmp/cadical/build/cadical --version > artifact/CADICAL_VERSION.txt
+          /tmp/cadical/build/cadical --build >> artifact/CADICAL_VERSION.txt
+          printf '%s\n' "$CADICAL_COMMIT" > artifact/CADICAL_COMMIT.txt
+          printf '%s\n' "$DRAT_TRIM_COMMIT" > artifact/DRAT_TRIM_COMMIT.txt
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zstd
+
+      - name: Generate SAT/UNSAT result and DRAT proof, fail closed on timeout
+        id: solve
+        shell: bash
+        run: |
+          set -euo pipefail
+          cnf=artifact/b2_z100_global_normalized.cnf
+          proof=artifact/b2_z100_global_normalized.drat
+          model=artifact/b2_z100_global_normalized.model
+          set +e
+          /usr/bin/time -v timeout --signal=TERM --kill-after=60 16500             /tmp/cadical/build/cadical -w "$model" "$cnf" "$proof"             > artifact/cadical.log 2> artifact/cadical_time.log
+          rc=$?
+          set -e
+          printf '%s\n' "$rc" > artifact/cadical_exit_code.txt
+          case "$rc" in
+            20) status=UNSAT_REPORTED_PROOF_PENDING_CHECK ;;
+            10) status=SAT_REPORTED_MODEL_PENDING_CHECK ;;
+            124|143) status=TIMEOUT_NOT_EVIDENCE ;;
+            *) status="SOLVER_ERROR_$rc" ;;
+          esac
+          printf '%s\n' "$status" > artifact/STATUS.txt
+          echo "solver_status=$status" >> "$GITHUB_OUTPUT"
+          df -h > artifact/DISK_AFTER_SOLVE.txt
+
+      - name: Verify the exact CNF/proof pair or the exact SAT assignment
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=$(cat artifact/STATUS.txt)
+          if [ "$status" = UNSAT_REPORTED_PROOF_PENDING_CHECK ]; then
+            set +e
+            /usr/bin/time -v timeout --signal=TERM --kill-after=60 4200               /tmp/drat-trim/drat-trim               artifact/b2_z100_global_normalized.cnf               artifact/b2_z100_global_normalized.drat               > artifact/drat_check.log 2> artifact/drat_check_time.log
+            rc=$?
+            set -e
+            printf '%s\n' "$rc" > artifact/drat_check_exit_code.txt
+            if [ "$rc" -eq 0 ] && grep -q 'VERIFIED' artifact/drat_check.log; then
+              printf 'VERIFIED_UNSAT\n' > artifact/STATUS.txt
+            elif [ "$rc" -eq 124 ] || [ "$rc" -eq 143 ]; then
+              printf 'UNSAT_PROOF_CHECK_TIMEOUT_NOT_VERIFIED\n' > artifact/STATUS.txt
+            else
+              printf 'UNSAT_PROOF_CHECK_FAILED_%s\n' "$rc" > artifact/STATUS.txt
+            fi
+          elif [ "$status" = SAT_REPORTED_MODEL_PENDING_CHECK ]; then
+            if python crossdomain/b2_z100_verify_cadical_model.py               --cnf artifact/b2_z100_global_normalized.cnf               --model artifact/b2_z100_global_normalized.model               --output artifact/model_verification.json               > artifact/model_verification.log 2>&1; then
+              printf 'VERIFIED_SAT_COUNTEREXAMPLE\n' > artifact/STATUS.txt
+            else
+              printf 'SAT_MODEL_CHECK_FAILED\n' > artifact/STATUS.txt
+            fi
+          fi
+
+      - name: Finalize immutable run metadata and compress proof object
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -s artifact/b2_z100_global_normalized.drat ]; then
+            sha256sum artifact/b2_z100_global_normalized.drat > artifact/DRAT_RAW_SHA256.txt
+            stat -c '%s' artifact/b2_z100_global_normalized.drat > artifact/DRAT_RAW_BYTES.txt
+            zstd -T0 -8 --rm artifact/b2_z100_global_normalized.drat
+          fi
+          python - <<'PY'
+          import hashlib,json,os,pathlib
+          root=pathlib.Path('artifact')
+          def sh(p):
+              h=hashlib.sha256()
+              with p.open('rb') as f:
+                  for b in iter(lambda:f.read(1<<20),b''): h.update(b)
+              return h.hexdigest()
+          status=(root/'STATUS.txt').read_text().strip() if (root/'STATUS.txt').exists() else 'MISSING_STATUS'
+          payload={
+            'schema':'b2-z100-global-proof-run-v1',
+            'status':status,
+            'repository':os.environ.get('GITHUB_REPOSITORY'),
+            'ref':os.environ.get('GITHUB_REF_NAME'),
+            'commit':os.environ.get('GITHUB_SHA'),
+            'run_id':int(os.environ.get('GITHUB_RUN_ID','0')),
+            'run_attempt':int(os.environ.get('GITHUB_RUN_ATTEMPT','0')),
+            'cadical_commit':os.environ['CADICAL_COMMIT'],
+            'drat_trim_commit':os.environ['DRAT_TRIM_COMMIT'],
+            'cnf_sha256':sh(root/'b2_z100_global_normalized.cnf'),
+            'claim_boundary':(
+              'M<=13 is independently checkable from this run only when status is VERIFIED_UNSAT. '
+              'TIMEOUT, solver UNSAT without a checked proof, and unverified SAT are not mathematical evidence.'
+            )
+          }
+          (root/'RUN_RESULT.json').write_text(json.dumps(payload,indent=2,sort_keys=True)+'\n')
+          PY
+          find artifact -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > artifact/SHA256SUMS.txt
+          find artifact -maxdepth 1 -type f -printf '%f\t%s bytes\n' | sort > artifact/FILE_LIST.txt
+
+      - name: Upload every result, including failures and timeouts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b2-z100-global-drat-proof-20260818
+          path: artifact
+          retention-days: 90
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Enforce the proof gate
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=$(cat artifact/STATUS.txt 2>/dev/null || echo MISSING_STATUS)
+          echo "FINAL_STATUS=$status"
+          test "$status" = VERIFIED_UNSAT
