@@ -1,0 +1,36 @@
+name: CASP17 T2461 public template discovery 20260818
+
+on:
+  push:
+    branches: [casp17-t2461-final-20260818]
+    paths:
+      - 'casp17/t2461/discover_templates.py'
+      - '.github/workflows/casp17-t2461-discovery-20260818.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Discover public templates and official public archives
+        run: |
+          set -euo pipefail
+          mkdir -p artifact
+          OUT_DIR=artifact python casp17/t2461/discover_templates.py | tee artifact/stdout.log
+          find artifact -type f -maxdepth 1 -print0 | sort -z | xargs -0 sha256sum > artifact/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: casp17-t2461-discovery-20260818
+          path: artifact
+          retention-days: 30
+          compression-level: 6
+          if-no-files-found: error
