@@ -1,0 +1,46 @@
+[
+  {
+    "lineage": "PNX_Duplo_A",
+    "member_count": "3",
+    "distinct_runs": "3",
+    "runs": "DRR853908;DRR853910;DRR853912",
+    "complete_motif_evidence_all_members": "true",
+    "strong_cross_run_pairs": "3",
+    "cross_run_replication": "strong",
+    "minimum_palmdb_identity": "67.700",
+    "maximum_palmdb_identity": "67.700"
+  },
+  {
+    "lineage": "PNX_Duplo_B",
+    "member_count": "3",
+    "distinct_runs": "3",
+    "runs": "DRR853908;DRR853910;DRR853912",
+    "complete_motif_evidence_all_members": "true",
+    "strong_cross_run_pairs": "3",
+    "cross_run_replication": "strong",
+    "minimum_palmdb_identity": "71.300",
+    "maximum_palmdb_identity": "71.300"
+  },
+  {
+    "lineage": "PNX_Picorna_A",
+    "member_count": "3",
+    "distinct_runs": "2",
+    "runs": "DRR853910;DRR853912",
+    "complete_motif_evidence_all_members": "true",
+    "strong_cross_run_pairs": "1",
+    "cross_run_replication": "strong",
+    "minimum_palmdb_identity": "60.200",
+    "maximum_palmdb_identity": "60.500"
+  },
+  {
+    "lineage": "PNX_Picorna_B",
+    "member_count": "2",
+    "distinct_runs": "2",
+    "runs": "DRR853910;DRR853912",
+    "complete_motif_evidence_all_members": "true",
+    "strong_cross_run_pairs": "1",
+    "cross_run_replication": "strong",
+    "minimum_palmdb_identity": "55.000",
+    "maximum_palmdb_identity": "55.000"
+  }
+]

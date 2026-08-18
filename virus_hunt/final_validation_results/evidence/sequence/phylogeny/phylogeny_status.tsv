@@ -1,0 +1,5 @@
+query	homologs_requested	homologs_retrieved	mafft	fasttree
+PNX_Duplo_A	15	15	exit_0	exit_0
+PNX_Duplo_B	15	15	exit_0	exit_0
+PNX_Picorna_A	15	15	exit_0	exit_0
+PNX_Picorna_B	15	15	exit_0	exit_0

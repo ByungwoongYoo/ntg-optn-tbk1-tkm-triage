@@ -1,6 +1,6 @@
 # Final Panax-associated RdRP validation report
 
-Generated (UTC): 2026-08-18T12:18:42.001779+00:00
+Generated (UTC): 2026-08-18T14:43:35.554367+00:00
 
 ## Overall result
 
@@ -10,7 +10,7 @@ Generated (UTC): 2026-08-18T12:18:42.001779+00:00
 - Supported but archived-sample independence limited: **0**
 - Current near-identity detections: **0**
 - Nonviral/ambiguous preferred matches: **0**
-- ENA independence grade: **`metadata_missing`**
+- ENA independence grade: **`distinct_archived_samples_and_experiments`**
 - Required current-database searches complete: **False**
 
 The strongest permitted interpretation is a sequence-level divergent RNA-dependent RNA polymerase (RdRP) lineage candidate in public Panax-associated transcriptomic data. This report does **not** establish a new virus species, active viral replication, infection of Panax, pathogenicity, transmissibility, or any medical effect.
@@ -19,10 +19,10 @@ The strongest permitted interpretation is a sequence-level divergent RNA-depende
 
 | Lineage | Decision | Assembly runs | Raw-supported runs | PALMdb identity range | Current viral hit | Protein id/qcov | NT id/qcov | Tree |
 |---|---|---:|---:|---:|---|---:|---:|---|
-| `PNX_Duplo_A` | `database_audit_incomplete` | 0 | 0 | 67.7-67.7% | none returned | NA/NA | NA/NA | false |
-| `PNX_Duplo_B` | `database_audit_incomplete` | 0 | 0 | 71.3-71.3% | none returned | NA/NA | NA/NA | false |
-| `PNX_Picorna_A` | `database_audit_incomplete` | 0 | 0 | 60.2-60.5% | none returned | NA/NA | NA/NA | false |
-| `PNX_Picorna_B` | `database_audit_incomplete` | 0 | 0 | 55.0-55.0% | none returned | NA/NA | NA/NA | false |
+| `PNX_Duplo_A` | `database_audit_incomplete` | 3 | 0 | 67.7-67.7% | N/A | 99.725/100 | 100.000/100 | true |
+| `PNX_Duplo_B` | `database_audit_incomplete` | 3 | 0 | 71.3-71.3% | N/A | 100.000/100 | 100.000/98 | true |
+| `PNX_Picorna_A` | `database_audit_incomplete` | 2 | 0 | 60.2-60.5% | N/A | 69.438/100 | NA/NA | true |
+| `PNX_Picorna_B` | `database_audit_incomplete` | 2 | 0 | 55.0-55.0% | N/A | 41.350/75 | NA/NA | true |
 
 ## Strict evidence gates
 
@@ -30,7 +30,7 @@ A strict candidate required: complete A/B/C palm motifs; concordant PSSM/HMM and
 
 ## Independence boundary
 
-The ENA audit grade is `metadata_missing`. Distinct archive accessions do not by themselves prove independent plants, independent infections, or the true host.
+The ENA audit grade is `distinct_archived_samples_and_experiments`. Distinct archive accessions do not by themselves prove independent plants, independent infections, or the true host.
 
 ## What remains necessary for a formal virus discovery
 

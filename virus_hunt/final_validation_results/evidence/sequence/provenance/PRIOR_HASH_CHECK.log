@@ -1,0 +1,10 @@
+all_member_contigs.fna.reconstructed: OK
+all_member_contigs.part1.fna: OK
+all_member_contigs.part2.fna: OK
+all_member_contigs.part3.fna: OK
+all_member_rdrp.faa: OK
+candidate_contigs.fna: OK
+candidate_manifest.json: OK
+candidate_rdrp.faa: OK
+strict_candidate_members.tsv: FAILED
+sha256sum: WARNING: 1 computed checksum did NOT match

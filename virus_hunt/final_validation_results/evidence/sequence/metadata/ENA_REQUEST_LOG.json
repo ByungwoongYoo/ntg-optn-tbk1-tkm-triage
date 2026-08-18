@@ -1,0 +1,20 @@
+[
+  {
+    "run": "DRR853908",
+    "mode": "rich",
+    "request_url": "https://www.ebi.ac.uk/ena/portal/api/filereport?accession=DRR853908&result=read_run&fields=run_accession%2Cstudy_accession%2Csecondary_study_accession%2Csample_accession%2Csecondary_sample_accession%2Cexperiment_accession%2Cscientific_name%2Ctax_id%2Csample_title%2Csample_description%2Clibrary_name%2Clibrary_strategy%2Clibrary_source%2Clibrary_selection%2Clibrary_layout%2Cinstrument_platform%2Cinstrument_model%2Ccenter_name%2Cfirst_public%2Clast_updated%2Ccountry%2Ccollection_date%2Cread_count%2Cbase_count%2Cfastq_ftp%2Cfastq_md5%2Cfastq_bytes&format=tsv",
+    "status": "ok"
+  },
+  {
+    "run": "DRR853910",
+    "mode": "rich",
+    "request_url": "https://www.ebi.ac.uk/ena/portal/api/filereport?accession=DRR853910&result=read_run&fields=run_accession%2Cstudy_accession%2Csecondary_study_accession%2Csample_accession%2Csecondary_sample_accession%2Cexperiment_accession%2Cscientific_name%2Ctax_id%2Csample_title%2Csample_description%2Clibrary_name%2Clibrary_strategy%2Clibrary_source%2Clibrary_selection%2Clibrary_layout%2Cinstrument_platform%2Cinstrument_model%2Ccenter_name%2Cfirst_public%2Clast_updated%2Ccountry%2Ccollection_date%2Cread_count%2Cbase_count%2Cfastq_ftp%2Cfastq_md5%2Cfastq_bytes&format=tsv",
+    "status": "ok"
+  },
+  {
+    "run": "DRR853912",
+    "mode": "rich",
+    "request_url": "https://www.ebi.ac.uk/ena/portal/api/filereport?accession=DRR853912&result=read_run&fields=run_accession%2Cstudy_accession%2Csecondary_study_accession%2Csample_accession%2Csecondary_sample_accession%2Cexperiment_accession%2Cscientific_name%2Ctax_id%2Csample_title%2Csample_description%2Clibrary_name%2Clibrary_strategy%2Clibrary_source%2Clibrary_selection%2Clibrary_layout%2Cinstrument_platform%2Cinstrument_model%2Ccenter_name%2Cfirst_public%2Clast_updated%2Ccountry%2Ccollection_date%2Cread_count%2Cbase_count%2Cfastq_ftp%2Cfastq_md5%2Cfastq_bytes&format=tsv",
+    "status": "ok"
+  }
+]

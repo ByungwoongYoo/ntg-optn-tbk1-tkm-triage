@@ -1,0 +1,5 @@
+lineage	member_count	distinct_runs	runs	complete_motif_evidence_all_members	strong_cross_run_pairs	cross_run_replication	minimum_palmdb_identity	maximum_palmdb_identity
+PNX_Duplo_A	3	3	DRR853908;DRR853910;DRR853912	true	3	strong	67.700	67.700
+PNX_Duplo_B	3	3	DRR853908;DRR853910;DRR853912	true	3	strong	71.300	71.300
+PNX_Picorna_A	3	2	DRR853910;DRR853912	true	1	strong	60.200	60.500
+PNX_Picorna_B	2	2	DRR853910;DRR853912	true	1	strong	55.000	55.000

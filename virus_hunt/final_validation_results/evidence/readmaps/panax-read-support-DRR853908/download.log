@@ -1,43 +1,127 @@
-[2026-08-18T12:16:59Z] downloading https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853908/DRR853908_1.fastq.gz
+[2026-08-18T12:19:09Z] downloading https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853908/DRR853908_1.fastq.gz
 
-08/18 12:17:00 [[1;32mNOTICE[0m] Downloading 1 item(s)
-[#80aff6 192KiB/1.3GiB(0%) CN:4 DL:560KiB ETA:41m13s]
-[#80aff6 4.9MiB/1.3GiB(0%) CN:4 DL:3.6MiB ETA:6m11s]
-[#80aff6 10MiB/1.3GiB(0%) CN:4 DL:4.5MiB ETA:4m52s]
-[#80aff6 16MiB/1.3GiB(1%) CN:4 DL:5.0MiB ETA:4m26s]
-[#80aff6 23MiB/1.3GiB(1%) CN:4 DL:5.2MiB ETA:4m13s]
-[#80aff6 29MiB/1.3GiB(2%) CN:4 DL:5.5MiB ETA:4m]
-[#80aff6 36MiB/1.3GiB(2%) CN:4 DL:5.6MiB ETA:3m53s]
-[#80aff6 42MiB/1.3GiB(3%) CN:4 DL:5.7MiB ETA:3m46s]
-[#80aff6 48MiB/1.3GiB(3%) CN:4 DL:5.8MiB ETA:3m44s]
-[#80aff6 53MiB/1.3GiB(3%) CN:4 DL:5.7MiB ETA:3m47s]
-[#80aff6 58MiB/1.3GiB(4%) CN:4 DL:5.9MiB ETA:3m37s]
-[#80aff6 63MiB/1.3GiB(4%) CN:4 DL:5.8MiB ETA:3m42s]
-[#80aff6 67MiB/1.3GiB(4%) CN:4 DL:5.6MiB ETA:3m47s]
-[#80aff6 72MiB/1.3GiB(5%) CN:4 DL:5.5MiB ETA:3m52s]
-[#80aff6 76MiB/1.3GiB(5%) CN:4 DL:5.3MiB ETA:4m]
-[#80aff6 81MiB/1.3GiB(6%) CN:4 DL:5.0MiB ETA:4m9s]
-[#80aff6 86MiB/1.3GiB(6%) CN:4 DL:4.9MiB ETA:4m17s]
-[#80aff6 91MiB/1.3GiB(6%) CN:4 DL:4.7MiB ETA:4m28s]
-[#80aff6 96MiB/1.3GiB(7%) CN:4 DL:4.7MiB ETA:4m27s]
-
-08/18 12:17:19 [[1;31mERROR[0m] CUID#10 - Download aborted. URI=https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853908/DRR853908_1.fastq.gz
-Exception: [AbstractCommand.cc:351] errorCode=5 URI=https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853908/DRR853908_1.fastq.gz
-  -> [DownloadCommand.cc:309] errorCode=5 Too slow Downloading speed: 0 <= 1024(B/s), host:ftp.sra.ebi.ac.uk
-[#80aff6 100MiB/1.3GiB(7%) CN:3 DL:4.6MiB ETA:4m28s]
-[#80aff6 104MiB/1.3GiB(7%) CN:3 DL:4.6MiB ETA:4m30s]
-[#80aff6 109MiB/1.3GiB(8%) CN:3 DL:4.6MiB ETA:4m29s]
-[#80aff6 114MiB/1.3GiB(8%) CN:3 DL:4.6MiB ETA:4m26s]
-[#80aff6 118MiB/1.3GiB(8%) CN:3 DL:4.6MiB ETA:4m25s]
-[#80aff6 123MiB/1.3GiB(9%) CN:3 DL:4.6MiB ETA:4m22s]
-[#80aff6 128MiB/1.3GiB(9%) CN:3 DL:4.7MiB ETA:4m19s]
-[#80aff6 134MiB/1.3GiB(9%) CN:3 DL:4.7MiB ETA:4m14s]
-[#80aff6 139MiB/1.3GiB(10%) CN:3 DL:4.8MiB ETA:4m11s]
-[#80aff6 144MiB/1.3GiB(10%) CN:3 DL:4.8MiB ETA:4m9s]
-[#80aff6 149MiB/1.3GiB(11%) CN:3 DL:4.9MiB ETA:4m3s]
- *** Download Progress Summary as of Tue Aug 18 12:17:31 2026 *** 
+08/18 12:19:10 [[1;32mNOTICE[0m] Downloading 1 item(s)
+[#150abe 480KiB/1.3GiB(0%) CN:4 DL:1.1MiB ETA:20m27s]
+[#150abe 5.9MiB/1.3GiB(0%) CN:4 DL:4.1MiB ETA:5m28s]
+[#150abe 12MiB/1.3GiB(0%) CN:4 DL:5.1MiB ETA:4m19s]
+[#150abe 18MiB/1.3GiB(1%) CN:4 DL:5.4MiB ETA:4m4s]
+[#150abe 25MiB/1.3GiB(1%) CN:4 DL:5.6MiB ETA:3m54s]
+[#150abe 31MiB/1.3GiB(2%) CN:4 DL:5.8MiB ETA:3m48s]
+[#150abe 37MiB/1.3GiB(2%) CN:4 DL:5.8MiB ETA:3m43s]
+[#150abe 44MiB/1.3GiB(3%) CN:4 DL:5.9MiB ETA:3m40s]
+[#150abe 50MiB/1.3GiB(3%) CN:4 DL:5.9MiB ETA:3m38s]
+[#150abe 56MiB/1.3GiB(4%) CN:4 DL:5.9MiB ETA:3m37s]
+[#150abe 62MiB/1.3GiB(4%) CN:4 DL:6.3MiB ETA:3m24s]
+[#150abe 68MiB/1.3GiB(5%) CN:4 DL:6.2MiB ETA:3m24s]
+[#150abe 75MiB/1.3GiB(5%) CN:4 DL:6.2MiB ETA:3m24s]
+[#150abe 81MiB/1.3GiB(5%) CN:4 DL:6.2MiB ETA:3m24s]
+[#150abe 87MiB/1.3GiB(6%) CN:4 DL:6.2MiB ETA:3m22s]
+[#150abe 93MiB/1.3GiB(6%) CN:4 DL:6.2MiB ETA:3m22s]
+[#150abe 100MiB/1.3GiB(7%) CN:4 DL:6.2MiB ETA:3m20s]
+[#150abe 106MiB/1.3GiB(7%) CN:4 DL:6.2MiB ETA:3m19s]
+[#150abe 113MiB/1.3GiB(8%) CN:4 DL:6.3MiB ETA:3m16s]
+[#150abe 119MiB/1.3GiB(8%) CN:4 DL:6.3MiB ETA:3m14s]
+[#150abe 125MiB/1.3GiB(9%) CN:4 DL:6.2MiB ETA:3m16s]
+[#150abe 130MiB/1.3GiB(9%) CN:4 DL:6.1MiB ETA:3m17s]
+[#150abe 136MiB/1.3GiB(10%) CN:4 DL:6.1MiB ETA:3m19s]
+[#150abe 142MiB/1.3GiB(10%) CN:4 DL:6.0MiB ETA:3m20s]
+[#150abe 148MiB/1.3GiB(10%) CN:4 DL:6.0MiB ETA:3m20s]
+[#150abe 154MiB/1.3GiB(11%) CN:4 DL:5.9MiB ETA:3m20s]
+[#150abe 159MiB/1.3GiB(11%) CN:4 DL:5.9MiB ETA:3m21s]
+[#150abe 165MiB/1.3GiB(12%) CN:4 DL:5.8MiB ETA:3m24s]
+[#150abe 171MiB/1.3GiB(12%) CN:4 DL:5.8MiB ETA:3m23s]
+[#150abe 177MiB/1.3GiB(13%) CN:4 DL:5.8MiB ETA:3m21s]
+ *** Download Progress Summary as of Tue Aug 18 12:19:41 2026 *** 
 ===============================================================================
-[#80aff6 153MiB/1.3GiB(11%) CN:3 DL:4.9MiB ETA:4m4s]
+[#150abe 183MiB/1.3GiB(13%) CN:4 DL:5.8MiB ETA:3m19s]
 FILE: DRR853908.fastq/DRR853908_1.fastq.gz
 -------------------------------------------------------------------------------
 
+[#150abe 183MiB/1.3GiB(13%) CN:4 DL:5.8MiB ETA:3m19s]
+[#150abe 189MiB/1.3GiB(13%) CN:4 DL:5.8MiB ETA:3m17s]
+[#150abe 195MiB/1.3GiB(14%) CN:4 DL:5.9MiB ETA:3m15s]
+[#150abe 200MiB/1.3GiB(14%) CN:4 DL:5.8MiB ETA:3m17s]
+[#150abe 205MiB/1.3GiB(15%) CN:4 DL:5.7MiB ETA:3m19s]
+[#150abe 212MiB/1.3GiB(15%) CN:4 DL:5.8MiB ETA:3m15s]
+[#150abe 218MiB/1.3GiB(16%) CN:4 DL:5.8MiB ETA:3m13s]
+[#150abe 224MiB/1.3GiB(16%) CN:4 DL:5.8MiB ETA:3m13s]
+[#150abe 230MiB/1.3GiB(17%) CN:4 DL:5.9MiB ETA:3m10s]
+[#150abe 236MiB/1.3GiB(17%) CN:4 DL:5.9MiB ETA:3m8s]
+[#150abe 243MiB/1.3GiB(17%) CN:4 DL:5.9MiB ETA:3m6s]
+[#150abe 295MiB/1.3GiB(21%) CN:4 DL:11MiB ETA:1m35s]
+[#150abe 372MiB/1.3GiB(27%) CN:4 DL:18MiB ETA:52s]
+[#150abe 439MiB/1.3GiB(32%) CN:4 DL:25MiB ETA:35s]
+[#150abe 503MiB/1.3GiB(37%) CN:4 DL:32MiB ETA:26s]
+[#150abe 564MiB/1.3GiB(41%) CN:4 DL:38MiB ETA:20s]
+[#150abe 622MiB/1.3GiB(45%) CN:4 DL:43MiB ETA:16s]
+[#150abe 687MiB/1.3GiB(50%) CN:4 DL:50MiB ETA:13s]
+[#150abe 715MiB/1.3GiB(52%) CN:4 DL:53MiB ETA:12s]
+[#150abe 744MiB/1.3GiB(54%) CN:4 DL:50MiB ETA:12s]
+[#150abe 774MiB/1.3GiB(57%) CN:4 DL:53MiB ETA:10s]
+[#150abe 805MiB/1.3GiB(59%) CN:4 DL:51MiB ETA:10s]
+[#150abe 837MiB/1.3GiB(61%) CN:4 DL:46MiB ETA:11s]
+[#150abe 863MiB/1.3GiB(63%) CN:4 DL:42MiB ETA:11s]
+[#150abe 894MiB/1.3GiB(65%) CN:4 DL:39MiB ETA:11s]
+[#150abe 0.9GiB/1.3GiB(68%) CN:4 DL:36MiB ETA:11s]
+[#150abe 0.9GiB/1.3GiB(70%) CN:4 DL:33MiB ETA:12s]
+[#150abe 0.9GiB/1.3GiB(72%) CN:4 DL:29MiB ETA:12s]
+[#150abe 0.9GiB/1.3GiB(73%) CN:4 DL:28MiB ETA:12s]
+[#150abe 1.0GiB/1.3GiB(75%) CN:4 DL:28MiB ETA:11s]
+ *** Download Progress Summary as of Tue Aug 18 12:20:11 2026 *** 
+===============================================================================
+[#150abe 1.0GiB/1.3GiB(76%) CN:4 DL:22MiB ETA:14s]
+FILE: DRR853908.fastq/DRR853908_1.fastq.gz
+-------------------------------------------------------------------------------
+
+[#150abe 1.0GiB/1.3GiB(76%) CN:4 DL:22MiB ETA:14s]
+[#150abe 1.0GiB/1.3GiB(78%) CN:4 DL:22MiB ETA:12s]
+[#150abe 1.0GiB/1.3GiB(80%) CN:4 DL:22MiB ETA:11s]
+[#150abe 1.0GiB/1.3GiB(82%) CN:4 DL:23MiB ETA:10s]
+[#150abe 1.1GiB/1.3GiB(84%) CN:4 DL:21MiB ETA:9s]
+[#150abe 1.1GiB/1.3GiB(84%) CN:4 DL:19MiB ETA:10s]
+[#150abe 1.1GiB/1.3GiB(85%) CN:4 DL:17MiB ETA:11s]
+[#150abe 1.1GiB/1.3GiB(85%) CN:4 DL:15MiB ETA:12s]
+[#150abe 1.1GiB/1.3GiB(85%) CN:4 DL:16MiB ETA:11s]
+[#150abe 1.1GiB/1.3GiB(86%) CN:4 DL:15MiB ETA:12s]
+[#150abe 1.1GiB/1.3GiB(88%) CN:4 DL:16MiB ETA:9s]
+[#150abe 1.1GiB/1.3GiB(90%) CN:4 DL:16MiB ETA:8s]
+[#150abe 1.2GiB/1.3GiB(91%) CN:3 DL:14MiB ETA:8s]
+[#150abe 1.2GiB/1.3GiB(91%) CN:3 DL:11MiB ETA:9s]
+[#150abe 1.2GiB/1.3GiB(91%) CN:3 DL:10MiB ETA:10s]
+[#150abe 1.2GiB/1.3GiB(92%) CN:3 DL:10MiB ETA:10s]
+[#150abe 1.2GiB/1.3GiB(92%) CN:3 DL:10MiB ETA:9s]
+[#150abe 1.2GiB/1.3GiB(92%) CN:3 DL:10MiB ETA:9s]
+[#150abe 1.2GiB/1.3GiB(93%) CN:3 DL:10MiB ETA:8s]
+[#150abe 1.2GiB/1.3GiB(93%) CN:3 DL:9.9MiB ETA:8s]
+[#150abe 1.2GiB/1.3GiB(94%) CN:3 DL:7.4MiB ETA:10s]
+[#150abe 1.2GiB/1.3GiB(94%) CN:3 DL:5.0MiB ETA:15s]
+[#150abe 1.2GiB/1.3GiB(94%) CN:3 DL:4.6MiB ETA:15s]
+[#150abe 1.2GiB/1.3GiB(95%) CN:3 DL:4.6MiB ETA:14s]
+[#150abe 1.2GiB/1.3GiB(95%) CN:3 DL:4.6MiB ETA:13s]
+[#150abe 1.2GiB/1.3GiB(97%) CN:3 DL:6.7MiB ETA:5s]
+[#150abe 1.2GiB/1.3GiB(97%) CN:2 DL:7.0MiB ETA:4s]
+[#150abe 1.2GiB/1.3GiB(98%) CN:2 DL:6.8MiB ETA:3s]
+[#150abe 1.3GiB/1.3GiB(98%) CN:2 DL:6.7MiB ETA:3s]
+[#150abe 1.3GiB/1.3GiB(98%) CN:2 DL:6.5MiB ETA:3s]
+ *** Download Progress Summary as of Tue Aug 18 12:20:41 2026 *** 
+===============================================================================
+[#150abe 1.3GiB/1.3GiB(98%) CN:2 DL:6.3MiB ETA:2s]
+FILE: DRR853908.fastq/DRR853908_1.fastq.gz
+-------------------------------------------------------------------------------
+
+[#150abe 1.3GiB/1.3GiB(98%) CN:2 DL:6.3MiB ETA:2s]
+[#150abe 1.3GiB/1.3GiB(99%) CN:1 DL:7.0MiB]
+[#150abe 1.3GiB/1.3GiB(99%) CN:1 DL:6.7MiB]
+[#150abe 1.3GiB/1.3GiB(99%) CN:1 DL:6.4MiB]
+[#150abe 1.3GiB/1.3GiB(99%) CN:1 DL:5.4MiB]
+[#150abe 1.3GiB/1.3GiB(99%) CN:1 DL:3.2MiB]
+
+08/18 12:20:47 [[1;32mNOTICE[0m] Download complete: DRR853908.fastq/DRR853908_1.fastq.gz
+
+Download Results:
+gid   |stat|avg speed  |path/URI
+======+====+===========+=======================================================
+150abe|OK  |    14MiB/s|DRR853908.fastq/DRR853908_1.fastq.gz
+
+Status Legend:
+(OK):download completed.
