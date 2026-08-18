@@ -1,2 +1,8 @@
+'model_designates_u4' does not depend on any axioms
+'model_closed_under_mp' depends on axioms: [propext, Quot.sound]
+'model_refutes_reflexivity' depends on axioms: [propext, Quot.sound]
 'u4_does_not_derive_reflexivity' depends on axioms: [propext, Quot.sound]
+model_designates_u4 (a b c d : Ty) : ModelP (U4 a b c d)
+model_closed_under_mp {A B : Ty} (hFun : ModelP (A ⟶ B)) (hArg : ModelP A) : ModelP B
+model_refutes_reflexivity (p : Ty) : ¬ModelP (p ⟶ p)
 u4_does_not_derive_reflexivity (p : Ty) : ¬Derives (p ⟶ p)
