@@ -1,0 +1,120 @@
+name: B2 Z100 final computational proof chain v5
+
+on:
+  push:
+    branches: [b2-z100-final-proof-audit-20260818]
+    paths:
+      - 'crossdomain/B2_RECURSIVE_PROOF_V4B_LATEST_RUN.json'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  finalize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+
+      - name: Verify complete staged proof chain and witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifact
+          set +e
+          python crossdomain/b2_z100_finalize_proof_chain_v5.py \
+            --stage1 crossdomain/B2_THIRD_BRANCH_DRAT_V2_LATEST_RUN.json \
+            --u-stage crossdomain/B2_U_SPLIT_DRAT_V3_LATEST_RUN.json \
+            --v-stage crossdomain/B2_V_SPLIT_DRAT_V3_LATEST_RUN.json \
+            --recursive-stage crossdomain/B2_RECURSIVE_PROOF_V4B_LATEST_RUN.json \
+            --output-dir artifact \
+            > artifact/finalizer_stdout.log 2> artifact/finalizer_stderr.log
+          rc=$?
+          set -e
+          printf '%s\n' "$rc" > artifact/finalizer_exit_code.txt
+          cp crossdomain/B2_Z100_GLOBAL_NORMALIZATION_PROOF.md artifact/
+          cp crossdomain/b2_z100_finalize_proof_chain_v5.py artifact/
+          cp crossdomain/b2_z100_prefix_proof_cnf_v3.py artifact/
+          cp crossdomain/b2_z100_split_proof_batch_v3.py artifact/
+          cp crossdomain/b2_z100_recursive_proof_v4.py artifact/
+          cp crossdomain/b2_z100_verify_cadical_model.py artifact/
+
+      - name: Freeze all workflow-run artifact indexes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os,pathlib,subprocess
+          names=[
+            ('third','crossdomain/B2_THIRD_BRANCH_DRAT_V2_LATEST_RUN.json'),
+            ('u','crossdomain/B2_U_SPLIT_DRAT_V3_LATEST_RUN.json'),
+            ('v','crossdomain/B2_V_SPLIT_DRAT_V3_LATEST_RUN.json'),
+            ('recursive_initial','crossdomain/B2_RECURSIVE_PROOF_V4_LATEST_RUN.json'),
+            ('recursive_final','crossdomain/B2_RECURSIVE_PROOF_V4B_LATEST_RUN.json')]
+          repo=os.environ['GITHUB_REPOSITORY'];out={}
+          for name,path in names:
+              p=json.load(open(path));rid=int(p['run_id'])
+              raw=subprocess.check_output(['gh','api','--paginate','--slurp',f'repos/{repo}/actions/runs/{rid}/artifacts'],text=True)
+              pages=json.loads(raw);arts=[]
+              for page in pages:
+                  for x in page.get('artifacts',[]):
+                      arts.append({'id':x.get('id'),'name':x.get('name'),'size_in_bytes':x.get('size_in_bytes'),'expired':x.get('expired'),'created_at':x.get('created_at'),'expires_at':x.get('expires_at'),'digest':x.get('digest'),'archive_download_url':x.get('archive_download_url')})
+              out[name]={'run_id':rid,'commit':p.get('commit'),'summary_artifact_id':p.get('artifact_id'),'summary_artifact_digest':p.get('artifact_digest'),'artifact_count':len(arts),'artifacts':arts}
+          pathlib.Path('artifact/RUN_ARTIFACT_INDEX.json').write_text(json.dumps(out,indent=2,sort_keys=True)+'\n')
+          PY
+
+      - name: Write reproducibility README and hashes
+        shell: bash
+        run: |
+          cat > artifact/README.md <<'EOF'
+          # B2[2]/Z100 final proof-chain record
+
+          This compact record indexes the staged proof-producing computation. Exact CNFs, checked DRAT proof objects, logs, direct fixed-set checks, and recursive proof trees are preserved in the GitHub Actions artifacts listed in `RUN_ARTIFACT_INDEX.json`.
+
+          A `STATUS.txt` value of `COMPUTATIONAL_PROOF_CANDIDATE_FOR_M_13_PENDING_INDEPENDENT_EXTERNAL_REVIEW` means that the checked 13-element witness establishes `M>=13` and the audited normalization plus all terminal evidence establish `M<=13` computationally.
+
+          This is not a Lean proof, peer review, or independent external reproduction. No timeout is accepted as UNSAT.
+          EOF
+          find artifact -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > artifact/SHA256SUMS.txt
+          find artifact -maxdepth 1 -type f -printf '%f\t%s bytes\n' | sort > artifact/FILE_LIST.txt
+
+      - id: upload
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: b2-z100-final-proof-chain-v5
+          path: artifact
+          retention-days: 90
+          compression-level: 6
+          if-no-files-found: error
+
+      - name: Publish final immutable pointer
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os,pathlib
+          p=json.load(open('artifact/FINAL_PROOF_CHAIN.json'))
+          p.update({'final_workflow_run_id':int(os.environ['GITHUB_RUN_ID']),'final_workflow_commit':os.environ['GITHUB_SHA'],'final_artifact_id':int(os.environ['ARTIFACT_ID']),'final_artifact_url':os.environ['ARTIFACT_URL'],'final_artifact_digest':os.environ['ARTIFACT_DIGEST']})
+          pathlib.Path('pointer.json').write_text(json.dumps(p,indent=2,sort_keys=True)+'\n')
+          PY
+          encoded=$(base64 -w0 pointer.json);path='crossdomain/B2_FINAL_COMPUTATIONAL_PROOF_V5_LATEST_RUN.json';sha=$(gh api "repos/${GITHUB_REPOSITORY}/contents/${path}?ref=${GITHUB_REF_NAME}" --jq .sha 2>/dev/null || true);args=(--method PUT "repos/${GITHUB_REPOSITORY}/contents/${path}" -f message="Record B2 final proof-chain run ${GITHUB_RUN_ID}" -f content="$encoded" -f branch="${GITHUB_REF_NAME}");if [ -n "$sha" ];then args+=(-f sha="$sha");fi;gh api "${args[@]}" >/dev/null
+
+      - name: Enforce final claim gate
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(cat artifact/STATUS.txt)" = COMPUTATIONAL_PROOF_CANDIDATE_FOR_M_13_PENDING_INDEPENDENT_EXTERNAL_REVIEW
