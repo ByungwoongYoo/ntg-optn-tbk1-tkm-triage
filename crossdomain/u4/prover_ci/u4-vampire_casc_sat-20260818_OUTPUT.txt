@@ -1,0 +1,607 @@
+% Running in auto input_syntax mode. Trying TPTP
+% Will run a generic schedule for satisfiability detection.
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% dis+10_1_sil=32000:sp=arity:random_seed=2619712345:i=103:fgj=on_1 on u4 for (1ds/103Mi)
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Saturation
+% Time elapsed: 0.100 s
+% Peak memory usage: 12 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% ott+31_1_sil=16000:lcm=predicate:bce=on:newcnf=on:random_seed=401333002:i=116_1 on u4 for (1ds/116Mi)
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Saturation
+% Time elapsed: 0.100 s
+% Peak memory usage: 15 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% ott+1_1_to=lpo:sil=16000:sp=reverse_arity:erd=off:random_seed=1956764823:i=131_1 on u4 for (1ds/131Mi)
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Saturation
+% Time elapsed: 0.100 s
+% Peak memory usage: 12 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% ott-3_16_to=lpo:sil=16000:sp=arity:fd=off:rp=on:random_seed=1176307498:i=159:nicw=on:bs=unit_only:fsr=off:amm=off_1 on u4 for (1ds/159Mi)
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Saturation
+% Time elapsed: 0.100 s
+% Peak memory usage: 16 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% fmb+10_1_fmbas=predicate:sil=64000:sas=cadical:random_seed=880565864:i=714:nm=2_4 on u4 for (4ds/714Mi)
+% TRYING [1]
+% TRYING [2]
+% TRYING [3]
+% TRYING [4]
+% TRYING [5]
+% TRYING [6]
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Finite model building SAT solving
+% Time elapsed: 0.400 s
+% Peak memory usage: 20 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% ott+32_1_sil=16000:bsd=on:sp=const_max:bce=on:random_seed=425411211:i=131:bd=preordered:fsd=on_1 on u4 for (1ds/131Mi)
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Saturation
+% Time elapsed: 0.100 s
+% Peak memory usage: 12 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% dis+11_32_anc=none:slsqr=2,1:sil=64000:sas=cadical:lma=off:lsd=50:s2agt=8:slsqc=1:kmz=on:newcnf=on:slsq=on:random_seed=3809703559:i=684:slsql=off:nicw=on:bs=unit_only:rawr=on_4 on u4 for (4ds/684Mi)
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Saturation
+% Time elapsed: 0.401 s
+% Peak memory usage: 14 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% ott-21_1_sil=16000:fs=off:random_seed=905372502:i=180:av=off:fsr=off_1 on u4 for (1ds/180Mi)
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Saturation
+% Time elapsed: 0.100 s
+% Peak memory usage: 16 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% dis+10_4_sil=64000:sp=reverse_arity:bsr=on:sac=on:cn=on:random_seed=1489139624:i=477:bd=all_3 on u4 for (3ds/477Mi)
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Saturation
+% Time elapsed: 0.300 s
+% Peak memory usage: 15 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% fmb+10_1_sil=64000:erd=off:updr=off:random_seed=1026686996:fmbsr=1.3:i=865:ins=25_5 on u4 for (5ds/865Mi)
+% TRYING [1]
+% TRYING [2]
+% TRYING [3]
+% TRYING [4]
+% TRYING [5]
+% TRYING [6]
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Finite model building SAT solving
+% Time elapsed: 0.501 s
+% Peak memory usage: 17 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% ott+10_1_to=lpo:sil=64000:tgt=full:sp=arity:spb=goal_then_units:random_seed=1524097597:i=1179_6 on u4 for (6ds/1179Mi)
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Saturation
+% Time elapsed: 0.600 s
+% Peak memory usage: 20 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% fmb+10_1_sil=64000:erd=off:fmbss=14:random_seed=1140036986:i=889:ins=1_5 on u4 for (5ds/889Mi)
+% TRYING [14]
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Finite model building SAT solving
+% Time elapsed: 0.500 s
+% Peak memory usage: 204 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% ott+1_16_sil=32000:plsq=on:plsqc=2:sas=cadical:avsql=on:plsqr=128,1:sp=reverse_frequency:bsr=unit_only:rp=on:newcnf=on:random_seed=3999285393:avsq=on:s2a=on:i=692:avsqr=8,1:kws=arity_squared:bs=unit_only:nm=2:rawr=on_4 on u4 for (4ds/692Mi)
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Saturation
+% Time elapsed: 0.400 s
+% Peak memory usage: 14 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% dis-10_1_anc=none:sil=64000:spb=goal:newcnf=on:cn=on:random_seed=3818995055:i=879:kws=inv_precedence:fsr=off_5 on u4 for (5ds/879Mi)
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Saturation
+% Time elapsed: 0.500 s
+% Peak memory usage: 26 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% fmb+10_1_sil=64000:random_seed=733011662:i=22061:nm=2:gsp=on_111 on u4 for (111ds/22061Mi)
+% TRYING [1]
+% TRYING [2]
+% TRYING [3]
+% TRYING [4]
+% TRYING [5]
+% TRYING [6]
+% TRYING [7]
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Finite model building SAT solving
+% Time elapsed: 11.100 s
+% Peak memory usage: 39 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% fmb+10_1_sil=16000:sas=cadical:fmbss=20:random_seed=1209230875:i=9515:nm=5_48 on u4 for (48ds/9515Mi)
+% TRYING [20]
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Finite model building SAT solving
+% Time elapsed: 4.801 s
+% Peak memory usage: 1964 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% fmb+10_1_sil=64000:sas=cadical:fmbss=8:random_seed=1024128848:fmbsr=1.7:i=920_5 on u4 for (5ds/920Mi)
+% TRYING [8]
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Finite model building SAT solving
+% Time elapsed: 0.500 s
+% Peak memory usage: 44 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% dis-4_1_sil=16000:drc=ordering:sp=const_frequency:sac=on:newcnf=on:random_seed=1892123191:i=5131_26 on u4 for (26ds/5131Mi)
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Saturation
+% Time elapsed: 2.601 s
+% Peak memory usage: 45 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% ott+11_16_sil=32000:fde=unused:bsd=on:sas=cadical:sp=arity:spb=units:lsd=10:nwc=3:random_seed=1629317453:i=1472:ins=7:fdi=8:gsp=on_8 on u4 for (8ds/1472Mi)
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Saturation
+% Time elapsed: 0.801 s
+% Peak memory usage: 16 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% fmb+10_1_sil=16000:sas=cadical:bce=on:fmbss=77:random_seed=4246225522:i=6324_32 on u4 for (32ds/6324Mi)
+% TRYING [77]
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Finite model building constraint generation
+% Time elapsed: 3.200 s
+% Peak memory usage: 1604 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% fmb+10_1_fmbas=function:sil=32000:sas=cadical:fmbss=16:random_seed=632432858:fmbsr=2.30978:i=2174_11 on u4 for (11ds/2174Mi)
+% TRYING [16]
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Finite model building SAT solving
+% Time elapsed: 1.101 s
+% Peak memory usage: 511 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% ott-2_1_sil=16000:newcnf=on:random_seed=762065916:avsq=on:i=869:avsqr=1,16:kws=inv_arity_squared_5 on u4 for (5ds/869Mi)
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Saturation
+% Time elapsed: 0.500 s
+% Peak memory usage: 26 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% ott+10_1_sil=32000:tgt=ground:random_seed=1983320063:i=5114:av=off_26 on u4 for (26ds/5114Mi)
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Saturation
+% Time elapsed: 2.600 s
+% Peak memory usage: 33 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% fmb+10_1_sil=64000:sas=cadical:bce=on:rp=on:random_seed=1822438795:i=54282_272 on u4 for (272ds/54282Mi)
+% TRYING [1]
+% TRYING [2]
+% TRYING [3]
+% TRYING [4]
+% TRYING [5]
+% TRYING [6]
+% TRYING [7]
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Finite model building SAT solving
+% Time elapsed: 27.200 s
+% Peak memory usage: 50 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% dis-11_1_sil=16000:sp=reverse_frequency:alpa=true:random_seed=2323545025:i=3512:aac=none_18 on u4 for (18ds/3512Mi)
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Saturation
+% Time elapsed: 1.800 s
+% Peak memory usage: 47 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% dis+21_1_sil=32000:sas=cadical:random_seed=2667979756:i=3773:amm=off_19 on u4 for (19ds/3773Mi)
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Saturation
+% Time elapsed: 1.900 s
+% Peak memory usage: 16 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% ott+11_1_sil=16000:gs=on:random_seed=1470524039:s2a=on:i=2251:s2at=3:kws=inv_arity_squared:nm=2:fsr=off:fsd=on_12 on u4 for (12ds/2251Mi)
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Saturation
+% Time elapsed: 1.200 s
+% Peak memory usage: 15 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% fmb+10_1_fmbas=predicate:sil=64000:tgt=ground:fmbss=7:random_seed=3665376373:fmbsr=1.6:i=67534_338 on u4 for (338ds/67534Mi)
+% TRYING [7]
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Finite model building SAT solving
+% Time elapsed: 33.800 s
+% Peak memory usage: 58 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% ott-22_32_sil=16000:tgt=full:fdtod=off:sp=weighted_frequency:rnwc=on:alpa=false:random_seed=459004457:avsq=on:i=4591:add=off:avsqr=1,16:kws=inv_arity:nm=10:ins=9:fdi=4_23 on u4 for (23ds/4591Mi)
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Saturation
+% Time elapsed: 2.300 s
+% Peak memory usage: 106 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% dis+10_64_to=lpo:sil=32000:spb=intro:urr=on:sac=on:random_seed=4175870800:i=29340_147 on u4 for (147ds/29340Mi)
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Saturation
+% Time elapsed: 14.700 s
+% Peak memory usage: 221 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% dis-10_1_sil=64000:sas=cadical:cn=on:random_seed=1951155542:i=5211_27 on u4 for (27ds/5211Mi)
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Saturation
+% Time elapsed: 2.700 s
+% Peak memory usage: 53 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% fmb+10_1_sil=32000:sas=cadical:bce=on:fmbss=17:random_seed=3684751771:i=5497:nm=2_28 on u4 for (28ds/5497Mi)
+% TRYING [17]
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Finite model building SAT solving
+% Time elapsed: 2.800 s
+% Peak memory usage: 1104 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% fmb+10_1_fmbas=predicate:sil=64000:tgt=full:sas=cadical:fmbss=15:random_seed=3172094676:fmbsr=2:i=46332_232 on u4 for (232ds/46332Mi)
+% TRYING [15]
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Finite model building SAT solving
+% Time elapsed: 23.200 s
+% Peak memory usage: 595 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% fmb+10_1_sil=128000:tgt=full:sas=cadical:fmbss=12:random_seed=1779768574:i=14071_71 on u4 for (71ds/14071Mi)
+% TRYING [12]
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Finite model building SAT solving
+% Time elapsed: 7.100 s
+% Peak memory usage: 266 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% dis+10_161_sil=128000:plsq=on:plsqr=61199697,1048576:gs=on:alpa=true:sac=on:slsq=on:cn=on:random_seed=884413342:i=22565:add=on:rawr=on_113 on u4 for (113ds/22565Mi)
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Saturation
+% Time elapsed: 11.300 s
+% Peak memory usage: 40 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% ott+4_1_sil=16000:sp=arity:gs=on:random_seed=1234230245:i=8173:av=off_41 on u4 for (41ds/8173Mi)
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Saturation
+% Time elapsed: 4.100 s
+% Peak memory usage: 18 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% dis+10_16:1_sil=16000:random_seed=150426094:i=9155:fsr=off_46 on u4 for (46ds/9155Mi)
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Saturation
+% Time elapsed: 4.600 s
+% Peak memory usage: 18 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% ott-3_8_sil=64000:random_seed=1466810749:i=20139:bs=on_101 on u4 for (101ds/20139Mi)
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Saturation
+% Time elapsed: 10.100 s
+% Peak memory usage: 82 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% fmb+10_1_sil=64000:tgt=ground:sas=cadical:bce=on:fmbss=9:random_seed=2687068062:fmbsr=2:i=32576_163 on u4 for (163ds/32576Mi)
+% TRYING [9]
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Finite model building SAT solving
+% Time elapsed: 16.301 s
+% Peak memory usage: 84 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% ott+10_8:1_sil=16000:sp=arity:gs=on:random_seed=3727983860:i=11404_58 on u4 for (58ds/11404Mi)
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Saturation
+% Time elapsed: 5.800 s
+% Peak memory usage: 20 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% ott-11_1_sil=16000:alpa=false:sac=on:random_seed=2302217198:i=14134_71 on u4 for (71ds/14134Mi)
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Saturation
+% Time elapsed: 7.100 s
+% Peak memory usage: 208 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% dis+33_16_sil=32000:sac=on:random_seed=600525043:i=15851:nm=0_80 on u4 for (80ds/15851Mi)
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Saturation
+% Time elapsed: 8.001 s
+% Peak memory usage: 20 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% dis+4_1024_sil=32000:avsql=on:sp=occurrence:gs=on:avsqc=1:random_seed=2872911000:avsq=on:i=17627:add=on:amm=off_89 on u4 for (89ds/17627Mi)
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Saturation
+% Time elapsed: 8.900 s
+% Peak memory usage: 22 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% ott+10_64_anc=all:sil=128000:sas=cadical:bsr=unit_only:nwc=1:cn=on:random_seed=328874923:s2a=on:i=53295_267 on u4 for (267ds/53295Mi)
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Saturation
+% Time elapsed: 26.701 s
+% Peak memory usage: 35 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% fmb+10_1_sil=32000:sas=cadical:fmbss=16:random_seed=3841646362:i=26857:ins=20_135 on u4 for (135ds/26857Mi)
+% TRYING [16]
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Finite model building SAT solving
+% Time elapsed: 13.500 s
+% Peak memory usage: 813 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% ott+10_1_sil=64000:plsq=on:plsqc=4:bsr=unit_only:gs=on:random_seed=4105047848:i=28120:bs=on:fsr=off_141 on u4 for (141ds/28120Mi)
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Saturation
+% Time elapsed: 14.100 s
+% Peak memory usage: 24 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% fmb+10_1_sil=256000:fmbss=7:random_seed=1816896025:fmbsr=1.6:i=182295_912 on u4 for (912ds/182295Mi)
+% TRYING [7]
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Finite model building SAT solving
+% Time elapsed: 91.200 s
+% Peak memory usage: 82 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% fmb+10_1_sil=128000:fmbss=21:newcnf=on:random_seed=5474726:i=44625:gsp=on_224 on u4 for (224ds/44625Mi)
+% TRYING [21]
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Finite model building SAT solving
+% Time elapsed: 22.401 s
+% Peak memory usage: 1460 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% fmb+10_1_sil=256000:sas=cadical:fmbss=15:random_seed=4139354969:i=160505_803 on u4 for (803ds/160505Mi)
+% TRYING [15]
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Finite model building SAT solving
+% Time elapsed: 80.300 s
+% Peak memory usage: 608 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% fmb+10_1_sil=256000:tgt=full:fmbss=10:random_seed=1849347219:fmbsr=1.3:i=225729_1129 on u4 for (1129ds/225729Mi)
+% TRYING [10]
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Finite model building SAT solving
+% Time elapsed: 112.900 s
+% Peak memory usage: 206 MB
+% WARNING: time unlimited strategy and instruction limiting not in place - attempting to translate instructions to time
+% fmb+10_1_sil=256000:tgt=full:sas=cadical:fmbss=10:random_seed=3472101820:fmbsr=2:i=185024:ins=7_120 on u4 for (120ds/185024Mi)
+% TRYING [10]
+% Time limit reached! 
+% ------------------------------
+% Version: Vampire 5.0.1 (Release build, commit 1b13eaf on 2026-01-18 12:14:50 +0000)
+% Linked with Z3 4.14.0.0 3c47fd96cf5645d0c42b2c819d9e9a84380aa721 NOTFOUND
+% CaDiCaL version: 2.1.3
+% Termination reason: Time limit
+% Termination phase: Finite model building SAT solving
+% Time elapsed: 12.0000 s
+% Peak memory usage: 122 MB
+% Proof not found in time 600.002 s
+% SZS status Timeout for u4

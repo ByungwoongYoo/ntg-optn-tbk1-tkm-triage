@@ -1,0 +1,85 @@
+{
+  "positive_controls": {
+    "u1": {
+      "statuses": [
+        "CounterSatisfiable"
+      ],
+      "counter_satisfiable": true
+    },
+    "u2": {
+      "statuses": [
+        "CounterSatisfiable"
+      ],
+      "counter_satisfiable": true
+    },
+    "u3": {
+      "statuses": [
+        "CounterSatisfiable"
+      ],
+      "counter_satisfiable": true
+    },
+    "all_controls_reproduced": true
+  },
+  "portfolio": [
+    {
+      "prover": "eprover_auto",
+      "exit_code": 1,
+      "szs_statuses": [],
+      "proof_marker": false,
+      "countermodel_marker": false,
+      "output_bytes": 14,
+      "claim_boundary": "Timeout/not found is not a conclusion."
+    },
+    {
+      "prover": "eprover_sat",
+      "exit_code": 1,
+      "szs_statuses": [],
+      "proof_marker": false,
+      "countermodel_marker": false,
+      "output_bytes": 14,
+      "claim_boundary": "Timeout/not found is not a conclusion."
+    },
+    {
+      "prover": "iprover",
+      "exit_code": 1,
+      "szs_statuses": [],
+      "proof_marker": false,
+      "countermodel_marker": false,
+      "output_bytes": 14,
+      "claim_boundary": "Timeout/not found is not a conclusion."
+    },
+    {
+      "prover": "prover9",
+      "exit_code": 1,
+      "szs_statuses": [],
+      "proof_marker": false,
+      "countermodel_marker": false,
+      "output_bytes": 14,
+      "claim_boundary": "Timeout/not found is not a conclusion."
+    },
+    {
+      "prover": "vampire_casc",
+      "exit_code": 1,
+      "szs_statuses": [
+        "Timeout"
+      ],
+      "proof_marker": false,
+      "countermodel_marker": false,
+      "output_bytes": 246530,
+      "claim_boundary": "Timeout/not found is not a conclusion."
+    },
+    {
+      "prover": "vampire_casc_sat",
+      "exit_code": 1,
+      "szs_statuses": [
+        "Timeout"
+      ],
+      "proof_marker": false,
+      "countermodel_marker": false,
+      "output_bytes": 31778,
+      "claim_boundary": "Timeout/not found is not a conclusion."
+    }
+  ],
+  "accepted_result": null,
+  "claim_boundary": "No timeout/not-found is accepted. Any proof/model marker still requires its independent checker."
+}
