@@ -55,7 +55,7 @@ def T : Nat → Form
 def E (P Q : Form) : Prop :=
   ∀ (σ : Nat → Form) (W : Form), subst σ P ≠ (I (subst σ Q) W)
 
-lemma E_base_AB : E (A 0) (B 0) := by
+theorem E_base_AB : E (A 0) (B 0) := by
   intro σ W h
   have hs := congrArg Form.size h
   simp [A, B, C, Form.subst, Form.size] at hs
@@ -65,7 +65,7 @@ lemma E_base_AB : E (A 0) (B 0) := by
   have hw := Form.size_pos W
   omega
 
-lemma E_base_BA : E (B 0) (A 0) := by
+theorem E_base_BA : E (B 0) (A 0) := by
   intro σ W h
   have hs := congrArg Form.size h
   simp [A, B, C, Form.subst, Form.size] at hs
@@ -75,7 +75,7 @@ lemma E_base_BA : E (B 0) (A 0) := by
   have hw := Form.size_pos W
   omega
 
-lemma interlocking : ∀ n, E (A n) (B n) ∧ E (B n) (A n)
+theorem interlocking : ∀ n, E (A n) (B n) ∧ E (B n) (A n)
   | 0 => ⟨E_base_AB, E_base_BA⟩
   | n+1 => by
       have ih := interlocking n
