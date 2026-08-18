@@ -1,0 +1,266 @@
+name: Validate Panax-associated RdRP lineage candidates
+
+on:
+  push:
+    branches:
+      - panax-rdrp-validation-20260818
+    paths:
+      - '.github/workflows/panax-rdrp-validation.yml'
+      - 'virus_hunt/validation/**'
+      - 'virus_hunt/validation_inputs/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: panax-rdrp-validation-20260818
+  cancel-in-progress: false
+
+env:
+  VALIDATION_BRANCH: panax-rdrp-validation-20260818
+  RUNS: DRR853908 DRR853910 DRR853912
+
+jobs:
+  sequence-and-database-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    steps:
+      - name: Checkout isolated validation branch
+        uses: actions/checkout@v4
+        with:
+          ref: panax-rdrp-validation-20260818
+
+      - name: Install sequence-audit tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ncbi-blast+ mafft fasttree
+          python -m pip install --upgrade pip
+          python -m pip install biopython==1.85 requests==2.32.5
+
+      - name: Record provenance
+        run: |
+          mkdir -p sequence_audit/provenance
+          {
+            echo "generated_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "repository=${GITHUB_REPOSITORY}"
+            echo "workflow_sha=${GITHUB_SHA}"
+            echo "workflow_ref=${GITHUB_REF}"
+            echo "runner_os=${RUNNER_OS}"
+            echo "runner_arch=${RUNNER_ARCH}"
+            python --version
+            blastp -version
+            blastn -version
+            mafft --version 2>&1 | head -n2
+            FastTree 2>&1 | head -n3 || true
+            python -m pip freeze
+          } > sequence_audit/provenance/SEQUENCE_AUDIT_PROVENANCE.txt
+
+      - name: Reconstruct all candidate-member contigs and verify committed hashes
+        run: |
+          set -euo pipefail
+          cd virus_hunt/validation_inputs
+          cat all_member_contigs.part1.fna all_member_contigs.part2.fna all_member_contigs.part3.fna \
+            > all_member_contigs.fna.reconstructed
+          sha256sum -c SHA256SUMS.txt
+
+      - name: Recompute strict cross-run sequence recurrence
+        run: |
+          set -euo pipefail
+          mkdir -p sequence_audit/cross_run
+          python virus_hunt/validation/cross_replicate_audit.py \
+            --members virus_hunt/validation_inputs/strict_candidate_members.tsv \
+            --aa virus_hunt/validation_inputs/all_member_rdrp.faa \
+            --nt virus_hunt/validation_inputs/all_member_contigs.fna.reconstructed \
+            --out-dir sequence_audit/cross_run \
+            2>&1 | tee sequence_audit/cross_run/console.log
+
+      - name: Audit ENA archive-sample and experiment independence
+        run: |
+          mkdir -p sequence_audit/metadata
+          python virus_hunt/validation/audit_ena_metadata.py \
+            --runs DRR853908 DRR853910 DRR853912 \
+            --out-dir sequence_audit/metadata \
+            2>&1 | tee sequence_audit/metadata/console.log || true
+
+      - name: Query current NCBI protein and nucleotide databases
+        run: |
+          chmod +x virus_hunt/validation/run_remote_blast.sh
+          bash virus_hunt/validation/run_remote_blast.sh \
+            virus_hunt/validation_inputs/candidate_rdrp.faa \
+            virus_hunt/validation_inputs/candidate_contigs.fna \
+            sequence_audit/database \
+            2>&1 | tee sequence_audit/database_console.log
+
+      - name: Build small current-homolog audit trees
+        run: |
+          mkdir -p sequence_audit/phylogeny
+          python virus_hunt/validation/fetch_homologs.py \
+            --blast sequence_audit/database/blastp_viral.tsv \
+            --queries virus_hunt/validation_inputs/candidate_rdrp.faa \
+            --out-dir sequence_audit/phylogeny \
+            --top 15 \
+            2>&1 | tee sequence_audit/phylogeny/console.log || true
+
+      - name: Hash sequence-audit evidence
+        if: always()
+        run: |
+          find sequence_audit -type f -print0 | sort -z | xargs -0 sha256sum \
+            > sequence_audit/SHA256SUMS.txt
+          find sequence_audit -maxdepth 3 -type f -printf '%p\t%s bytes\n' | sort
+
+      - name: Upload sequence and database audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: panax-sequence-audit
+          path: sequence_audit
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 9
+
+  raw-read-support:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        run: [DRR853908, DRR853910, DRR853912]
+    steps:
+      - name: Checkout isolated validation branch
+        uses: actions/checkout@v4
+        with:
+          ref: panax-rdrp-validation-20260818
+
+      - name: Install raw-read mapping tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq minimap2 samtools pigz
+          python -m pip install --upgrade pip
+          python -m pip install biopython==1.85
+
+      - name: Map independently archived raw reads to four lineage representatives
+        shell: bash
+        env:
+          RUN: ${{ matrix.run }}
+        run: |
+          set +e
+          mkdir -p "raw_support/${RUN}"
+          chmod +x virus_hunt/validation/map_reads.sh
+          bash virus_hunt/validation/map_reads.sh \
+            "$RUN" \
+            virus_hunt/validation_inputs/candidate_contigs.fna \
+            "raw_support/${RUN}" \
+            > "raw_support/${RUN}/map_console.log" 2>&1
+          code=$?
+          python - "$RUN" "$code" "raw_support/${RUN}" <<'PY'
+          import json, pathlib, sys
+          from datetime import datetime, timezone
+          run, code, out = sys.argv[1], int(sys.argv[2]), pathlib.Path(sys.argv[3])
+          status={
+            'run':run,
+            'exit_code':code,
+            'success':code==0 and (out/'read_support.tsv').exists(),
+            'generated_utc':datetime.now(timezone.utc).isoformat(),
+          }
+          (out/'RAW_MAPPING_STATUS.json').write_text(json.dumps(status,indent=2)+'\n')
+          print(json.dumps(status,indent=2))
+          PY
+          find "raw_support/${RUN}" -type f -print0 | sort -z | xargs -0 sha256sum \
+            > "raw_support/${RUN}/SHA256SUMS_COMPLETE.txt"
+          exit 0
+
+      - name: Upload compact raw-read support
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: panax-read-support-${{ matrix.run }}
+          path: raw_support/${{ matrix.run }}
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 9
+
+  finalize:
+    needs: [sequence-and-database-audit, raw-read-support]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout isolated validation branch
+        uses: actions/checkout@v4
+        with:
+          ref: panax-rdrp-validation-20260818
+
+      - name: Download sequence audit
+        uses: actions/download-artifact@v4
+        with:
+          name: panax-sequence-audit
+          path: collected/sequence
+
+      - name: Download all available raw-read audits
+        uses: actions/download-artifact@v4
+        with:
+          pattern: panax-read-support-*
+          path: collected/readmaps
+          merge-multiple: false
+
+      - name: Install finalizer dependency
+        run: python -m pip install biopython==1.85
+
+      - name: Produce conservative final decision package
+        run: |
+          set -euo pipefail
+          rm -rf virus_hunt/final_validation_results
+          mkdir -p virus_hunt/final_validation_results/evidence
+          cp -a collected/sequence virus_hunt/final_validation_results/evidence/
+          cp -a collected/readmaps virus_hunt/final_validation_results/evidence/
+          cp virus_hunt/validation_inputs/candidate_manifest.json virus_hunt/final_validation_results/evidence/
+          cp virus_hunt/validation_inputs/strict_candidate_members.tsv virus_hunt/final_validation_results/evidence/
+          cp virus_hunt/validation_inputs/candidate_contigs.fna virus_hunt/final_validation_results/evidence/
+          cp virus_hunt/validation_inputs/candidate_rdrp.faa virus_hunt/final_validation_results/evidence/
+
+          python virus_hunt/validation/finalize_panax_validation.py \
+            --manifest virus_hunt/validation_inputs/candidate_manifest.json \
+            --members virus_hunt/validation_inputs/strict_candidate_members.tsv \
+            --replication collected/sequence/cross_run/lineage_replication_summary.tsv \
+            --independence collected/sequence/metadata/INDEPENDENCE_AUDIT.json \
+            --blast-status collected/sequence/database/REMOTE_BLAST_STATUS.json \
+            --blastp-viral collected/sequence/database/blastp_viral.tsv \
+            --blastp-nonviral collected/sequence/database/blastp_nonviral.tsv \
+            --blastp-nr collected/sequence/database/blastp_nr.tsv \
+            --blastn-nt collected/sequence/database/blastn_nt.tsv \
+            --read-root collected/readmaps \
+            --phylogeny-status collected/sequence/phylogeny/phylogeny_status.tsv \
+            --out-dir virus_hunt/final_validation_results \
+            2>&1 | tee virus_hunt/final_validation_results/FINALIZER_CONSOLE.log
+
+          {
+            echo "generated_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "repository=${GITHUB_REPOSITORY}"
+            echo "workflow_sha=${GITHUB_SHA}"
+            echo "branch=${VALIDATION_BRANCH}"
+            echo "source_main_commit=d79251de9a5245e524ee8ad6d87986ae425ae95f"
+          } > virus_hunt/final_validation_results/WORKFLOW_PROVENANCE.txt
+
+          find virus_hunt/final_validation_results -type f \
+            ! -name OUTER_SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum \
+            > virus_hunt/final_validation_results/OUTER_SHA256SUMS.txt
+
+      - name: Commit final evidence to isolated branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f virus_hunt/final_validation_results
+          git commit -m "Store strict Panax RdRP validation evidence [skip ci]" || exit 0
+          git push origin HEAD:panax-rdrp-validation-20260818
+
+      - name: Upload final validation package
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PANAX_RDRP_FINAL_VALIDATION_20260818
+          path: virus_hunt/final_validation_results
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 9
