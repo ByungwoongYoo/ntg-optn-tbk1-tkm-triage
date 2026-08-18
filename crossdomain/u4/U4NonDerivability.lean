@@ -204,11 +204,45 @@ theorem rtype_not_refl {n : Nat} {p : Ty} : ¬ RType n (p ⟶ p) := by
     simp [Ty.size] at hs
     omega
 
+/-- The designated predicate of an explicit countably infinite countermodel. -/
+def ModelP (t : Ty) : Prop := ∃ n : Nat, RType n t
+
+/-- Every substitution instance of u4 is designated in the explicit model. -/
+theorem model_designates_u4 (a b c d : Ty) : ModelP (U4 a b c d) := by
+  exact ⟨1, Or.inl ⟨rfl, a, b, c, d, rfl⟩⟩
+
+/-- The designated set of the explicit model is closed under modus ponens. -/
+theorem model_closed_under_mp {A B : Ty}
+    (hFun : ModelP (A ⟶ B)) (hArg : ModelP A) : ModelP B := by
+  rcases hFun with ⟨m, hm⟩
+  rcases hArg with ⟨n, hn⟩
+  rcases hm with hOne | hMany
+  · rcases hOne with ⟨_, a, b, c, d, hEq⟩
+    exact ⟨n + 1, u4_apply_closure ⟨a, b, c, d, hEq⟩ hn⟩
+  · rcases hMany with ⟨x, y, z, hPair, hEq⟩
+    injection hEq with hDomain _
+    have hnDomain : RType n (x ⟶ (y ⟶ z)) := by
+      rw [← hDomain]
+      exact hn
+    exact False.elim ((pair_domain_not_rtype hPair) hnDomain)
+
+/-- Reflexivity is not designated in the explicit model. -/
+theorem model_refutes_reflexivity (p : Ty) : ¬ ModelP (p ⟶ p) := by
+  intro h
+  rcases h with ⟨n, hn⟩
+  exact rtype_not_refl hn
+
 /-- Main result: u4 does not derive even P → P. -/
 theorem u4_does_not_derive_reflexivity (p : Ty) : ¬ Derives (p ⟶ p) := by
   intro h
   rcases derives_rtype h with ⟨n, hn⟩
   exact rtype_not_refl hn
 
+#print axioms model_designates_u4
+#print axioms model_closed_under_mp
+#print axioms model_refutes_reflexivity
 #print axioms u4_does_not_derive_reflexivity
+#check model_designates_u4
+#check model_closed_under_mp
+#check model_refutes_reflexivity
 #check u4_does_not_derive_reflexivity
