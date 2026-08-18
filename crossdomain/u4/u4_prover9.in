@@ -1,0 +1,11 @@
+assign(max_seconds, 600).
+set(auto).
+
+formulas(assumptions).
+  all x all y ((p(i(x,y)) & p(x)) -> p(y)).
+  all x all y all z all u p(i(i(i(x,y),z), i(i(y,i(z,u)), i(y,u)))).
+end_of_list.
+
+formulas(goals).
+  all p0 p(i(p0,p0)).
+end_of_list.
