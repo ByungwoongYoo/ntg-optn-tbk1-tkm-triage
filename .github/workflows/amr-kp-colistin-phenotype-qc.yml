@@ -6,6 +6,11 @@ on:
     paths:
       - 'amr_discovery/audit_kp_colistin_phenotypes.py'
       - '.github/workflows/amr-kp-colistin-phenotype-qc.yml'
+  pull_request:
+    branches: [amr-stage1-census-base-20260819]
+    paths:
+      - 'amr_discovery/audit_kp_colistin_phenotypes.py'
+      - '.github/workflows/amr-kp-colistin-phenotype-qc.yml'
   workflow_dispatch:
 
 permissions:
