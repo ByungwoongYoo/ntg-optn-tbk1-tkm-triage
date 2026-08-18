@@ -1,0 +1,73 @@
+name: Public RNA-seq virus-discovery metadata scan
+
+on:
+  push:
+    branches:
+      - virus-discovery-20260818
+    paths:
+      - 'virus_discovery/**'
+      - '.github/workflows/virus-discovery-scan.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan-recent-medicinal-rnaseq:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout isolated research branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: virus_discovery/requirements-scan.txt
+
+      - name: Install scan dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r virus_discovery/requirements-scan.txt
+
+      - name: Record runner provenance
+        run: |
+          mkdir -p virus_discovery/scan_results
+          {
+            echo "generated_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "github_repository=${GITHUB_REPOSITORY}"
+            echo "github_sha=${GITHUB_SHA}"
+            echo "github_ref=${GITHUB_REF}"
+            echo "runner_os=${RUNNER_OS}"
+            echo "runner_arch=${RUNNER_ARCH}"
+            python --version
+            python -m pip freeze
+          } > virus_discovery/scan_results/RUNNER_PROVENANCE.txt
+
+      - name: Query ENA and rank projects
+        run: |
+          set -o pipefail
+          python virus_discovery/scan_recent_runs.py \
+            --out virus_discovery/scan_results \
+            --limit-per-alias 1000 \
+            2>&1 | tee virus_discovery/scan_results/scan.log
+
+      - name: Recompute complete artifact checksums
+        if: always()
+        run: |
+          cd virus_discovery/scan_results
+          find . -maxdepth 1 -type f ! -name SHA256SUMS_COMPLETE.txt -printf '%f\n' \
+            | sort \
+            | xargs -r sha256sum > SHA256SUMS_COMPLETE.txt
+          ls -lah
+
+      - name: Upload immutable scan evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: virus-discovery-metadata-scan-${{ github.sha }}
+          path: virus_discovery/scan_results/
+          if-no-files-found: error
+          retention-days: 30
