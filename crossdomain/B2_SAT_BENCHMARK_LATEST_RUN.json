@@ -1,0 +1,10 @@
+{
+  "run_id": 32099423448,
+  "run_attempt": 1,
+  "status": "completed",
+  "commit": "76269c8bcce1f51fb534bdefe02e5e60bb697487",
+  "workflow": "B2 Z100 normalized SAT branch benchmark 20260818",
+  "artifact_id": 9311517586,
+  "artifact_url": "https://github.com/ByungwoongYoo/ntg-optn-tbk1-tkm-triage/actions/runs/32099423448/artifacts/9311517586",
+  "artifact_digest": "5932f01544b80df9cdfaa11eb835d808ce72e4da8a077a700365d1c23fde7434"
+}
