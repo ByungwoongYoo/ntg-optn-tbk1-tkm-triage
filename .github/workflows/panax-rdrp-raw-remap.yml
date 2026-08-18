@@ -1,0 +1,192 @@
+name: Correct Panax RdRP raw-read validation and finalize
+
+on:
+  push:
+    branches: [panax-rdrp-validation-20260818]
+    paths:
+      - '.github/workflows/panax-rdrp-raw-remap.yml'
+      - 'virus_hunt/raw_remap/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: panax-rdrp-raw-remap-20260818
+  cancel-in-progress: true
+
+env:
+  SOURCE_VALIDATION_RUN_ID: '32136080656'
+  VALIDATION_BRANCH: panax-rdrp-validation-20260818
+
+jobs:
+  corrected-raw-read-support:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        run: [DRR853908, DRR853910, DRR853912]
+    steps:
+      - name: Checkout isolated validation branch
+        uses: actions/checkout@v4
+        with:
+          ref: panax-rdrp-validation-20260818
+
+      - name: Install raw-read mapping tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq aria2 minimap2 samtools pigz
+          python -m pip install --upgrade pip
+          python -m pip install biopython==1.85
+
+      - name: Download, verify, map, and summarize complete paired FASTQ files
+        env:
+          RUN: ${{ matrix.run }}
+        run: |
+          set -euo pipefail
+          mkdir -p "corrected_raw/${RUN}"
+          chmod +x virus_hunt/raw_remap/map_reads_fixed.sh
+          bash virus_hunt/raw_remap/map_reads_fixed.sh \
+            "$RUN" \
+            virus_hunt/validation_inputs/candidate_contigs.fna \
+            "corrected_raw/${RUN}" \
+            virus_hunt/validation/summarize_read_support.py \
+            2>&1 | tee "corrected_raw/${RUN}/map_console.log"
+
+      - name: Upload corrected compact raw-read support
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: corrected-panax-read-support-${{ matrix.run }}
+          path: corrected_raw/${{ matrix.run }}
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 9
+
+  corrected-finalize:
+    needs: [corrected-raw-read-support]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - name: Checkout isolated validation branch
+        uses: actions/checkout@v4
+        with:
+          ref: panax-rdrp-validation-20260818
+
+      - name: Download corrected raw-read artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: corrected-panax-read-support-*
+          path: collected_corrected/readmaps
+          merge-multiple: false
+
+      - name: Wait for sequence/database audit artifact from the exact source run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p collected_corrected/sequence
+          found=0
+          for attempt in $(seq 1 100); do
+            echo "[$(date -u +%FT%TZ)] sequence artifact poll ${attempt}/100"
+            if gh api \
+              "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_VALIDATION_RUN_ID}/artifacts?per_page=100" \
+              --jq '.artifacts[] | select(.name=="panax-sequence-audit") | .id' \
+              > /tmp/sequence_artifact_id 2>/tmp/sequence_artifact_error; then
+              if [[ -s /tmp/sequence_artifact_id ]]; then
+                found=1
+                break
+              fi
+            fi
+            sleep 120
+          done
+          if [[ "$found" != 1 ]]; then
+            cat /tmp/sequence_artifact_error >&2 || true
+            echo "Required sequence audit artifact was not available." >&2
+            exit 1
+          fi
+          gh run download "$SOURCE_VALIDATION_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name panax-sequence-audit \
+            --dir collected_corrected/sequence
+          find collected_corrected/sequence -maxdepth 3 -type f -printf '%p\t%s bytes\n' | sort
+
+      - name: Confirm all three corrected mappings succeeded
+        run: |
+          python - <<'PY'
+          import json,pathlib,sys
+          root=pathlib.Path('collected_corrected/readmaps')
+          files=sorted(root.rglob('RAW_MAPPING_STATUS.json'))
+          print('status files:',*[str(x) for x in files],sep='\n')
+          if len(files)!=3:
+              raise SystemExit(f'expected 3 mapping status files, found {len(files)}')
+          failures=[]
+          for path in files:
+              data=json.load(open(path)); print(data)
+              if not data.get('success'): failures.append((str(path),data))
+          if failures: raise SystemExit(f'raw mapping failures: {failures}')
+          PY
+
+      - name: Produce corrected conservative final evidence package
+        run: |
+          set -euo pipefail
+          rm -rf virus_hunt/final_validation_corrected
+          mkdir -p virus_hunt/final_validation_corrected/evidence
+          cp -a collected_corrected/sequence virus_hunt/final_validation_corrected/evidence/
+          cp -a collected_corrected/readmaps virus_hunt/final_validation_corrected/evidence/
+          cp virus_hunt/validation_inputs/candidate_manifest.json virus_hunt/final_validation_corrected/evidence/
+          cp virus_hunt/validation_inputs/strict_candidate_members.tsv virus_hunt/final_validation_corrected/evidence/
+          cp virus_hunt/validation_inputs/candidate_contigs.fna virus_hunt/final_validation_corrected/evidence/
+          cp virus_hunt/validation_inputs/candidate_rdrp.faa virus_hunt/final_validation_corrected/evidence/
+
+          python virus_hunt/validation/finalize_panax_validation.py \
+            --manifest virus_hunt/validation_inputs/candidate_manifest.json \
+            --members virus_hunt/validation_inputs/strict_candidate_members.tsv \
+            --replication collected_corrected/sequence/cross_run/lineage_replication_summary.tsv \
+            --independence collected_corrected/sequence/metadata/INDEPENDENCE_AUDIT.json \
+            --blast-status collected_corrected/sequence/database/REMOTE_BLAST_STATUS.json \
+            --blastp-viral collected_corrected/sequence/database/blastp_viral.tsv \
+            --blastp-nonviral collected_corrected/sequence/database/blastp_nonviral.tsv \
+            --blastp-nr collected_corrected/sequence/database/blastp_nr.tsv \
+            --blastn-nt collected_corrected/sequence/database/blastn_nt.tsv \
+            --read-root collected_corrected/readmaps \
+            --phylogeny-status collected_corrected/sequence/phylogeny/phylogeny_status.tsv \
+            --out-dir virus_hunt/final_validation_corrected \
+            2>&1 | tee virus_hunt/final_validation_corrected/FINALIZER_CONSOLE.log
+
+          {
+            echo "generated_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "repository=${GITHUB_REPOSITORY}"
+            echo "workflow_sha=${GITHUB_SHA}"
+            echo "branch=${VALIDATION_BRANCH}"
+            echo "source_sequence_run_id=${SOURCE_VALIDATION_RUN_ID}"
+            echo "source_sequence_head_sha=1d277f493d64df008bcbd06c74100fb6d5c7ef20"
+            echo "raw_mapping_script=virus_hunt/raw_remap/map_reads_fixed.sh"
+          } > virus_hunt/final_validation_corrected/WORKFLOW_PROVENANCE.txt
+
+          find virus_hunt/final_validation_corrected -type f \
+            ! -name OUTER_SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum \
+            > virus_hunt/final_validation_corrected/OUTER_SHA256SUMS.txt
+
+      - name: Commit corrected final evidence to isolated branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f virus_hunt/final_validation_corrected
+          git commit -m "Store corrected strict Panax RdRP validation evidence [skip ci]" || exit 0
+          git pull --rebase origin panax-rdrp-validation-20260818
+          git push origin HEAD:panax-rdrp-validation-20260818
+
+      - name: Upload corrected final validation package
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PANAX_RDRP_FINAL_VALIDATION_CORRECTED_20260818
+          path: virus_hunt/final_validation_corrected
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 9
