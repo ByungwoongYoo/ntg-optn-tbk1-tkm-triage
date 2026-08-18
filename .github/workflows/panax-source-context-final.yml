@@ -1,0 +1,285 @@
+name: Final Panax source-study context and group audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/panax-source-context-final.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  context:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install document and metadata tools
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check requests==2.32.5 beautifulsoup4==4.13.4 lxml==6.0.0 python-docx==1.2.0 pandas==2.3.1 openpyxl==3.1.5
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq file unzip poppler-utils tesseract-ocr libxml2-utils
+
+      - name: Retrieve archive records, article, figures, and supplementary files
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=source_context_final
+          mkdir -p "$root"/{archive,article,figures,supplementary,extracted,raw}
+
+          # ENA filereport first; direct accession XML below is the fallback and audit trail.
+          curl -fL --retry 5 --retry-all-errors -G 'https://www.ebi.ac.uk/ena/portal/api/filereport' \
+            --data-urlencode 'accession=PRJDB39299' \
+            --data-urlencode 'result=read_run' \
+            --data-urlencode 'fields=run_accession,sample_accession,experiment_accession,scientific_name,sample_title,library_name,library_strategy,library_source,library_selection,library_layout,instrument_platform,instrument_model,base_count,read_count,first_public,last_updated,fastq_ftp,fastq_md5,fastq_bytes' \
+            --data-urlencode 'format=tsv' \
+            -o "$root/archive/ena_read_runs.tsv" || true
+
+          for acc in PRJDB39299 DRR853907 DRR853908 DRR853909 DRR853910 DRR853911 DRR853912 \
+                     SAMD01772848 SAMD01772849 SAMD01772850 SAMD01772851 SAMD01772852 SAMD01772853 \
+                     DRX831960 DRX831961 DRX831962 DRX831963 DRX831964 DRX831965; do
+            curl -fL --retry 4 --retry-all-errors \
+              "https://www.ebi.ac.uk/ena/browser/api/xml/${acc}" \
+              -o "$root/archive/${acc}.xml" || true
+          done
+
+          curl -fL --retry 6 --retry-all-errors \
+            'https://www.ebi.ac.uk/europepmc/webservices/rest/PMC12918092/fullTextXML' \
+            -o "$root/article/PMC12918092.xml" || true
+          curl -fL --retry 6 --retry-all-errors \
+            'https://link.springer.com/article/10.1186/s12870-026-08239-w' \
+            -o "$root/article/springer.html" || true
+          curl -fL --retry 6 --retry-all-errors \
+            'https://link.springer.com/content/pdf/10.1186/s12870-026-08239-w.pdf' \
+            -o "$root/article/source_article.pdf" || true
+          curl -fL --retry 6 --retry-all-errors \
+            'https://ngdc.cncb.ac.cn/gsa/browse/CRA029712' \
+            -o "$root/archive/CRA029712.html" || true
+
+          for url in \
+            'https://media.springernature.com/full/springer-static/image/art%3A10.1186%2Fs12870-026-08239-w/MediaObjects/12870_2026_8239_Fig1_HTML.png' \
+            'https://media.springernature.com/lw1200/springer-static/image/art%3A10.1186%2Fs12870-026-08239-w/MediaObjects/12870_2026_8239_Fig1_HTML.png'; do
+            curl -fL --retry 6 --retry-all-errors "$url" -o "$root/figures/Figure1.png" && break || true
+          done
+
+          for spec in \
+            'Supplementary_Material_1.docx|https://media.springernature.com/full/springer-static/image/art%3A10.1186%2Fs12870-026-08239-w/MediaObjects/12870_2026_8239_MOESM1_ESM.docx' \
+            'Supplementary_Material_2.docx|https://media.springernature.com/full/springer-static/image/art%3A10.1186%2Fs12870-026-08239-w/MediaObjects/12870_2026_8239_MOESM2_ESM.docx' \
+            'PMC_Supplementary_1.docx|https://pmc.ncbi.nlm.nih.gov/articles/instance/12918092/bin/12870_2026_8239_MOESM1_ESM.docx' \
+            'PMC_Supplementary_2.docx|https://pmc.ncbi.nlm.nih.gov/articles/instance/12918092/bin/12870_2026_8239_MOESM2_ESM.docx'; do
+            name="${spec%%|*}"; url="${spec#*|}"
+            curl -fL --retry 6 --retry-all-errors "$url" -o "$root/supplementary/$name" || true
+          done
+
+          # Preserve a machine-readable network retrieval ledger.
+          find "$root" -type f -printf '%P\t%s\n' | sort > "$root/RETRIEVED_FILES.tsv"
+          find "$root" -type f -exec file {} \; > "$root/FILE_TYPES.txt"
+
+      - name: Discover additional linked assets and extract all searchable text
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          from urllib.parse import urljoin, urlparse
+          import re, requests, zipfile
+          from bs4 import BeautifulSoup
+          from docx import Document
+
+          root=Path('source_context_final')
+          discovered=[]
+          sources=[
+              (root/'article/springer.html','https://link.springer.com'),
+              (root/'archive/CRA029712.html','https://ngdc.cncb.ac.cn'),
+          ]
+          for path,base in sources:
+              if not path.exists() or path.stat().st_size<100: continue
+              soup=BeautifulSoup(path.read_text(errors='ignore'),'lxml')
+              for tag in soup.find_all(['a','link','script','img']):
+                  ref=tag.get('href') or tag.get('src')
+                  if not ref: continue
+                  url=urljoin(base,ref)
+                  low=url.lower()
+                  if any(k in low for k in ['cra029712','supplement','moesm','fig1','.xlsx','.xls','.csv','.tsv','.docx']):
+                      discovered.append(url)
+          # Also parse xlink/href references from Europe PMC XML.
+          xml=root/'article/PMC12918092.xml'
+          if xml.exists():
+              text=xml.read_text(errors='ignore')
+              for ref in re.findall(r'(?:xlink:href|href)=["\']([^"\']+)["\']',text):
+                  if any(k in ref.lower() for k in ['moesm','supp','fig1','.docx']):
+                      discovered.append(urljoin('https://pmc.ncbi.nlm.nih.gov/articles/instance/12918092/',ref))
+          discovered=list(dict.fromkeys(discovered))
+          (root/'DISCOVERED_ASSET_URLS.txt').write_text('\n'.join(discovered)+'\n')
+          headers={'User-Agent':'Mozilla/5.0 Panax-source-context-audit/2026'}
+          for i,url in enumerate(discovered,1):
+              try:
+                  r=requests.get(url,headers=headers,timeout=120,allow_redirects=True)
+                  if not r.ok or len(r.content)<100: continue
+                  suffix=Path(urlparse(r.url).path).suffix
+                  if not suffix or len(suffix)>10: suffix='.bin'
+                  out=root/'supplementary'/f'discovered_{i:03d}{suffix}'
+                  out.write_bytes(r.content)
+                  out.with_suffix(out.suffix+'.url.txt').write_text(r.url+'\n')
+              except Exception as e:
+                  (root/'raw'/f'discovered_{i:03d}.error.txt').write_text(repr(e)+'\n'+url+'\n')
+
+          # Extract DOCX paragraphs and tables without relying on filename correctness.
+          extracted=[]
+          for p in sorted((root/'supplementary').glob('*')):
+              if not p.is_file() or not zipfile.is_zipfile(p): continue
+              try:
+                  doc=Document(p)
+                  lines=[]
+                  lines.extend(x.text for x in doc.paragraphs if x.text)
+                  for ti,t in enumerate(doc.tables,1):
+                      lines.append(f'[[TABLE {ti}]]')
+                      for row in t.rows:
+                          lines.append('\t'.join(c.text for c in row.cells))
+                  out=root/'extracted'/(p.name+'.txt')
+                  out.write_text('\n'.join(lines)+'\n',errors='ignore')
+                  extracted.append(str(out))
+              except Exception as e:
+                  (root/'raw'/(p.name+'.extract_error.txt')).write_text(repr(e)+'\n')
+          (root/'EXTRACTED_DOCX_FILES.txt').write_text('\n'.join(extracted)+'\n')
+          PY
+
+          if [[ -s source_context_final/article/source_article.pdf ]]; then
+            pdftotext -layout source_context_final/article/source_article.pdf source_context_final/extracted/source_article_pdf.txt || true
+          fi
+          if [[ -s source_context_final/figures/Figure1.png ]]; then
+            tesseract source_context_final/figures/Figure1.png source_context_final/extracted/Figure1_OCR -l eng --psm 6 >/dev/null 2>&1 || true
+          fi
+          for f in source_context_final/article/*.xml source_context_final/archive/*.xml source_context_final/article/*.html source_context_final/archive/*.html; do
+            [[ -s "$f" ]] || continue
+            python - "$f" <<'PY'
+          from bs4 import BeautifulSoup
+          from pathlib import Path
+          import sys
+          p=Path(sys.argv[1])
+          text=BeautifulSoup(p.read_text(errors='ignore'),'lxml').get_text('\n')
+          out=Path('source_context_final/extracted')/(p.name+'.txt')
+          out.write_text(text+'\n')
+          PY
+          done
+
+      - name: Resolve run identities and grade Zh-Bh phenotype mapping evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          from bs4 import BeautifulSoup
+          import csv, json, re, hashlib
+
+          root=Path('source_context_final')
+          all_files=[p for p in root.rglob('*') if p.is_file()]
+          searchable=[]
+          for p in all_files:
+              if p.suffix.lower() in {'.txt','.tsv','.csv','.json','.xml','.html'}:
+                  try: searchable.append((str(p),p.read_text(errors='ignore')))
+                  except Exception: pass
+
+          # Build exact archive-object map from all XML and the filereport when available.
+          runs={f'DRR85390{i}':{} for i in range(7,10)} | {f'DRR8539{i}':{} for i in range(10,13)}
+          fr=root/'archive/ena_read_runs.tsv'
+          if fr.exists() and fr.stat().st_size>10:
+              try:
+                  for r in csv.DictReader(fr.open(),delimiter='\t'):
+                      run=r.get('run_accession','')
+                      if run in runs: runs[run].update(r)
+              except Exception: pass
+          for p in sorted((root/'archive').glob('*.xml')):
+              text=p.read_text(errors='ignore')
+              for run in list(runs):
+                  if run not in text and p.stem!=run: continue
+                  def one(pattern):
+                      m=re.search(pattern,text,re.I|re.S); return BeautifulSoup(m.group(1),'lxml').get_text(' ',strip=True) if m else ''
+                  title=one(r'<TITLE>(.*?)</TITLE>') or one(r'<SAMPLE_TITLE>(.*?)</SAMPLE_TITLE>')
+                  if title: runs[run].setdefault('xml_title',title)
+                  for label,pat in [('sample_accession',r'<SAMPLE_REF[^>]*(?:accession|refname)="([^"]+)"'),('experiment_accession',r'<EXPERIMENT_REF[^>]*(?:accession|refname)="([^"]+)"')]:
+                      m=re.search(pat,text,re.I)
+                      if m: runs[run].setdefault(label,m.group(1))
+          for run,v in runs.items():
+              title=v.get('sample_title') or v.get('xml_title') or ''
+              m=re.search(r'Sample_([A-Za-z]+)([A-Z])(?:-|_|\b)',title)
+              v['deposited_title']=title
+              v['group_token']=m.group(1) if m else ''
+              v['replicate_token']=m.group(2) if m else ''
+
+          # Evidence ladder: exact explicit statements outrank contextual co-occurrence.
+          terms=r'healthy|normal|control|CK|root[ -]?rot|diseas(?:ed|e)?|infect(?:ed|ion)?|susceptible|resistant|病害|病株|健康|正常|腐烂|根腐'
+          token=r'Zh[ABC]?|Bh[ABC]?|Sample_Zh[ABC]?|Sample_Bh[ABC]?'
+          snippets=[]
+          explicit=[]
+          for source,text in searchable:
+              flat=' '.join(text.split())
+              for m in re.finditer(token,flat,re.I):
+                  s=max(0,m.start()-240); e=min(len(flat),m.end()+240)
+                  sn=flat[s:e]
+                  if re.search(terms,sn,re.I):
+                      item={'source':source,'token':m.group(0),'snippet':sn}
+                      snippets.append(item)
+                      if re.search(rf'(?i)(?:{token}).{{0,100}}(?:means|denotes|represents|is|are|=|:|组|为).{{0,100}}(?:{terms})|(?:{terms}).{{0,100}}(?:means|denotes|represents|is|are|=|:|组|为).{{0,100}}(?:{token})',sn):
+                          explicit.append(item)
+
+          # Parse the article's unambiguous design independently of token mapping.
+          design={
+            'source_article_doi':'10.1186/s12870-026-08239-w',
+            'source_article_pmcid':'PMC12918092',
+            'archive_project':'CRA029712 / PRJDB39299',
+            'biological_design':'primary roots from healthy and root-rot-affected Panax notoginseng; three biological replicates per group; five plants per replicate',
+            'design_status':'explicit_in_source_article'
+          }
+
+          # Do not force a mapping. A mapping becomes resolved only when an exact token-to-condition statement was recovered.
+          mapping_status='explicit_mapping_found' if explicit else 'not_explicitly_resolved'
+          result={
+            'generated_utc':__import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat(),
+            'design':design,
+            'runs':runs,
+            'mapping_status':mapping_status,
+            'explicit_mapping_evidence':explicit,
+            'contextual_token_condition_snippets':snippets,
+            'interpretation_boundary':'Zh/Bh are deposited group tokens. They must not be assigned to healthy or root-rot groups unless an explicit source statement is recovered. Distinct run, experiment, and BioSample accessions establish separate archive objects, not necessarily separate plants or independent infections.'
+          }
+          (root/'SOURCE_CONTEXT_FINAL.json').write_text(json.dumps(result,indent=2,ensure_ascii=False)+'\n')
+          with (root/'TOKEN_CONDITION_SNIPPETS.tsv').open('w',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=['source','token','snippet'],delimiter='\t'); w.writeheader(); w.writerows(snippets)
+
+          md=['# Final Panax source-study context audit','',
+              '- Source article DOI: `10.1186/s12870-026-08239-w`','- Public project: `CRA029712 / PRJDB39299`',
+              '- Source design: healthy and root-rot-affected primary roots, 3 biological replicates per group, 5 plants per replicate.','',
+              f'- Exact Zh/Bh-to-condition mapping: **{mapping_status}**','',
+              '## Archive objects','',
+              '| Run | BioSample | Experiment | Deposited title | Group token | Replicate |','|---|---|---|---|---|---|']
+          for run in sorted(runs):
+              v=runs[run]
+              md.append(f"| `{run}` | `{v.get('sample_accession','')}` | `{v.get('experiment_accession','')}` | {v.get('deposited_title','')} | `{v.get('group_token','')}` | `{v.get('replicate_token','')}` |")
+          md += ['','## Exact mapping evidence','']
+          if explicit:
+              for x in explicit[:50]: md.append(f"- `{x['source']}` — {x['snippet']}")
+          else:
+              md.append('- No explicit token-to-condition statement was recovered from the retrieved archive records, article, figure OCR, or supplementary assets.')
+          md += ['','## Interpretation boundary','',result['interpretation_boundary']]
+          (root/'SOURCE_CONTEXT_FINAL_REPORT.md').write_text('\n'.join(md)+'\n')
+
+          # Hash every evidence object except the hash list itself.
+          lines=[]
+          for p in sorted(x for x in root.rglob('*') if x.is_file() and x.name!='SHA256SUMS.txt'):
+              lines.append(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+str(p.relative_to(root)))
+          (root/'SHA256SUMS.txt').write_text('\n'.join(lines)+'\n')
+          print((root/'SOURCE_CONTEXT_FINAL_REPORT.md').read_text())
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PANAX_SOURCE_CONTEXT_FINAL_20260819
+          path: source_context_final
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 9
