@@ -1,0 +1,2 @@
+DRR853908.fastq/DRR853908_1.fastq.gz
+DRR853908.fastq/DRR853908_2.fastq.gz

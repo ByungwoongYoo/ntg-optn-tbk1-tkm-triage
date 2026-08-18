@@ -1,0 +1,5 @@
+#rname	startpos	endpos	numreads	covbases	coverage	meandepth	meanbaseq	meanmapq
+PNX_Duplo_A	1	1489	335	1489	100	33.3546	36.3	59.9
+PNX_Duplo_B	1	1256	272	1232	98.0892	31.8917	36.3	59.8
+PNX_Picorna_A	1	2082	1001	2082	100	70.9702	35.9	59.2
+PNX_Picorna_B	1	1814	244	1814	100	18.7652	36.3	57.4

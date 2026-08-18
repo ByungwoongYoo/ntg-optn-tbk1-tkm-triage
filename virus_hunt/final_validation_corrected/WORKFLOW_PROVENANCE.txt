@@ -1,0 +1,7 @@
+generated_utc=2026-08-18T14:37:38Z
+repository=ByungwoongYoo/ntg-optn-tbk1-tkm-triage
+workflow_sha=7214167a344ad868aabf13418c316e637d95f075
+branch=panax-rdrp-validation-20260818
+source_sequence_run_id=32136080656
+source_sequence_head_sha=1d277f493d64df008bcbd06c74100fb6d5c7ef20
+raw_mapping_script=virus_hunt/raw_remap/map_reads_fixed.sh

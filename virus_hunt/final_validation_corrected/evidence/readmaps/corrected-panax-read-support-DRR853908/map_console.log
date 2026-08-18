@@ -1,0 +1,593 @@
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0100   819  100   819    0     0   1070      0 --:--:-- --:--:-- --:--:--  1069
+[2026-08-18T12:45:13Z] downloading https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853908/DRR853908_1.fastq.gz
+
+08/18 12:45:14 [[1;32mNOTICE[0m] Downloading 1 item(s)
+[#0f78d0 0B/0B CN:1 DL:0B]
+[#0f78d0 528KiB/1.3GiB(0%) CN:4 DL:541KiB ETA:42m40s]
+[#0f78d0 2.4MiB/1.3GiB(0%) CN:4 DL:1.2MiB ETA:18m33s]
+[#0f78d0 4.4MiB/1.3GiB(0%) CN:4 DL:1.4MiB ETA:15m18s]
+[#0f78d0 6.6MiB/1.3GiB(0%) CN:4 DL:1.6MiB ETA:13m39s]
+[#0f78d0 10MiB/1.3GiB(0%) CN:4 DL:2.0MiB ETA:10m42s]
+[#0f78d0 15MiB/1.3GiB(1%) CN:4 DL:2.5MiB ETA:8m43s]
+[#0f78d0 21MiB/1.3GiB(1%) CN:4 DL:2.9MiB ETA:7m25s]
+[#0f78d0 27MiB/1.3GiB(2%) CN:4 DL:3.4MiB ETA:6m29s]
+[#0f78d0 33MiB/1.3GiB(2%) CN:4 DL:3.7MiB ETA:5m52s]
+[#0f78d0 40MiB/1.3GiB(2%) CN:4 DL:4.4MiB ETA:4m57s]
+[#0f78d0 46MiB/1.3GiB(3%) CN:4 DL:4.9MiB ETA:4m26s]
+[#0f78d0 53MiB/1.3GiB(3%) CN:4 DL:5.3MiB ETA:4m1s]
+[#0f78d0 59MiB/1.3GiB(4%) CN:4 DL:5.8MiB ETA:3m41s]
+[#0f78d0 65MiB/1.3GiB(4%) CN:4 DL:6.1MiB ETA:3m31s]
+[#0f78d0 72MiB/1.3GiB(5%) CN:4 DL:6.2MiB ETA:3m24s]
+[#0f78d0 78MiB/1.3GiB(5%) CN:4 DL:6.3MiB ETA:3m20s]
+[#0f78d0 85MiB/1.3GiB(6%) CN:4 DL:6.3MiB ETA:3m18s]
+[#0f78d0 91MiB/1.3GiB(6%) CN:4 DL:6.3MiB ETA:3m18s]
+[#0f78d0 97MiB/1.3GiB(7%) CN:4 DL:6.2MiB ETA:3m19s]
+[#0f78d0 102MiB/1.3GiB(7%) CN:4 DL:6.1MiB ETA:3m22s]
+[#0f78d0 108MiB/1.3GiB(8%) CN:4 DL:6.1MiB ETA:3m21s]
+[#0f78d0 114MiB/1.3GiB(8%) CN:4 DL:6.1MiB ETA:3m21s]
+[#0f78d0 121MiB/1.3GiB(8%) CN:4 DL:6.1MiB ETA:3m20s]
+[#0f78d0 127MiB/1.3GiB(9%) CN:4 DL:6.1MiB ETA:3m19s]
+[#0f78d0 147MiB/1.3GiB(10%) CN:4 DL:7.5MiB ETA:2m39s]
+[#0f78d0 180MiB/1.3GiB(13%) CN:4 DL:10MiB ETA:1m51s]
+[#0f78d0 214MiB/1.3GiB(15%) CN:4 DL:13MiB ETA:1m23s]
+[#0f78d0 246MiB/1.3GiB(18%) CN:4 DL:16MiB ETA:1m6s]
+ *** Download Progress Summary as of Tue Aug 18 12:45:44 2026 *** 
+===============================================================================
+[#0f78d0 277MiB/1.3GiB(20%) CN:4 DL:19MiB ETA:55s]
+FILE: DRR853908.fastq/DRR853908_1.fastq.gz
+-------------------------------------------------------------------------------
+
+[#0f78d0 277MiB/1.3GiB(20%) CN:4 DL:19MiB ETA:55s]
+[#0f78d0 311MiB/1.3GiB(22%) CN:4 DL:22MiB ETA:46s]
+[#0f78d0 341MiB/1.3GiB(25%) CN:4 DL:25MiB ETA:40s]
+[#0f78d0 368MiB/1.3GiB(27%) CN:4 DL:27MiB ETA:35s]
+[#0f78d0 394MiB/1.3GiB(29%) CN:4 DL:29MiB ETA:32s]
+[#0f78d0 417MiB/1.3GiB(30%) CN:4 DL:29MiB ETA:31s]
+[#0f78d0 442MiB/1.3GiB(32%) CN:4 DL:28MiB ETA:31s]
+[#0f78d0 467MiB/1.3GiB(34%) CN:4 DL:28MiB ETA:31s]
+[#0f78d0 492MiB/1.3GiB(36%) CN:4 DL:27MiB ETA:31s]
+[#0f78d0 514MiB/1.3GiB(37%) CN:4 DL:26MiB ETA:31s]
+[#0f78d0 540MiB/1.3GiB(39%) CN:4 DL:26MiB ETA:31s]
+[#0f78d0 566MiB/1.3GiB(41%) CN:4 DL:25MiB ETA:30s]
+[#0f78d0 592MiB/1.3GiB(43%) CN:4 DL:25MiB ETA:30s]
+[#0f78d0 618MiB/1.3GiB(45%) CN:4 DL:24MiB ETA:29s]
+[#0f78d0 644MiB/1.3GiB(47%) CN:4 DL:24MiB ETA:28s]
+[#0f78d0 670MiB/1.3GiB(49%) CN:4 DL:25MiB ETA:27s]
+[#0f78d0 694MiB/1.3GiB(51%) CN:4 DL:25MiB ETA:26s]
+[#0f78d0 720MiB/1.3GiB(53%) CN:4 DL:25MiB ETA:25s]
+[#0f78d0 747MiB/1.3GiB(55%) CN:4 DL:25MiB ETA:23s]
+[#0f78d0 774MiB/1.3GiB(57%) CN:4 DL:25MiB ETA:22s]
+[#0f78d0 801MiB/1.3GiB(59%) CN:4 DL:25MiB ETA:21s]
+[#0f78d0 830MiB/1.3GiB(61%) CN:4 DL:26MiB ETA:20s]
+[#0f78d0 847MiB/1.3GiB(62%) CN:4 DL:25MiB ETA:20s]
+[#0f78d0 853MiB/1.3GiB(62%) CN:4 DL:23MiB ETA:21s]
+[#0f78d0 859MiB/1.3GiB(63%) CN:4 DL:21MiB ETA:23s]
+[#0f78d0 865MiB/1.3GiB(63%) CN:4 DL:19MiB ETA:25s]
+[#0f78d0 872MiB/1.3GiB(64%) CN:4 DL:17MiB ETA:27s]
+[#0f78d0 879MiB/1.3GiB(64%) CN:4 DL:15MiB ETA:30s]
+[#0f78d0 885MiB/1.3GiB(65%) CN:4 DL:13MiB ETA:34s]
+[#0f78d0 892MiB/1.3GiB(65%) CN:4 DL:11MiB ETA:39s]
+ *** Download Progress Summary as of Tue Aug 18 12:46:14 2026 *** 
+===============================================================================
+[#0f78d0 897MiB/1.3GiB(66%) CN:4 DL:6.8MiB ETA:1m7s]
+FILE: DRR853908.fastq/DRR853908_1.fastq.gz
+-------------------------------------------------------------------------------
+
+[#0f78d0 897MiB/1.3GiB(66%) CN:4 DL:6.8MiB ETA:1m7s]
+[#0f78d0 906MiB/1.3GiB(66%) CN:4 DL:6.1MiB ETA:1m13s]
+[#0f78d0 912MiB/1.3GiB(67%) CN:4 DL:6.1MiB ETA:1m12s]
+[#0f78d0 918MiB/1.3GiB(67%) CN:4 DL:6.1MiB ETA:1m11s]
+[#0f78d0 0.9GiB/1.3GiB(68%) CN:4 DL:6.0MiB ETA:1m10s]
+[#0f78d0 0.9GiB/1.3GiB(68%) CN:4 DL:6.0MiB ETA:1m10s]
+[#0f78d0 0.9GiB/1.3GiB(69%) CN:4 DL:6.0MiB ETA:1m9s]
+[#0f78d0 0.9GiB/1.3GiB(69%) CN:4 DL:5.9MiB ETA:1m8s]
+[#0f78d0 0.9GiB/1.3GiB(70%) CN:4 DL:5.9MiB ETA:1m8s]
+[#0f78d0 0.9GiB/1.3GiB(70%) CN:4 DL:6.3MiB ETA:1m2s]
+[#0f78d0 0.9GiB/1.3GiB(70%) CN:4 DL:6.3MiB ETA:1m1s]
+[#0f78d0 0.9GiB/1.3GiB(71%) CN:4 DL:6.1MiB ETA:1m2s]
+[#0f78d0 0.9GiB/1.3GiB(71%) CN:4 DL:6.1MiB ETA:1m1s]
+[#0f78d0 0.9GiB/1.3GiB(72%) CN:4 DL:6.1MiB ETA:1m]
+[#0f78d0 0.9GiB/1.3GiB(72%) CN:4 DL:6.1MiB ETA:1m]
+[#0f78d0 0.9GiB/1.3GiB(73%) CN:4 DL:6.1MiB ETA:58s]
+[#0f78d0 0.9GiB/1.3GiB(73%) CN:4 DL:6.1MiB ETA:57s]
+[#0f78d0 0.9GiB/1.3GiB(74%) CN:4 DL:6.2MiB ETA:56s]
+[#0f78d0 0.9GiB/1.3GiB(74%) CN:4 DL:6.2MiB ETA:55s]
+[#0f78d0 0.9GiB/1.3GiB(75%) CN:4 DL:6.3MiB ETA:53s]
+[#0f78d0 1.0GiB/1.3GiB(75%) CN:4 DL:6.3MiB ETA:51s]
+[#0f78d0 1.0GiB/1.3GiB(76%) CN:4 DL:6.3MiB ETA:51s]
+[#0f78d0 1.0GiB/1.3GiB(76%) CN:4 DL:6.3MiB ETA:50s]
+[#0f78d0 1.0GiB/1.3GiB(77%) CN:4 DL:6.4MiB ETA:48s]
+[#0f78d0 1.0GiB/1.3GiB(77%) CN:4 DL:6.4MiB ETA:47s]
+[#0f78d0 1.0GiB/1.3GiB(77%) CN:4 DL:6.4MiB ETA:46s]
+[#0f78d0 1.0GiB/1.3GiB(78%) CN:4 DL:6.4MiB ETA:45s]
+[#0f78d0 1.0GiB/1.3GiB(78%) CN:4 DL:6.4MiB ETA:44s]
+[#0f78d0 1.0GiB/1.3GiB(79%) CN:4 DL:6.4MiB ETA:43s]
+[#0f78d0 1.0GiB/1.3GiB(79%) CN:4 DL:6.3MiB ETA:43s]
+[#0f78d0 1.0GiB/1.3GiB(80%) CN:4 DL:6.3MiB ETA:42s]
+ *** Download Progress Summary as of Tue Aug 18 12:46:45 2026 *** 
+===============================================================================
+[#0f78d0 1.0GiB/1.3GiB(80%) CN:4 DL:6.2MiB ETA:41s]
+FILE: DRR853908.fastq/DRR853908_1.fastq.gz
+-------------------------------------------------------------------------------
+
+[#0f78d0 1.0GiB/1.3GiB(80%) CN:4 DL:6.2MiB ETA:41s]
+[#0f78d0 1.0GiB/1.3GiB(81%) CN:4 DL:6.2MiB ETA:40s]
+[#0f78d0 1.0GiB/1.3GiB(81%) CN:4 DL:6.2MiB ETA:40s]
+[#0f78d0 1.0GiB/1.3GiB(82%) CN:4 DL:6.2MiB ETA:38s]
+[#0f78d0 1.0GiB/1.3GiB(82%) CN:4 DL:6.2MiB ETA:37s]
+[#0f78d0 1.0GiB/1.3GiB(83%) CN:4 DL:6.2MiB ETA:37s]
+[#0f78d0 1.1GiB/1.3GiB(83%) CN:4 DL:6.2MiB ETA:36s]
+[#0f78d0 1.1GiB/1.3GiB(83%) CN:4 DL:6.1MiB ETA:35s]
+[#0f78d0 1.1GiB/1.3GiB(84%) CN:4 DL:6.0MiB ETA:35s]
+[#0f78d0 1.1GiB/1.3GiB(84%) CN:4 DL:5.9MiB ETA:34s]
+[#0f78d0 1.1GiB/1.3GiB(85%) CN:4 DL:5.9MiB ETA:33s]
+[#0f78d0 1.1GiB/1.3GiB(85%) CN:4 DL:5.9MiB ETA:32s]
+[#0f78d0 1.1GiB/1.3GiB(86%) CN:4 DL:5.9MiB ETA:31s]
+[#0f78d0 1.1GiB/1.3GiB(86%) CN:4 DL:5.8MiB ETA:31s]
+[#0f78d0 1.1GiB/1.3GiB(86%) CN:4 DL:5.7MiB ETA:30s]
+[#0f78d0 1.1GiB/1.3GiB(87%) CN:4 DL:5.7MiB ETA:29s]
+[#0f78d0 1.1GiB/1.3GiB(87%) CN:4 DL:5.7MiB ETA:28s]
+[#0f78d0 1.1GiB/1.3GiB(88%) CN:4 DL:5.8MiB ETA:27s]
+[#0f78d0 1.1GiB/1.3GiB(88%) CN:4 DL:5.8MiB ETA:26s]
+[#0f78d0 1.1GiB/1.3GiB(89%) CN:4 DL:5.8MiB ETA:25s]
+[#0f78d0 1.1GiB/1.3GiB(89%) CN:4 DL:5.9MiB ETA:23s]
+[#0f78d0 1.1GiB/1.3GiB(89%) CN:4 DL:5.9MiB ETA:22s]
+[#0f78d0 1.1GiB/1.3GiB(90%) CN:4 DL:5.9MiB ETA:21s]
+[#0f78d0 1.2GiB/1.3GiB(90%) CN:4 DL:6.0MiB ETA:20s]
+[#0f78d0 1.2GiB/1.3GiB(91%) CN:4 DL:6.2MiB ETA:18s]
+[#0f78d0 1.2GiB/1.3GiB(91%) CN:4 DL:6.2MiB ETA:17s]
+[#0f78d0 1.2GiB/1.3GiB(92%) CN:4 DL:6.2MiB ETA:16s]
+[#0f78d0 1.2GiB/1.3GiB(92%) CN:4 DL:6.2MiB ETA:15s]
+[#0f78d0 1.2GiB/1.3GiB(93%) CN:4 DL:6.2MiB ETA:14s]
+[#0f78d0 1.2GiB/1.3GiB(93%) CN:4 DL:6.2MiB ETA:13s]
+ *** Download Progress Summary as of Tue Aug 18 12:47:15 2026 *** 
+===============================================================================
+[#0f78d0 1.2GiB/1.3GiB(94%) CN:4 DL:6.2MiB ETA:12s]
+FILE: DRR853908.fastq/DRR853908_1.fastq.gz
+-------------------------------------------------------------------------------
+
+[#0f78d0 1.2GiB/1.3GiB(94%) CN:4 DL:6.2MiB ETA:12s]
+[#0f78d0 1.2GiB/1.3GiB(94%) CN:4 DL:6.3MiB ETA:11s]
+[#0f78d0 1.2GiB/1.3GiB(95%) CN:4 DL:6.3MiB ETA:10s]
+[#0f78d0 1.2GiB/1.3GiB(95%) CN:4 DL:6.3MiB ETA:9s]
+[#0f78d0 1.2GiB/1.3GiB(96%) CN:4 DL:6.3MiB ETA:8s]
+[#0f78d0 1.2GiB/1.3GiB(96%) CN:4 DL:6.3MiB ETA:7s]
+[#0f78d0 1.2GiB/1.3GiB(97%) CN:4 DL:6.4MiB ETA:6s]
+[#0f78d0 1.2GiB/1.3GiB(97%) CN:4 DL:6.4MiB ETA:5s]
+[#0f78d0 1.2GiB/1.3GiB(97%) CN:3 DL:6.3MiB ETA:4s]
+[#0f78d0 1.3GiB/1.3GiB(98%) CN:3 DL:6.3MiB ETA:3s]
+[#0f78d0 1.3GiB/1.3GiB(98%) CN:3 DL:6.0MiB ETA:2s]
+[#0f78d0 1.3GiB/1.3GiB(99%) CN:3 DL:5.9MiB ETA:2s]
+[#0f78d0 1.3GiB/1.3GiB(99%) CN:2 DL:5.6MiB ETA:1s]
+[#0f78d0 1.3GiB/1.3GiB(99%) CN:1 DL:5.3MiB]
+[#0f78d0 1.3GiB/1.3GiB(99%) CN:1 DL:4.8MiB]
+[#0f78d0 1.3GiB/1.3GiB(99%) CN:1 DL:4.4MiB]
+
+08/18 12:47:31 [[1;32mNOTICE[0m] Download complete: DRR853908.fastq/DRR853908_1.fastq.gz
+
+Download Results:
+gid   |stat|avg speed  |path/URI
+======+====+===========+=======================================================
+0f78d0|OK  |   9.9MiB/s|DRR853908.fastq/DRR853908_1.fastq.gz
+
+Status Legend:
+(OK):download completed.
+DRR853908.fastq/DRR853908_1.fastq.gz: OK
+[2026-08-18T12:47:34Z] downloading https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853908/DRR853908_2.fastq.gz
+
+08/18 12:47:34 [[1;32mNOTICE[0m] Downloading 1 item(s)
+[#11807e 368KiB/1.3GiB(0%) CN:4 DL:916KiB ETA:26m7s]
+[#11807e 4.9MiB/1.3GiB(0%) CN:4 DL:3.4MiB ETA:6m50s]
+[#11807e 11MiB/1.3GiB(0%) CN:4 DL:4.7MiB ETA:4m49s]
+[#11807e 18MiB/1.3GiB(1%) CN:4 DL:5.2MiB ETA:4m22s]
+[#11807e 24MiB/1.3GiB(1%) CN:4 DL:5.4MiB ETA:4m14s]
+[#11807e 30MiB/1.3GiB(2%) CN:4 DL:5.6MiB ETA:4m1s]
+[#11807e 36MiB/1.3GiB(2%) CN:4 DL:5.7MiB ETA:3m58s]
+[#11807e 43MiB/1.3GiB(3%) CN:4 DL:5.8MiB ETA:3m52s]
+[#11807e 49MiB/1.3GiB(3%) CN:4 DL:5.8MiB ETA:3m50s]
+[#11807e 56MiB/1.3GiB(4%) CN:4 DL:5.9MiB ETA:3m46s]
+[#11807e 62MiB/1.3GiB(4%) CN:4 DL:6.3MiB ETA:3m31s]
+[#11807e 68MiB/1.3GiB(4%) CN:4 DL:6.3MiB ETA:3m30s]
+[#11807e 74MiB/1.3GiB(5%) CN:4 DL:6.2MiB ETA:3m31s]
+[#11807e 80MiB/1.3GiB(5%) CN:4 DL:6.2MiB ETA:3m30s]
+[#11807e 86MiB/1.3GiB(6%) CN:4 DL:6.2MiB ETA:3m31s]
+[#11807e 93MiB/1.3GiB(6%) CN:4 DL:6.2MiB ETA:3m29s]
+[#11807e 99MiB/1.3GiB(7%) CN:4 DL:6.2MiB ETA:3m28s]
+[#11807e 105MiB/1.3GiB(7%) CN:4 DL:6.2MiB ETA:3m28s]
+[#11807e 111MiB/1.3GiB(7%) CN:4 DL:6.1MiB ETA:3m28s]
+[#11807e 118MiB/1.3GiB(8%) CN:4 DL:6.2MiB ETA:3m26s]
+[#11807e 124MiB/1.3GiB(8%) CN:4 DL:6.2MiB ETA:3m26s]
+[#11807e 130MiB/1.3GiB(9%) CN:4 DL:6.2MiB ETA:3m24s]
+[#11807e 136MiB/1.3GiB(9%) CN:4 DL:6.2MiB ETA:3m23s]
+[#11807e 143MiB/1.3GiB(10%) CN:4 DL:6.2MiB ETA:3m20s]
+[#11807e 150MiB/1.3GiB(10%) CN:4 DL:6.3MiB ETA:3m18s]
+[#11807e 156MiB/1.3GiB(11%) CN:4 DL:6.3MiB ETA:3m15s]
+[#11807e 162MiB/1.3GiB(11%) CN:4 DL:6.3MiB ETA:3m15s]
+[#11807e 169MiB/1.3GiB(12%) CN:4 DL:6.3MiB ETA:3m12s]
+[#11807e 175MiB/1.3GiB(12%) CN:4 DL:6.3MiB ETA:3m12s]
+ *** Download Progress Summary as of Tue Aug 18 12:48:04 2026 *** 
+===============================================================================
+[#11807e 181MiB/1.3GiB(12%) CN:4 DL:6.3MiB ETA:3m12s]
+FILE: DRR853908.fastq/DRR853908_2.fastq.gz
+-------------------------------------------------------------------------------
+
+[#11807e 181MiB/1.3GiB(12%) CN:4 DL:6.3MiB ETA:3m12s]
+[#11807e 187MiB/1.3GiB(13%) CN:4 DL:6.2MiB ETA:3m13s]
+[#11807e 193MiB/1.3GiB(13%) CN:4 DL:6.2MiB ETA:3m12s]
+[#11807e 199MiB/1.3GiB(14%) CN:4 DL:6.1MiB ETA:3m14s]
+[#11807e 205MiB/1.3GiB(14%) CN:4 DL:6.1MiB ETA:3m16s]
+[#11807e 210MiB/1.3GiB(15%) CN:4 DL:6.0MiB ETA:3m17s]
+[#11807e 217MiB/1.3GiB(15%) CN:4 DL:5.9MiB ETA:3m17s]
+[#11807e 222MiB/1.3GiB(15%) CN:4 DL:5.9MiB ETA:3m19s]
+[#11807e 228MiB/1.3GiB(16%) CN:4 DL:5.8MiB ETA:3m20s]
+[#11807e 234MiB/1.3GiB(16%) CN:4 DL:5.8MiB ETA:3m20s]
+[#11807e 240MiB/1.3GiB(17%) CN:4 DL:5.8MiB ETA:3m18s]
+[#11807e 246MiB/1.3GiB(17%) CN:4 DL:5.8MiB ETA:3m16s]
+[#11807e 252MiB/1.3GiB(17%) CN:4 DL:5.8MiB ETA:3m16s]
+[#11807e 257MiB/1.3GiB(18%) CN:4 DL:5.8MiB ETA:3m14s]
+[#11807e 263MiB/1.3GiB(18%) CN:4 DL:5.8MiB ETA:3m13s]
+[#11807e 269MiB/1.3GiB(19%) CN:4 DL:5.9MiB ETA:3m11s]
+[#11807e 275MiB/1.3GiB(19%) CN:4 DL:5.8MiB ETA:3m11s]
+[#11807e 281MiB/1.3GiB(20%) CN:4 DL:5.9MiB ETA:3m9s]
+[#11807e 287MiB/1.3GiB(20%) CN:4 DL:5.9MiB ETA:3m8s]
+[#11807e 292MiB/1.3GiB(20%) CN:4 DL:5.8MiB ETA:3m9s]
+[#11807e 298MiB/1.3GiB(21%) CN:4 DL:5.8MiB ETA:3m8s]
+[#11807e 304MiB/1.3GiB(21%) CN:4 DL:5.8MiB ETA:3m7s]
+[#11807e 310MiB/1.3GiB(22%) CN:4 DL:5.8MiB ETA:3m6s]
+[#11807e 316MiB/1.3GiB(22%) CN:4 DL:5.8MiB ETA:3m6s]
+[#11807e 322MiB/1.3GiB(22%) CN:4 DL:5.8MiB ETA:3m4s]
+[#11807e 328MiB/1.3GiB(23%) CN:4 DL:5.8MiB ETA:3m3s]
+[#11807e 333MiB/1.3GiB(23%) CN:4 DL:5.8MiB ETA:3m4s]
+[#11807e 339MiB/1.3GiB(24%) CN:4 DL:5.7MiB ETA:3m3s]
+[#11807e 344MiB/1.3GiB(24%) CN:4 DL:5.7MiB ETA:3m3s]
+[#11807e 350MiB/1.3GiB(24%) CN:4 DL:5.7MiB ETA:3m3s]
+ *** Download Progress Summary as of Tue Aug 18 12:48:34 2026 *** 
+===============================================================================
+[#11807e 356MiB/1.3GiB(25%) CN:4 DL:5.6MiB ETA:3m4s]
+FILE: DRR853908.fastq/DRR853908_2.fastq.gz
+-------------------------------------------------------------------------------
+
+[#11807e 356MiB/1.3GiB(25%) CN:4 DL:5.6MiB ETA:3m4s]
+[#11807e 362MiB/1.3GiB(25%) CN:4 DL:5.6MiB ETA:3m3s]
+[#11807e 368MiB/1.3GiB(26%) CN:4 DL:5.6MiB ETA:3m1s]
+[#11807e 373MiB/1.3GiB(26%) CN:4 DL:5.6MiB ETA:3m1s]
+[#11807e 379MiB/1.3GiB(27%) CN:4 DL:5.6MiB ETA:2m59s]
+[#11807e 385MiB/1.3GiB(27%) CN:4 DL:5.7MiB ETA:2m57s]
+[#11807e 391MiB/1.3GiB(27%) CN:4 DL:5.7MiB ETA:2m55s]
+[#11807e 397MiB/1.3GiB(28%) CN:4 DL:5.8MiB ETA:2m52s]
+[#11807e 403MiB/1.3GiB(28%) CN:4 DL:5.8MiB ETA:2m49s]
+[#11807e 409MiB/1.3GiB(29%) CN:4 DL:5.9MiB ETA:2m48s]
+[#11807e 415MiB/1.3GiB(29%) CN:4 DL:5.9MiB ETA:2m44s]
+[#11807e 421MiB/1.3GiB(30%) CN:4 DL:5.9MiB ETA:2m44s]
+[#11807e 427MiB/1.3GiB(30%) CN:4 DL:5.9MiB ETA:2m43s]
+[#11807e 433MiB/1.3GiB(30%) CN:4 DL:5.9MiB ETA:2m42s]
+[#11807e 439MiB/1.3GiB(31%) CN:4 DL:6.0MiB ETA:2m40s]
+[#11807e 445MiB/1.3GiB(31%) CN:4 DL:6.0MiB ETA:2m38s]
+[#11807e 451MiB/1.3GiB(32%) CN:4 DL:6.0MiB ETA:2m37s]
+[#11807e 458MiB/1.3GiB(32%) CN:4 DL:6.0MiB ETA:2m36s]
+[#11807e 464MiB/1.3GiB(33%) CN:4 DL:6.0MiB ETA:2m34s]
+[#11807e 469MiB/1.3GiB(33%) CN:4 DL:6.0MiB ETA:2m34s]
+[#11807e 475MiB/1.3GiB(33%) CN:4 DL:6.0MiB ETA:2m33s]
+[#11807e 482MiB/1.3GiB(34%) CN:4 DL:6.1MiB ETA:2m30s]
+[#11807e 489MiB/1.3GiB(34%) CN:4 DL:6.2MiB ETA:2m26s]
+[#11807e 496MiB/1.3GiB(35%) CN:4 DL:6.3MiB ETA:2m23s]
+[#11807e 502MiB/1.3GiB(35%) CN:4 DL:6.3MiB ETA:2m22s]
+[#11807e 508MiB/1.3GiB(36%) CN:4 DL:6.3MiB ETA:2m21s]
+[#11807e 515MiB/1.3GiB(36%) CN:4 DL:6.3MiB ETA:2m19s]
+[#11807e 521MiB/1.3GiB(37%) CN:4 DL:6.3MiB ETA:2m18s]
+[#11807e 527MiB/1.3GiB(37%) CN:4 DL:6.4MiB ETA:2m15s]
+[#11807e 533MiB/1.3GiB(38%) CN:4 DL:6.4MiB ETA:2m14s]
+[#11807e 539MiB/1.3GiB(38%) CN:4 DL:6.3MiB ETA:2m15s]
+ *** Download Progress Summary as of Tue Aug 18 12:49:05 2026 *** 
+===============================================================================
+[#11807e 545MiB/1.3GiB(38%) CN:4 DL:6.2MiB ETA:2m17s]
+FILE: DRR853908.fastq/DRR853908_2.fastq.gz
+-------------------------------------------------------------------------------
+
+[#11807e 545MiB/1.3GiB(38%) CN:4 DL:6.2MiB ETA:2m17s]
+[#11807e 551MiB/1.3GiB(39%) CN:4 DL:6.1MiB ETA:2m18s]
+[#11807e 557MiB/1.3GiB(39%) CN:4 DL:6.1MiB ETA:2m17s]
+[#11807e 564MiB/1.3GiB(40%) CN:4 DL:6.1MiB ETA:2m16s]
+[#11807e 570MiB/1.3GiB(40%) CN:4 DL:6.1MiB ETA:2m16s]
+[#11807e 576MiB/1.3GiB(41%) CN:4 DL:6.1MiB ETA:2m14s]
+[#11807e 582MiB/1.3GiB(41%) CN:4 DL:6.0MiB ETA:2m14s]
+[#11807e 588MiB/1.3GiB(41%) CN:4 DL:6.1MiB ETA:2m13s]
+[#11807e 594MiB/1.3GiB(42%) CN:4 DL:6.1MiB ETA:2m12s]
+[#11807e 600MiB/1.3GiB(42%) CN:4 DL:6.1MiB ETA:2m11s]
+[#11807e 606MiB/1.3GiB(43%) CN:4 DL:6.0MiB ETA:2m11s]
+[#11807e 612MiB/1.3GiB(43%) CN:4 DL:6.0MiB ETA:2m11s]
+[#11807e 618MiB/1.3GiB(44%) CN:4 DL:6.0MiB ETA:2m10s]
+[#11807e 624MiB/1.3GiB(44%) CN:4 DL:5.9MiB ETA:2m10s]
+[#11807e 630MiB/1.3GiB(44%) CN:4 DL:5.9MiB ETA:2m9s]
+[#11807e 636MiB/1.3GiB(45%) CN:4 DL:5.9MiB ETA:2m8s]
+[#11807e 642MiB/1.3GiB(45%) CN:4 DL:5.9MiB ETA:2m7s]
+[#11807e 648MiB/1.3GiB(46%) CN:4 DL:5.9MiB ETA:2m6s]
+[#11807e 654MiB/1.3GiB(46%) CN:4 DL:6.0MiB ETA:2m4s]
+[#11807e 660MiB/1.3GiB(47%) CN:4 DL:6.0MiB ETA:2m3s]
+[#11807e 666MiB/1.3GiB(47%) CN:4 DL:6.0MiB ETA:2m2s]
+[#11807e 672MiB/1.3GiB(47%) CN:4 DL:6.0MiB ETA:2m]
+[#11807e 678MiB/1.3GiB(48%) CN:4 DL:6.0MiB ETA:1m59s]
+[#11807e 684MiB/1.3GiB(48%) CN:4 DL:6.0MiB ETA:1m57s]
+[#11807e 691MiB/1.3GiB(49%) CN:4 DL:6.1MiB ETA:1m55s]
+[#11807e 697MiB/1.3GiB(49%) CN:4 DL:6.1MiB ETA:1m54s]
+[#11807e 703MiB/1.3GiB(50%) CN:4 DL:6.1MiB ETA:1m53s]
+[#11807e 709MiB/1.3GiB(50%) CN:4 DL:6.1MiB ETA:1m52s]
+[#11807e 715MiB/1.3GiB(51%) CN:4 DL:6.1MiB ETA:1m51s]
+[#11807e 722MiB/1.3GiB(51%) CN:4 DL:6.2MiB ETA:1m49s]
+[#11807e 728MiB/1.3GiB(51%) CN:4 DL:6.2MiB ETA:1m47s]
+ *** Download Progress Summary as of Tue Aug 18 12:49:36 2026 *** 
+===============================================================================
+[#11807e 735MiB/1.3GiB(52%) CN:4 DL:6.2MiB ETA:1m46s]
+FILE: DRR853908.fastq/DRR853908_2.fastq.gz
+-------------------------------------------------------------------------------
+
+[#11807e 735MiB/1.3GiB(52%) CN:4 DL:6.2MiB ETA:1m46s]
+[#11807e 741MiB/1.3GiB(52%) CN:4 DL:6.2MiB ETA:1m45s]
+[#11807e 747MiB/1.3GiB(53%) CN:4 DL:6.2MiB ETA:1m44s]
+[#11807e 754MiB/1.3GiB(53%) CN:4 DL:6.2MiB ETA:1m43s]
+[#11807e 760MiB/1.3GiB(54%) CN:4 DL:6.2MiB ETA:1m42s]
+[#11807e 766MiB/1.3GiB(54%) CN:4 DL:6.2MiB ETA:1m41s]
+[#11807e 772MiB/1.3GiB(55%) CN:4 DL:6.2MiB ETA:1m40s]
+[#11807e 778MiB/1.3GiB(55%) CN:4 DL:6.2MiB ETA:1m40s]
+[#11807e 784MiB/1.3GiB(55%) CN:4 DL:6.1MiB ETA:1m39s]
+[#11807e 790MiB/1.3GiB(56%) CN:4 DL:6.1MiB ETA:1m39s]
+[#11807e 796MiB/1.3GiB(56%) CN:4 DL:6.1MiB ETA:1m38s]
+[#11807e 802MiB/1.3GiB(57%) CN:4 DL:6.1MiB ETA:1m37s]
+[#11807e 809MiB/1.3GiB(57%) CN:4 DL:6.1MiB ETA:1m36s]
+[#11807e 814MiB/1.3GiB(58%) CN:4 DL:6.0MiB ETA:1m36s]
+[#11807e 821MiB/1.3GiB(58%) CN:4 DL:6.0MiB ETA:1m35s]
+[#11807e 827MiB/1.3GiB(58%) CN:4 DL:6.0MiB ETA:1m35s]
+[#11807e 831MiB/1.3GiB(59%) CN:4 DL:5.9MiB ETA:1m36s]
+[#11807e 836MiB/1.3GiB(59%) CN:4 DL:5.8MiB ETA:1m36s]
+[#11807e 843MiB/1.3GiB(60%) CN:4 DL:5.8MiB ETA:1m35s]
+[#11807e 849MiB/1.3GiB(60%) CN:4 DL:5.8MiB ETA:1m34s]
+[#11807e 855MiB/1.3GiB(60%) CN:4 DL:5.8MiB ETA:1m32s]
+[#11807e 862MiB/1.3GiB(61%) CN:4 DL:5.9MiB ETA:1m31s]
+[#11807e 868MiB/1.3GiB(61%) CN:4 DL:5.9MiB ETA:1m30s]
+[#11807e 874MiB/1.3GiB(62%) CN:4 DL:5.9MiB ETA:1m28s]
+[#11807e 880MiB/1.3GiB(62%) CN:4 DL:5.9MiB ETA:1m27s]
+[#11807e 886MiB/1.3GiB(63%) CN:4 DL:5.9MiB ETA:1m26s]
+[#11807e 892MiB/1.3GiB(63%) CN:4 DL:6.0MiB ETA:1m23s]
+[#11807e 898MiB/1.3GiB(64%) CN:4 DL:6.1MiB ETA:1m21s]
+[#11807e 905MiB/1.3GiB(64%) CN:4 DL:6.1MiB ETA:1m20s]
+[#11807e 911MiB/1.3GiB(64%) CN:4 DL:6.1MiB ETA:1m19s]
+[#11807e 917MiB/1.3GiB(65%) CN:4 DL:6.1MiB ETA:1m18s]
+ *** Download Progress Summary as of Tue Aug 18 12:50:07 2026 *** 
+===============================================================================
+[#11807e 0.9GiB/1.3GiB(65%) CN:4 DL:6.1MiB ETA:1m17s]
+FILE: DRR853908.fastq/DRR853908_2.fastq.gz
+-------------------------------------------------------------------------------
+
+[#11807e 0.9GiB/1.3GiB(65%) CN:4 DL:6.1MiB ETA:1m17s]
+[#11807e 0.9GiB/1.3GiB(66%) CN:4 DL:6.1MiB ETA:1m16s]
+[#11807e 0.9GiB/1.3GiB(66%) CN:4 DL:6.1MiB ETA:1m15s]
+[#11807e 0.9GiB/1.3GiB(67%) CN:4 DL:6.1MiB ETA:1m15s]
+[#11807e 0.9GiB/1.3GiB(67%) CN:4 DL:6.1MiB ETA:1m14s]
+[#11807e 0.9GiB/1.3GiB(67%) CN:4 DL:6.1MiB ETA:1m13s]
+[#11807e 0.9GiB/1.3GiB(68%) CN:4 DL:6.1MiB ETA:1m12s]
+[#11807e 0.9GiB/1.3GiB(68%) CN:4 DL:6.1MiB ETA:1m11s]
+[#11807e 0.9GiB/1.3GiB(69%) CN:4 DL:6.1MiB ETA:1m10s]
+[#11807e 0.9GiB/1.3GiB(69%) CN:4 DL:6.0MiB ETA:1m10s]
+[#11807e 0.9GiB/1.3GiB(70%) CN:4 DL:6.0MiB ETA:1m9s]
+[#11807e 0.9GiB/1.3GiB(70%) CN:4 DL:6.0MiB ETA:1m7s]
+[#11807e 0.9GiB/1.3GiB(71%) CN:4 DL:6.1MiB ETA:1m6s]
+[#11807e 0.9GiB/1.3GiB(71%) CN:4 DL:6.1MiB ETA:1m5s]
+[#11807e 0.9GiB/1.3GiB(71%) CN:4 DL:6.1MiB ETA:1m4s]
+[#11807e 0.9GiB/1.3GiB(72%) CN:4 DL:6.1MiB ETA:1m3s]
+[#11807e 0.9GiB/1.3GiB(72%) CN:4 DL:6.1MiB ETA:1m2s]
+[#11807e 1.0GiB/1.3GiB(73%) CN:4 DL:6.1MiB ETA:1m1s]
+[#11807e 1.0GiB/1.3GiB(73%) CN:4 DL:6.1MiB ETA:1m]
+[#11807e 1.0GiB/1.3GiB(74%) CN:4 DL:6.0MiB ETA:59s]
+[#11807e 1.0GiB/1.3GiB(74%) CN:4 DL:6.0MiB ETA:58s]
+[#11807e 1.0GiB/1.3GiB(74%) CN:4 DL:6.0MiB ETA:58s]
+[#11807e 1.0GiB/1.3GiB(75%) CN:4 DL:6.0MiB ETA:57s]
+[#11807e 1.0GiB/1.3GiB(75%) CN:4 DL:6.0MiB ETA:56s]
+[#11807e 1.0GiB/1.3GiB(76%) CN:4 DL:6.0MiB ETA:55s]
+[#11807e 1.0GiB/1.3GiB(76%) CN:4 DL:5.9MiB ETA:55s]
+[#11807e 1.0GiB/1.3GiB(77%) CN:4 DL:5.9MiB ETA:54s]
+[#11807e 1.0GiB/1.3GiB(77%) CN:4 DL:5.9MiB ETA:53s]
+[#11807e 1.0GiB/1.3GiB(77%) CN:4 DL:5.9MiB ETA:52s]
+[#11807e 1.0GiB/1.3GiB(78%) CN:4 DL:5.6MiB ETA:53s]
+ *** Download Progress Summary as of Tue Aug 18 12:50:37 2026 *** 
+===============================================================================
+[#11807e 1.0GiB/1.3GiB(78%) CN:4 DL:5.4MiB ETA:55s]
+FILE: DRR853908.fastq/DRR853908_2.fastq.gz
+-------------------------------------------------------------------------------
+
+[#11807e 1.0GiB/1.3GiB(78%) CN:4 DL:5.4MiB ETA:55s]
+[#11807e 1.0GiB/1.3GiB(78%) CN:4 DL:5.1MiB ETA:58s]
+[#11807e 1.0GiB/1.3GiB(78%) CN:4 DL:4.8MiB ETA:1m1s]
+[#11807e 1.0GiB/1.3GiB(79%) CN:4 DL:4.5MiB ETA:1m3s]
+[#11807e 1.0GiB/1.3GiB(79%) CN:4 DL:4.3MiB ETA:1m7s]
+[#11807e 1.0GiB/1.3GiB(79%) CN:4 DL:4.0MiB ETA:1m9s]
+[#11807e 1.0GiB/1.3GiB(79%) CN:4 DL:3.8MiB ETA:1m14s]
+[#11807e 1.0GiB/1.3GiB(80%) CN:4 DL:3.5MiB ETA:1m19s]
+[#11807e 1.0GiB/1.3GiB(80%) CN:4 DL:3.2MiB ETA:1m24s]
+[#11807e 1.1GiB/1.3GiB(80%) CN:4 DL:3.2MiB ETA:1m24s]
+[#11807e 1.1GiB/1.3GiB(80%) CN:4 DL:3.2MiB ETA:1m23s]
+[#11807e 1.1GiB/1.3GiB(80%) CN:4 DL:3.2MiB ETA:1m21s]
+[#11807e 1.1GiB/1.3GiB(81%) CN:4 DL:3.3MiB ETA:1m18s]
+[#11807e 1.1GiB/1.3GiB(81%) CN:4 DL:3.3MiB ETA:1m16s]
+[#11807e 1.1GiB/1.3GiB(81%) CN:4 DL:3.5MiB ETA:1m12s]
+[#11807e 1.1GiB/1.3GiB(82%) CN:4 DL:3.6MiB ETA:1m8s]
+[#11807e 1.1GiB/1.3GiB(82%) CN:4 DL:3.7MiB ETA:1m4s]
+[#11807e 1.1GiB/1.3GiB(82%) CN:4 DL:3.9MiB ETA:1m1s]
+[#11807e 1.1GiB/1.3GiB(83%) CN:4 DL:4.0MiB ETA:58s]
+[#11807e 1.1GiB/1.3GiB(83%) CN:4 DL:4.2MiB ETA:55s]
+[#11807e 1.1GiB/1.3GiB(83%) CN:4 DL:4.3MiB ETA:52s]
+[#11807e 1.1GiB/1.3GiB(84%) CN:4 DL:4.4MiB ETA:50s]
+[#11807e 1.1GiB/1.3GiB(84%) CN:4 DL:4.6MiB ETA:46s]
+[#11807e 1.1GiB/1.3GiB(84%) CN:4 DL:4.7MiB ETA:44s]
+[#11807e 1.1GiB/1.3GiB(85%) CN:4 DL:4.9MiB ETA:41s]
+[#11807e 1.1GiB/1.3GiB(85%) CN:4 DL:5.0MiB ETA:39s]
+[#11807e 1.1GiB/1.3GiB(86%) CN:4 DL:5.2MiB ETA:37s]
+[#11807e 1.1GiB/1.3GiB(86%) CN:4 DL:5.3MiB ETA:35s]
+[#11807e 1.1GiB/1.3GiB(87%) CN:4 DL:5.4MiB ETA:33s]
+[#11807e 1.1GiB/1.3GiB(87%) CN:4 DL:5.5MiB ETA:31s]
+ *** Download Progress Summary as of Tue Aug 18 12:51:07 2026 *** 
+===============================================================================
+[#11807e 1.2GiB/1.3GiB(87%) CN:4 DL:5.7MiB ETA:29s]
+FILE: DRR853908.fastq/DRR853908_2.fastq.gz
+-------------------------------------------------------------------------------
+
+[#11807e 1.2GiB/1.3GiB(87%) CN:4 DL:5.7MiB ETA:29s]
+[#11807e 1.2GiB/1.3GiB(88%) CN:4 DL:5.7MiB ETA:28s]
+[#11807e 1.2GiB/1.3GiB(88%) CN:4 DL:5.8MiB ETA:27s]
+[#11807e 1.2GiB/1.3GiB(89%) CN:4 DL:5.8MiB ETA:26s]
+[#11807e 1.2GiB/1.3GiB(89%) CN:4 DL:5.7MiB ETA:25s]
+[#11807e 1.2GiB/1.3GiB(89%) CN:4 DL:5.8MiB ETA:24s]
+[#11807e 1.2GiB/1.3GiB(90%) CN:4 DL:5.8MiB ETA:23s]
+[#11807e 1.2GiB/1.3GiB(90%) CN:4 DL:5.8MiB ETA:22s]
+[#11807e 1.2GiB/1.3GiB(91%) CN:4 DL:5.8MiB ETA:21s]
+[#11807e 1.2GiB/1.3GiB(91%) CN:4 DL:5.8MiB ETA:20s]
+[#11807e 1.2GiB/1.3GiB(92%) CN:4 DL:5.9MiB ETA:18s]
+[#11807e 1.2GiB/1.3GiB(92%) CN:4 DL:5.9MiB ETA:17s]
+[#11807e 1.2GiB/1.3GiB(92%) CN:4 DL:5.9MiB ETA:16s]
+[#11807e 1.2GiB/1.3GiB(93%) CN:4 DL:5.9MiB ETA:15s]
+[#11807e 1.2GiB/1.3GiB(93%) CN:4 DL:5.8MiB ETA:15s]
+[#11807e 1.2GiB/1.3GiB(93%) CN:4 DL:5.6MiB ETA:14s]
+[#11807e 1.2GiB/1.3GiB(94%) CN:4 DL:5.5MiB ETA:14s]
+[#11807e 1.2GiB/1.3GiB(94%) CN:3 DL:5.2MiB ETA:14s]
+[#11807e 1.2GiB/1.3GiB(94%) CN:3 DL:4.9MiB ETA:15s]
+[#11807e 1.2GiB/1.3GiB(94%) CN:3 DL:4.5MiB ETA:15s]
+[#11807e 1.3GiB/1.3GiB(95%) CN:3 DL:4.2MiB ETA:16s]
+[#11807e 1.3GiB/1.3GiB(95%) CN:3 DL:3.8MiB ETA:16s]
+[#11807e 1.3GiB/1.3GiB(95%) CN:3 DL:3.5MiB ETA:17s]
+[#11807e 1.3GiB/1.3GiB(95%) CN:2 DL:3.2MiB ETA:18s]
+[#11807e 1.3GiB/1.3GiB(95%) CN:2 DL:2.9MiB ETA:20s]
+[#11807e 1.3GiB/1.3GiB(95%) CN:2 DL:2.6MiB ETA:21s]
+[#11807e 1.3GiB/1.3GiB(96%) CN:2 DL:2.4MiB ETA:22s]
+[#11807e 1.3GiB/1.3GiB(96%) CN:2 DL:2.2MiB ETA:23s]
+[#11807e 1.3GiB/1.3GiB(96%) CN:2 DL:2.2MiB ETA:23s]
+[#11807e 1.3GiB/1.3GiB(96%) CN:2 DL:2.0MiB ETA:23s]
+ *** Download Progress Summary as of Tue Aug 18 12:51:37 2026 *** 
+===============================================================================
+[#11807e 1.3GiB/1.3GiB(96%) CN:1 DL:1.8MiB ETA:26s]
+FILE: DRR853908.fastq/DRR853908_2.fastq.gz
+-------------------------------------------------------------------------------
+
+[#11807e 1.3GiB/1.3GiB(96%) CN:1 DL:1.8MiB ETA:26s]
+[#11807e 1.3GiB/1.3GiB(96%) CN:1 DL:1.5MiB ETA:30s]
+[#11807e 1.3GiB/1.3GiB(96%) CN:1 DL:1.3MiB ETA:34s]
+[#11807e 1.3GiB/1.3GiB(96%) CN:1 DL:1.3MiB ETA:33s]
+[#11807e 1.3GiB/1.3GiB(96%) CN:1 DL:1.3MiB ETA:33s]
+[#11807e 1.3GiB/1.3GiB(96%) CN:1 DL:1.3MiB ETA:32s]
+[#11807e 1.3GiB/1.3GiB(96%) CN:1 DL:1.2MiB ETA:32s]
+[#11807e 1.3GiB/1.3GiB(97%) CN:1 DL:1.2MiB ETA:32s]
+[#11807e 1.3GiB/1.3GiB(97%) CN:1 DL:1.2MiB ETA:31s]
+[#11807e 1.3GiB/1.3GiB(97%) CN:1 DL:1.3MiB ETA:28s]
+[#11807e 1.3GiB/1.3GiB(97%) CN:1 DL:1.4MiB ETA:25s]
+[#11807e 1.3GiB/1.3GiB(97%) CN:1 DL:1.5MiB ETA:22s]
+[#11807e 1.3GiB/1.3GiB(97%) CN:1 DL:1.5MiB ETA:21s]
+[#11807e 1.3GiB/1.3GiB(97%) CN:1 DL:1.5MiB ETA:20s]
+[#11807e 1.3GiB/1.3GiB(97%) CN:1 DL:1.5MiB ETA:19s]
+[#11807e 1.3GiB/1.3GiB(97%) CN:1 DL:1.5MiB ETA:18s]
+[#11807e 1.3GiB/1.3GiB(98%) CN:1 DL:1.5MiB ETA:17s]
+[#11807e 1.3GiB/1.3GiB(98%) CN:1 DL:1.5MiB ETA:16s]
+[#11807e 1.3GiB/1.3GiB(98%) CN:1 DL:1.5MiB ETA:15s]
+[#11807e 1.3GiB/1.3GiB(98%) CN:1 DL:1.4MiB ETA:14s]
+[#11807e 1.3GiB/1.3GiB(98%) CN:1 DL:1.4MiB ETA:14s]
+[#11807e 1.3GiB/1.3GiB(98%) CN:1 DL:1.4MiB ETA:13s]
+[#11807e 1.3GiB/1.3GiB(98%) CN:2 DL:1.5MiB ETA:11s]
+[#11807e 1.3GiB/1.3GiB(98%) CN:2 DL:1.5MiB ETA:9s]
+[#11807e 1.3GiB/1.3GiB(99%) CN:2 DL:1.6MiB ETA:8s]
+[#11807e 1.3GiB/1.3GiB(99%) CN:2 DL:1.6MiB ETA:7s]
+[#11807e 1.3GiB/1.3GiB(99%) CN:2 DL:1.7MiB ETA:5s]
+[#11807e 1.3GiB/1.3GiB(99%) CN:2 DL:1.8MiB ETA:4s]
+[#11807e 1.3GiB/1.3GiB(99%) CN:2 DL:1.8MiB ETA:2s]
+[#11807e 1.3GiB/1.3GiB(99%) CN:2 DL:1.9MiB ETA:1s]
+ *** Download Progress Summary as of Tue Aug 18 12:52:07 2026 *** 
+===============================================================================
+[#11807e 1.3GiB/1.3GiB(99%) CN:1 DL:2.1MiB]
+FILE: DRR853908.fastq/DRR853908_2.fastq.gz
+-------------------------------------------------------------------------------
+
+[#11807e 1.3GiB/1.3GiB(99%) CN:1 DL:2.1MiB]
+
+08/18 12:52:07 [[1;32mNOTICE[0m] Download complete: DRR853908.fastq/DRR853908_2.fastq.gz
+
+Download Results:
+gid   |stat|avg speed  |path/URI
+======+====+===========+=======================================================
+11807e|OK  |   5.1MiB/s|DRR853908.fastq/DRR853908_2.fastq.gz
+
+Status Legend:
+(OK):download completed.
+DRR853908.fastq/DRR853908_2.fastq.gz: OK
+[bam_sort_core] merging from 0 files and 2 in-memory blocks...
+[
+  {
+    "run": "DRR853908",
+    "reference": "PNX_Duplo_A",
+    "reference_length": 1489,
+    "input_read_count": "20358988",
+    "mapped_primary": 204,
+    "mapped_mapq20": 203,
+    "proper_pair_primary": 200,
+    "breadth_1x": "1.000000",
+    "breadth_5x": "0.991941",
+    "breadth_10x": "0.799866",
+    "mean_depth": "20.243116",
+    "median_depth": "17.000000",
+    "depth_p10": "8.000000",
+    "depth_p90": "40.000000",
+    "depth_cv": "0.573180",
+    "zero_bases": 0
+  },
+  {
+    "run": "DRR853908",
+    "reference": "PNX_Duplo_B",
+    "reference_length": 1256,
+    "input_read_count": "20358988",
+    "mapped_primary": 179,
+    "mapped_mapq20": 178,
+    "proper_pair_primary": 170,
+    "breadth_1x": "1.000000",
+    "breadth_5x": "0.972134",
+    "breadth_10x": "0.757166",
+    "mean_depth": "20.664809",
+    "median_depth": "19.000000",
+    "depth_p10": "7.000000",
+    "depth_p90": "35.000000",
+    "depth_cv": "0.524437",
+    "zero_bases": 0
+  },
+  {
+    "run": "DRR853908",
+    "reference": "PNX_Picorna_A",
+    "reference_length": 2082,
+    "input_read_count": "20358988",
+    "mapped_primary": 212,
+    "mapped_mapq20": 209,
+    "proper_pair_primary": 206,
+    "breadth_1x": "1.000000",
+    "breadth_5x": "0.779059",
+    "breadth_10x": "0.593180",
+    "mean_depth": "15.045629",
+    "median_depth": "12.000000",
+    "depth_p10": "3.000000",
+    "depth_p90": "31.000000",
+    "depth_cv": "0.751656",
+    "zero_bases": 0
+  },
+  {
+    "run": "DRR853908",
+    "reference": "PNX_Picorna_B",
+    "reference_length": 1814,
+    "input_read_count": "20358988",
+    "mapped_primary": 2,
+    "mapped_mapq20": 2,
+    "proper_pair_primary": 2,
+    "breadth_1x": "0.165380",
+    "breadth_5x": "0.000000",
+    "breadth_10x": "0.000000",
+    "mean_depth": "0.165380",
+    "median_depth": "0.000000",
+    "depth_p10": "0.000000",
+    "depth_p90": "1.000000",
+    "depth_cv": "2.246479",
+    "zero_bases": 1514
+  }
+]

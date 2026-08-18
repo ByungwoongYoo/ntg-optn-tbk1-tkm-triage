@@ -1,0 +1,45 @@
+{
+  "generated_utc": "2026-08-18T12:19:16.753818+00:00",
+  "requested_runs": [
+    "DRR853908",
+    "DRR853910",
+    "DRR853912"
+  ],
+  "metadata_complete": true,
+  "failed_runs": [],
+  "run_accessions": [
+    "DRR853908",
+    "DRR853910",
+    "DRR853912"
+  ],
+  "experiment_accessions": [
+    "DRX831961",
+    "DRX831963",
+    "DRX831965"
+  ],
+  "sample_accessions": [
+    "DRS610866",
+    "DRS610868",
+    "DRS610870",
+    "SAMD01772849",
+    "SAMD01772851",
+    "SAMD01772853"
+  ],
+  "study_accessions": [
+    "DRP016351",
+    "PRJDB39299"
+  ],
+  "library_names": [
+    "missing"
+  ],
+  "sample_titles": [
+    "Sample_BhA-R21032242 (SAMC5870568)",
+    "Sample_BhC-R21032244 (SAMC5870570)",
+    "Sample_ZhB-R21032240 (SAMC5870566)"
+  ],
+  "distinct_run_count": 3,
+  "distinct_experiment_count": 3,
+  "distinct_archived_sample_count": 6,
+  "independence_grade": "distinct_archived_samples_and_experiments",
+  "interpretation_boundary": "Distinct archive sample or experiment accessions do not by themselves prove independent plants, independent infections, or the true biological host."
+}

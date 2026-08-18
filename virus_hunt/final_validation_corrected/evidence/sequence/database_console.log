@@ -1,0 +1,36 @@
+[2026-08-18T12:19:16Z] blastp_viral attempt 1
+[2026-08-18T12:40:39Z] blastp_nonviral attempt 1
+[2026-08-18T13:22:23Z] blastp_nonviral attempt 2
+[2026-08-18T13:44:37Z] blastn_nt attempt 1
+{
+  "generated_utc": "2026-08-18T14:35:59.252350+00:00",
+  "database_note": "NCBI remote BLAST databases queried at workflow runtime; empty output is not itself evidence of novelty.",
+  "blastp_nr_derivation": "concatenation of disjoint viral and nonviral NR searches",
+  "searches": {
+    "blastp_viral": {
+      "success": true,
+      "result_bytes": 15669,
+      "result_lines": 120,
+      "log": "blastp_viral.log"
+    },
+    "blastp_nonviral": {
+      "success": false,
+      "result_bytes": 0,
+      "result_lines": 0,
+      "log": "blastp_nonviral.log"
+    },
+    "blastp_nr": {
+      "success": false,
+      "result_bytes": 15669,
+      "result_lines": 120,
+      "log": "derived"
+    },
+    "blastn_nt": {
+      "success": true,
+      "result_bytes": 5403,
+      "result_lines": 35,
+      "log": "blastn_nt.log"
+    }
+  },
+  "all_required_searches_succeeded": false
+}

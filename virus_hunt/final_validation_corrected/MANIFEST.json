@@ -1,0 +1,562 @@
+[
+  {
+    "path": "CLAIM_BOUNDARY.md",
+    "bytes": 577,
+    "sha256": "fee3454d796a7b3a09ef289338aba616b6e5a977e2dbe43c10b09bb12d88fca2"
+  },
+  {
+    "path": "COMBINED_READ_SUPPORT.tsv",
+    "bytes": 1725,
+    "sha256": "9c9175f9db962e776f11302aa4cea529319ebc4a8620da5e4832c6d1174d7659"
+  },
+  {
+    "path": "FINALIZER_CONSOLE.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "FINAL_CANDIDATE_DECISIONS.json",
+    "bytes": 6241,
+    "sha256": "fcc71d4981914b122a4eb7ba2db14164d9ef624d214397bfc40234cf9b4ad72e"
+  },
+  {
+    "path": "FINAL_CANDIDATE_DECISIONS.tsv",
+    "bytes": 2350,
+    "sha256": "7dc518241f7516cebd6b824f432d80056354f9e71d39ac042846b04f2e56e53c"
+  },
+  {
+    "path": "FINAL_VALIDATION_REPORT.md",
+    "bytes": 2554,
+    "sha256": "36d2cc4f1c49e84a65a87da0c9e3ffd47a74a67a73809025eeeafe2b020524e9"
+  },
+  {
+    "path": "evidence/candidate_contigs.fna",
+    "bytes": 7054,
+    "sha256": "6a5c7951ecb2af04a9582f84c8cc362041ae3547275d5e32e40741a547ba52c5"
+  },
+  {
+    "path": "evidence/candidate_manifest.json",
+    "bytes": 2937,
+    "sha256": "fdbdff3d43af176f6304666a115845ff25d0f5f9dc17562afc6c643e29fa1420"
+  },
+  {
+    "path": "evidence/candidate_rdrp.faa",
+    "bytes": 1795,
+    "sha256": "994de803f1b079b7764d397d64316002e9d9dd625f5da38456146f654a70e966"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853908/RAW_MAPPING_STATUS.json",
+    "bytes": 143,
+    "sha256": "fed2d5e8cdc746b8efae1d125525a0fe868b6e432a1acf9c342c73c34a772e90"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853908/SHA256SUMS_COMPLETE.txt",
+    "bytes": 1530,
+    "sha256": "8f8934557bb61ae8dadf464225a0916a88d19184f09d84632a5cca3c6f5f0e7c"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853908/disk_before_mapping.txt",
+    "bytes": 89,
+    "sha256": "11d98be1bb528cd37076cf7202acd89587ed889e0d63afb5534f7aa0a1525cb0"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853908/download.log",
+    "bytes": 26675,
+    "sha256": "97945cbfd6b1abfd0b8bb6dc610b42a271c245a0428a74a31629f7f5a6b7b603"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853908/downloaded_fastq_files.txt",
+    "bytes": 74,
+    "sha256": "ed97495a606fe0008341ade08b05c6e33b57beac8f9152ac2d4bf933af713a7a"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853908/ena_run_metadata.tsv",
+    "bytes": 819,
+    "sha256": "a495288d990405b68e7b48763ab7ab2096620185bbf88ca161dfa29b52d7068d"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853908/flagstat.txt",
+    "bytes": 474,
+    "sha256": "89555b2aac3adff19b292ebc45872a25ba0b004578c16461c618dff9a0f79683"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853908/idxstats.tsv",
+    "bytes": 102,
+    "sha256": "3d3b8fc5f94f629dc06ac61e5764a3aa478a825ecba5d4a0169caf5bdda16ca0"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853908/map_console.log",
+    "bytes": 29129,
+    "sha256": "10fbf2cadf8f5ce0bb9d76ab98988d2a5dfa93a0275d05f0c7dc652095eb6102"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853908/minimap2.stderr.txt",
+    "bytes": 7771,
+    "sha256": "9807d121394c133f9a342cd4cbfa49351e3692bdeed52bd2c7ae09d7c96282f2"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853908/minimap2_version.txt",
+    "bytes": 11,
+    "sha256": "aadc3e9d42ddc9f463df5e2b04cabcff526f4dc74c9a29bc6f428eee7d42ec01"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853908/read_support.json",
+    "bytes": 1913,
+    "sha256": "befb5334bd0ea62516d375cf13ca8b4233b19d48d0525cff04ebe2960ad077e0"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853908/read_support.tsv",
+    "bytes": 698,
+    "sha256": "4cbae57c3ae0bbae3c163cb36c66f5d3d08f93382f778126fd7637ca0541806f"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853908/samtools_coverage.tsv",
+    "bytes": 281,
+    "sha256": "69d62a453194abfe36e434aee946f56d9828b8951f79875cfb7461c69839bffe"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853908/samtools_version.txt",
+    "bytes": 2022,
+    "sha256": "49ffed1b1406c4eb9e0e72ac06160f874398cda12189206440d80dfe851645ed"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853910/RAW_MAPPING_STATUS.json",
+    "bytes": 143,
+    "sha256": "4d5f62d7de4631316319d7c82ed8cb5e89c5ab60f794a82d544732d3912b6622"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853910/SHA256SUMS_COMPLETE.txt",
+    "bytes": 1530,
+    "sha256": "c0d4e030aac8080a61bd1fad3feba241055477999e415d0f38a2ee3c1a381ce3"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853910/disk_before_mapping.txt",
+    "bytes": 89,
+    "sha256": "6ffe25ab4fca7b8bfa47a065dffbd2f1ce2b16d6db1b6d844081415cfacc35e2"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853910/download.log",
+    "bytes": 26949,
+    "sha256": "089710056836f0038f81f11c8a6f749a60e730986c4502118114fb183ab00c43"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853910/downloaded_fastq_files.txt",
+    "bytes": 74,
+    "sha256": "fddf02481bed45d726913f2ce8f8305462a331cafb35b3419acac448b9c8674e"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853910/ena_run_metadata.tsv",
+    "bytes": 819,
+    "sha256": "c5b524f9ec8515f95633d590c8ce7ce032273e70bb6432fdcb99b43555a4d719"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853910/flagstat.txt",
+    "bytes": 482,
+    "sha256": "9a9e3f0e9a5f107edea3c1369345738778ef5f5908f3f07972437ff0164043a7"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853910/idxstats.tsv",
+    "bytes": 105,
+    "sha256": "8192cf53d6363eeba0496c9b2fd596ff1b938151fd5a12ddb64e4b7130a22c7b"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853910/map_console.log",
+    "bytes": 29416,
+    "sha256": "e0728d8b33a2d3bf30c5a644b642c1759746305414194d65ea42c15049c8c713"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853910/minimap2.stderr.txt",
+    "bytes": 7192,
+    "sha256": "ed871435db308afe3c699a9d47b5066aa01dcbb7a806e904db26170461c362b4"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853910/minimap2_version.txt",
+    "bytes": 11,
+    "sha256": "aadc3e9d42ddc9f463df5e2b04cabcff526f4dc74c9a29bc6f428eee7d42ec01"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853910/read_support.json",
+    "bytes": 1926,
+    "sha256": "3d13b4f45f086cd274700d15f75fd7e5d3af2e34d92ace2cf6ddea8a90e22266"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853910/read_support.tsv",
+    "bytes": 711,
+    "sha256": "f04d8f036de2b12e360a8087b090e7c6a1b2e34073c4dce1bc308c1b59ea27ed"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853910/samtools_coverage.tsv",
+    "bytes": 288,
+    "sha256": "43b4e62be5bf2fbf49422d9fab57363e1af2427e27234738fec31c615e14fc61"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853910/samtools_version.txt",
+    "bytes": 2022,
+    "sha256": "49ffed1b1406c4eb9e0e72ac06160f874398cda12189206440d80dfe851645ed"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853912/RAW_MAPPING_STATUS.json",
+    "bytes": 143,
+    "sha256": "9d8b7e5cb20472711dad6b2c5744bdcae943f770bc9863130ba4e6a5e87a2630"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853912/SHA256SUMS_COMPLETE.txt",
+    "bytes": 1530,
+    "sha256": "bba145a8e5003495b045c85be7ccb8cdeeb2d6417691d795573450b2936433a3"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853912/disk_before_mapping.txt",
+    "bytes": 89,
+    "sha256": "11d98be1bb528cd37076cf7202acd89587ed889e0d63afb5534f7aa0a1525cb0"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853912/download.log",
+    "bytes": 32711,
+    "sha256": "06fa78ce42bccedbd49b89ef092fd884e9c82ad381b5cecfbbafe54f210830d5"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853912/downloaded_fastq_files.txt",
+    "bytes": 74,
+    "sha256": "48bf69f92de8e83a682c5fcfa79259a2e830d70688d2b8367e2eca881a872c53"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853912/ena_run_metadata.tsv",
+    "bytes": 819,
+    "sha256": "31290ed1e842a198d58c42e24f744345b191fbe21438fea10fd9f515e93d8c86"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853912/flagstat.txt",
+    "bytes": 482,
+    "sha256": "7fd222600dce8aa2bf83871aaeef5aab1181019e0a0d4fba74315e2dea527106"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853912/idxstats.tsv",
+    "bytes": 104,
+    "sha256": "cb2d44472f27af75af168b22866d705ea23be5b1c69e9bf26a0e8663b423743b"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853912/map_console.log",
+    "bytes": 35096,
+    "sha256": "863bd76a222cbe91cb2e6ba3fd6f4376c17b1e47b5525e6060374483c003e2f8"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853912/minimap2.stderr.txt",
+    "bytes": 7714,
+    "sha256": "6800e3716e0095f485bb01fe5771c5100b9cd0085726010348ca66f8e8d63f25"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853912/minimap2_version.txt",
+    "bytes": 11,
+    "sha256": "aadc3e9d42ddc9f463df5e2b04cabcff526f4dc74c9a29bc6f428eee7d42ec01"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853912/read_support.json",
+    "bytes": 1923,
+    "sha256": "8bd45aeb3798e534f255e6596dd8eb4d4ee637bd5001cd7f2fb4ea9d75d3d174"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853912/read_support.tsv",
+    "bytes": 708,
+    "sha256": "ce941139020304a25ef5a536b933d4a50c9f8c6c93564d90ce45e39fe06ae8cb"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853912/samtools_coverage.tsv",
+    "bytes": 285,
+    "sha256": "567b4c065e8bedf0a8415a55bc623472a5e30ff22bce3b128470461514100df7"
+  },
+  {
+    "path": "evidence/readmaps/corrected-panax-read-support-DRR853912/samtools_version.txt",
+    "bytes": 2022,
+    "sha256": "49ffed1b1406c4eb9e0e72ac06160f874398cda12189206440d80dfe851645ed"
+  },
+  {
+    "path": "evidence/sequence/SHA256SUMS.txt",
+    "bytes": 6545,
+    "sha256": "5218cf0fec222b547a68f633136288ea9aa8a10d3e3416ef368d76fd6568edc4"
+  },
+  {
+    "path": "evidence/sequence/cross_run/console.log",
+    "bytes": 1351,
+    "sha256": "00d1ffed0874822507ad4a5bb94d6562db1f0a168df4a056e60b19111928af5c"
+  },
+  {
+    "path": "evidence/sequence/cross_run/cross_run_pairs.tsv",
+    "bytes": 1423,
+    "sha256": "e5f40682df6ccb5a727b597fe2553cd01b388f23436e27e4375d2a9cd769c7df"
+  },
+  {
+    "path": "evidence/sequence/cross_run/lineage_replication_summary.json",
+    "bytes": 1351,
+    "sha256": "00d1ffed0874822507ad4a5bb94d6562db1f0a168df4a056e60b19111928af5c"
+  },
+  {
+    "path": "evidence/sequence/cross_run/lineage_replication_summary.tsv",
+    "bytes": 454,
+    "sha256": "c4f56fbb985545cca23696e0e14e6a1c879989a1679a2d53cfe9388bf181371f"
+  },
+  {
+    "path": "evidence/sequence/database/REMOTE_BLAST_COMMANDS.txt",
+    "bytes": 814,
+    "sha256": "0b5a1fb8b8cb847aaaa19369a43f0cd5a2a13123be7affe86895a164501c6077"
+  },
+  {
+    "path": "evidence/sequence/database/REMOTE_BLAST_STATUS.json",
+    "bytes": 877,
+    "sha256": "66522c642c6aeb4026a23e7d479fe3a83269f53a59c0738df4dd1765fe3507a5"
+  },
+  {
+    "path": "evidence/sequence/database/blastn_nt.log",
+    "bytes": 619,
+    "sha256": "a59a55bcac68dba63cc4e993b39180a3eb9b87d2193bc49132e0c64a70f74677"
+  },
+  {
+    "path": "evidence/sequence/database/blastn_nt.success",
+    "bytes": 2,
+    "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+  },
+  {
+    "path": "evidence/sequence/database/blastn_nt.tsv",
+    "bytes": 5403,
+    "sha256": "0fa6189033bf1f84b76a72022f851969b6448a89a4e7b03d7c8a340bc02d7850"
+  },
+  {
+    "path": "evidence/sequence/database/blastn_version.txt",
+    "bytes": 67,
+    "sha256": "eb71a54f4e307d2e26dfc98faa5c6bb41f9a1847929e68445c624afe69290f3a"
+  },
+  {
+    "path": "evidence/sequence/database/blastp_nonviral.log",
+    "bytes": 1698,
+    "sha256": "74f86ae1c94c998eb4fc80ce4ae1abf123849856aaa653c0ef76e4164d3e9526"
+  },
+  {
+    "path": "evidence/sequence/database/blastp_nonviral.success",
+    "bytes": 2,
+    "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+  },
+  {
+    "path": "evidence/sequence/database/blastp_nonviral.tsv",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "evidence/sequence/database/blastp_nr.success",
+    "bytes": 2,
+    "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+  },
+  {
+    "path": "evidence/sequence/database/blastp_nr.tsv",
+    "bytes": 15669,
+    "sha256": "546eeefa015411993f0c69cd28e30bdc843f56f07a6096655cf32216fecd3968"
+  },
+  {
+    "path": "evidence/sequence/database/blastp_version.txt",
+    "bytes": 67,
+    "sha256": "95a9b0a111d7f4c7b0edcadcd28da7185806593b46dd5efab07960cf6c1f27bf"
+  },
+  {
+    "path": "evidence/sequence/database/blastp_viral.log",
+    "bytes": 622,
+    "sha256": "7d544d9923ab16ef3e5faeffb6451aca1fb4c2b856dcce11d164ed6161ebf89a"
+  },
+  {
+    "path": "evidence/sequence/database/blastp_viral.success",
+    "bytes": 2,
+    "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865"
+  },
+  {
+    "path": "evidence/sequence/database/blastp_viral.tsv",
+    "bytes": 15669,
+    "sha256": "546eeefa015411993f0c69cd28e30bdc843f56f07a6096655cf32216fecd3968"
+  },
+  {
+    "path": "evidence/sequence/database_console.log",
+    "bytes": 1064,
+    "sha256": "de1d6b66b7add66e82f09e38f29f6aaf403f158c7e8b95c3b8eb205887f51117"
+  },
+  {
+    "path": "evidence/sequence/metadata/ENA_REQUEST_LOG.json",
+    "bytes": 1968,
+    "sha256": "f4ef6e7f22e8f1e97bf2c4767da76f141abae9efa322925a9f370ae916890128"
+  },
+  {
+    "path": "evidence/sequence/metadata/ENA_RUN_METADATA.json",
+    "bytes": 3933,
+    "sha256": "6fb4fb60c5d32d25291ed83e8dba90a30e5d028c7b93c3645a0da04386bbb82d"
+  },
+  {
+    "path": "evidence/sequence/metadata/ENA_RUN_METADATA.tsv",
+    "bytes": 2216,
+    "sha256": "448cfe381cdcf8c2bcbc41a115783311611e83a355a56af22fd523d698d2e00e"
+  },
+  {
+    "path": "evidence/sequence/metadata/INDEPENDENCE_AUDIT.json",
+    "bytes": 1090,
+    "sha256": "4340b43462425961068c5b941d33420004d365dc9c8afe47699ccb93242dc937"
+  },
+  {
+    "path": "evidence/sequence/metadata/INDEPENDENCE_AUDIT.md",
+    "bytes": 836,
+    "sha256": "2df0a0fc82a9906c7bbc4305de3eb2c5ed5ff99cea2f6dfd398418a46b2d7d39"
+  },
+  {
+    "path": "evidence/sequence/metadata/console.log",
+    "bytes": 1090,
+    "sha256": "4340b43462425961068c5b941d33420004d365dc9c8afe47699ccb93242dc937"
+  },
+  {
+    "path": "evidence/sequence/phylogeny/PNX_Duplo_A/alignment.faa",
+    "bytes": 8951,
+    "sha256": "2f8fab523b3740f386f135d5051e7b37b0a81066106be39df2ed875b6a76f45b"
+  },
+  {
+    "path": "evidence/sequence/phylogeny/PNX_Duplo_A/candidate_plus_homologs.faa",
+    "bytes": 8548,
+    "sha256": "a97f8947f70173323221861dfa9eb430fa9fb2adac1491472fd84bbef8130caa"
+  },
+  {
+    "path": "evidence/sequence/phylogeny/PNX_Duplo_A/fasttree.stderr.txt",
+    "bytes": 1302,
+    "sha256": "0921b285ce42ac16765bb66d119cf1dd20dd8a3381b1d33a37958c1af45917a2"
+  },
+  {
+    "path": "evidence/sequence/phylogeny/PNX_Duplo_A/homologs.faa",
+    "bytes": 8160,
+    "sha256": "8e9073156fe869c06d07f688efd1dcfefd4a4fe4102387a3c157826abf1f2583"
+  },
+  {
+    "path": "evidence/sequence/phylogeny/PNX_Duplo_A/mafft.stderr.txt",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "evidence/sequence/phylogeny/PNX_Duplo_A/tree.nwk",
+    "bytes": 633,
+    "sha256": "aa0377ad144967a3cfdfa1d05908d90c4592dd526d4926ad730852d4a507529e"
+  },
+  {
+    "path": "evidence/sequence/phylogeny/PNX_Duplo_B/alignment.faa",
+    "bytes": 8873,
+    "sha256": "bb1444fa73d0673b44a59f273ffb82c86e41f2325e69f42743e52694eaf6becf"
+  },
+  {
+    "path": "evidence/sequence/phylogeny/PNX_Duplo_B/candidate_plus_homologs.faa",
+    "bytes": 8634,
+    "sha256": "8003544dfca352aa28e8f33363fe54d49896453c3bd4e4c10ad2dc667e1feb79"
+  },
+  {
+    "path": "evidence/sequence/phylogeny/PNX_Duplo_B/fasttree.stderr.txt",
+    "bytes": 1302,
+    "sha256": "340da889ba88cb8657fa05224134bb281892934a7aa7d5f5201465bbe4dca494"
+  },
+  {
+    "path": "evidence/sequence/phylogeny/PNX_Duplo_B/homologs.faa",
+    "bytes": 8276,
+    "sha256": "10439d95ebb664d2c8ee4f1d66b3b7fe69b68a78205ed7d1c249e499edadbd16"
+  },
+  {
+    "path": "evidence/sequence/phylogeny/PNX_Duplo_B/mafft.stderr.txt",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "evidence/sequence/phylogeny/PNX_Duplo_B/tree.nwk",
+    "bytes": 633,
+    "sha256": "6cd7084a06b96120806190920088ffd0c33996261a7da059c49c5af0f1858706"
+  },
+  {
+    "path": "evidence/sequence/phylogeny/PNX_Picorna_A/alignment.faa",
+    "bytes": 92247,
+    "sha256": "bf6dd4b8b327e15b341b984d1eee1466514120f5b1297a3965dfa90bf15e5e21"
+  },
+  {
+    "path": "evidence/sequence/phylogeny/PNX_Picorna_A/candidate_plus_homologs.faa",
+    "bytes": 43988,
+    "sha256": "387781670e901c144b03f7da017d9c227d72aecc4b35756e2ebf42bc66408362"
+  },
+  {
+    "path": "evidence/sequence/phylogeny/PNX_Picorna_A/fasttree.stderr.txt",
+    "bytes": 2033,
+    "sha256": "d17429b1c06d9431d6bf0dacb5a947c143798bd3635f82e45b7d15f5fda3f937"
+  },
+  {
+    "path": "evidence/sequence/phylogeny/PNX_Picorna_A/homologs.faa",
+    "bytes": 43554,
+    "sha256": "fe6a2f3aa425d28aa19a200bb742fe865b518c3c32fe886e4c8aa6fb5ef85d50"
+  },
+  {
+    "path": "evidence/sequence/phylogeny/PNX_Picorna_A/mafft.stderr.txt",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "evidence/sequence/phylogeny/PNX_Picorna_A/tree.nwk",
+    "bytes": 648,
+    "sha256": "3d09e88938f4e522ba876cf257b1a7618c39691e7f8df0c423982dd0b8045df3"
+  },
+  {
+    "path": "evidence/sequence/phylogeny/PNX_Picorna_B/alignment.faa",
+    "bytes": 79510,
+    "sha256": "fbfde965293f0ce9cd398520841b5d1ab171af132ba6232b5b427c48466ee16b"
+  },
+  {
+    "path": "evidence/sequence/phylogeny/PNX_Picorna_B/candidate_plus_homologs.faa",
+    "bytes": 27121,
+    "sha256": "8ca25a5f29585955dbc4efb380a8df234522bcfa6cf02d6a258b6d99f86b29fd"
+  },
+  {
+    "path": "evidence/sequence/phylogeny/PNX_Picorna_B/fasttree.stderr.txt",
+    "bytes": 1837,
+    "sha256": "c8de107d8146e3634c403a379723786c08a7e9fbee2ecd24f11b8f832907ff0a"
+  },
+  {
+    "path": "evidence/sequence/phylogeny/PNX_Picorna_B/homologs.faa",
+    "bytes": 26786,
+    "sha256": "bc18faa4d74a98f2c1e919373b10244c8e8c9c9b99781cab225c69dbea114959"
+  },
+  {
+    "path": "evidence/sequence/phylogeny/PNX_Picorna_B/mafft.stderr.txt",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "evidence/sequence/phylogeny/PNX_Picorna_B/tree.nwk",
+    "bytes": 635,
+    "sha256": "4a70e1c5ad7c7e1f80a89bde5698625f9ab984614a4944616a06c61a524dce0e"
+  },
+  {
+    "path": "evidence/sequence/phylogeny/console.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "evidence/sequence/phylogeny/phylogeny_status.tsv",
+    "bytes": 191,
+    "sha256": "020812a1af90f94e5f53d87f41051eecc4112eb216e2492ae3e72ef546ae86c0"
+  },
+  {
+    "path": "evidence/sequence/provenance/INPUT_SHA256_ACTUAL.txt",
+    "bytes": 832,
+    "sha256": "6f1d776d5237f0e6dc505401554ce8f59c90444c1f638c3fac3eb1153d8ece60"
+  },
+  {
+    "path": "evidence/sequence/provenance/PRIOR_EXPECTED_SHA256SUMS.txt",
+    "bytes": 832,
+    "sha256": "df126ef98fc3564061994449ec8ca7f65e76f46325bb89365aef86e87803066b"
+  },
+  {
+    "path": "evidence/sequence/provenance/PRIOR_HASH_CHECK.log",
+    "bytes": 332,
+    "sha256": "b05c87b262600e92b3b4c6fa4c8dd5ca6eeebdfbf24af22b3abd9fd840dfb21d"
+  },
+  {
+    "path": "evidence/sequence/provenance/SEQUENCE_AUDIT_PROVENANCE.txt",
+    "bytes": 2071,
+    "sha256": "5e99937d2046da668f615bd7e99ca75632ca0f5f3958c4046064287e6498636b"
+  },
+  {
+    "path": "evidence/strict_candidate_members.tsv",
+    "bytes": 3062,
+    "sha256": "c81481b938ba72a658408ca844f452d86d3c507911c3dae9169a668fb9f7352f"
+  }
+]

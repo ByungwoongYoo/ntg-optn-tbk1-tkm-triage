@@ -1,0 +1,109 @@
+{
+  "PNX_Duplo_A": {
+    "representative": "DRR853908_24399_frame=+3",
+    "members": [
+      "DRR853908_24399_frame=+3",
+      "DRR853910_67068_frame=-3",
+      "DRR853912_84386_frame=-3"
+    ],
+    "nearest_palmdb": "u856097",
+    "pident": 67.7,
+    "classification_hint": "Duplorna/Durnavirales-like",
+    "representative_nt_contig": "DRR853908_24399",
+    "aa_length": 364,
+    "nt_length": 1489,
+    "aa_stop_count": 0,
+    "motif_A": "YALDWRQFDATV",
+    "motif_B": "SGSYYTSIIGSIVN",
+    "motif_C": "TLGDDSLV",
+    "pssm_score": 48.1,
+    "pssm_group": "Duplorna",
+    "pssm_group2": "Durnavirales",
+    "hmm_rdrp_plus": "RdRpscan_Durnavirales",
+    "palmprint_positions": {
+      "posA": 283,
+      "posB": 349,
+      "posC": 383
+    }
+  },
+  "PNX_Duplo_B": {
+    "representative": "DRR853908_33091_frame=+1",
+    "members": [
+      "DRR853908_33091_frame=+1",
+      "DRR853910_76437_frame=+1",
+      "DRR853912_77886_frame=-2"
+    ],
+    "nearest_palmdb": "u856097",
+    "pident": 71.3,
+    "classification_hint": "Duplorna/PH2; Durnavirales-like",
+    "representative_nt_contig": "DRR853908_33091",
+    "aa_length": 334,
+    "nt_length": 1256,
+    "aa_stop_count": 0,
+    "motif_A": "YALDWSSFDATV",
+    "motif_B": "SGSYYTSIIGSIIN",
+    "motif_C": "TQGDDSIC",
+    "pssm_score": 50.0,
+    "pssm_group": "Duplorna",
+    "pssm_group2": "PH2",
+    "hmm_rdrp_plus": "RdRpscan_Durnavirales",
+    "palmprint_positions": {
+      "posA": 235,
+      "posB": 301,
+      "posC": 335
+    }
+  },
+  "PNX_Picorna_A": {
+    "representative": "DRR853910_26168_frame=-1",
+    "members": [
+      "DRR853910_26168_frame=-1",
+      "DRR853912_10707_frame=-1",
+      "DRR853912_79526_frame=-1"
+    ],
+    "nearest_palmdb": "u163558",
+    "pident": 60.2,
+    "classification_hint": "Picornavirales-like",
+    "representative_nt_contig": "DRR853910_26168",
+    "aa_length": 408,
+    "nt_length": 2082,
+    "aa_stop_count": 0,
+    "motif_A": "FAGDYKNYDSQE",
+    "motif_B": "SGFPATALVNSMNN",
+    "motif_C": "SYGDDHVD",
+    "pssm_score": 48.8,
+    "pssm_group": "Picornavirales",
+    "pssm_group2": "PH2",
+    "hmm_rdrp_plus": "RdRpscan_Picornavirales",
+    "palmprint_positions": {
+      "posA": 207,
+      "posB": 271,
+      "posC": 314
+    }
+  },
+  "PNX_Picorna_B": {
+    "representative": "DRR853912_43327_frame=-1",
+    "members": [
+      "DRR853910_21434_frame=-3",
+      "DRR853912_43327_frame=-1"
+    ],
+    "nearest_palmdb": "u440075",
+    "pident": 55.0,
+    "classification_hint": "Picornavirales-like",
+    "representative_nt_contig": "DRR853912_43327",
+    "aa_length": 309,
+    "nt_length": 1814,
+    "aa_stop_count": 0,
+    "motif_A": "LAGDYKNFDRTQ",
+    "motif_B": "SGLPATTPVNGNSN",
+    "motif_C": "TYGDDLFN",
+    "pssm_score": 41.7,
+    "pssm_group": "PH2",
+    "pssm_group2": "Picornavirales",
+    "hmm_rdrp_plus": "RdRpscan_Picornavirales",
+    "palmprint_positions": {
+      "posA": 446,
+      "posB": 510,
+      "posC": 583
+    }
+  }
+}
