@@ -1,0 +1,1 @@
+U4Core.lean:1:0: error: object file '/home/runner/.elan/toolchains/leanprover--lean4---v4.30.0/lib/lean/Std/Tactic/Omega.olean' of module Std.Tactic.Omega does not exist
