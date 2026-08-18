@@ -1,0 +1,321 @@
+name: Clean six-library Panax Picornavirales audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/panax-sixrun-clean-final.yml'
+      - 'virus_hunt/finalization/DRR853911_FASTQ_URLS.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  map:
+    name: raw-map ${{ matrix.run }} (${{ matrix.alias }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        include:
+          - {run: DRR853907, alias: ZhA}
+          - {run: DRR853908, alias: ZhB}
+          - {run: DRR853909, alias: ZhC}
+          - {run: DRR853910, alias: BhA}
+          - {run: DRR853911, alias: BhB}
+          - {run: DRR853912, alias: BhC}
+    steps:
+      - name: Checkout immutable PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Install mapping and variant tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq aria2 pigz minimap2 samtools bcftools
+
+      - name: Build three-way competitive reference
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/${{ matrix.run }}
+          cat virus_hunt/validation_inputs/all_member_contigs.part2.fna \
+              virus_hunt/validation_inputs/all_member_contigs.part3.fna > work/all_members.fna
+          python - <<'PY'
+          from pathlib import Path
+          wanted = {
+              'DRR853912_10707': 'PNX_Picorna_A1_ref',
+              'DRR853912_79526': 'PNX_Picorna_A2_ref',
+              'DRR853910_21434': 'PNX_Picorna_B_ref',
+          }
+          seqs = {}
+          current = None
+          chunks = []
+          for line in Path('work/all_members.fna').read_text().splitlines():
+              if line.startswith('>'):
+                  if current is not None:
+                      seqs[current] = ''.join(chunks)
+                  current = line[1:].split()[0]
+                  chunks = []
+              else:
+                  chunks.append(line.strip())
+          if current is not None:
+              seqs[current] = ''.join(chunks)
+          missing = sorted(set(wanted)-set(seqs))
+          if missing:
+              raise SystemExit(f'missing reference contigs: {missing}')
+          out = Path('work/refs.fna')
+          with out.open('w') as f:
+              for old,new in wanted.items():
+                  s=seqs[old]
+                  f.write(f'>{new} source={old} length={len(s)}\n')
+                  for i in range(0,len(s),80):
+                      f.write(s[i:i+80]+'\n')
+          PY
+          samtools faidx work/refs.fna
+          sha256sum work/refs.fna > work/REFERENCE_SHA256.txt
+          cat work/refs.fna.fai
+
+      - name: Download and integrity-check complete paired FASTQ files
+        shell: bash
+        env:
+          RUN: ${{ matrix.run }}
+        run: |
+          set -euo pipefail
+          mkdir -p "work/${RUN}/fastq"
+          base="https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/${RUN}"
+          for mate in 1 2; do
+            url="${base}/${RUN}_${mate}.fastq.gz"
+            aria2c --allow-overwrite=true --auto-file-renaming=false \
+              --continue=true --max-tries=12 --retry-wait=5 \
+              --split=4 --max-connection-per-server=4 \
+              --lowest-speed-limit=1K \
+              --dir="work/${RUN}/fastq" "$url"
+            pigz -t "work/${RUN}/fastq/${RUN}_${mate}.fastq.gz"
+          done
+          sha256sum work/${RUN}/fastq/*.fastq.gz > work/${RUN}/FASTQ_SHA256.txt
+          pairs=$(pigz -dc "work/${RUN}/fastq/${RUN}_1.fastq.gz" | awk 'END{printf "%.0f\n", NR/4}')
+          printf '%s\n' "$pairs" > "work/${RUN}/INPUT_READ_PAIRS.txt"
+          printf 'run\talias\tread_pairs\n%s\t%s\t%s\n' "$RUN" '${{ matrix.alias }}' "$pairs" > "work/${RUN}/RUN_INPUT.tsv"
+
+      - name: Competitive raw-read mapping and depth audit
+        shell: bash
+        env:
+          RUN: ${{ matrix.run }}
+          ALIAS: ${{ matrix.alias }}
+        run: |
+          set -euo pipefail
+          r1="work/${RUN}/fastq/${RUN}_1.fastq.gz"
+          r2="work/${RUN}/fastq/${RUN}_2.fastq.gz"
+          minimap2 -t 4 -ax sr --secondary=no work/refs.fna "$r1" "$r2" 2>"work/${RUN}/minimap2.log" \
+            | samtools view -@ 2 -b -F 4 - \
+            | samtools sort -@ 2 -o "work/${RUN}/mapped.primary.bam" -
+          samtools index "work/${RUN}/mapped.primary.bam"
+          samtools flagstat "work/${RUN}/mapped.primary.bam" > "work/${RUN}/flagstat.txt"
+          pairs=$(cat "work/${RUN}/INPUT_READ_PAIRS.txt")
+          total_reads=$((pairs * 2))
+          printf 'run\talias\treference\treference_length\tread_pairs\ttotal_reads\tmapped_primary\tmapped_mapq20\tproper_pair_primary\tbreadth_1x\tbreadth_5x\tbreadth_10x\tmean_depth\tmedian_depth\tdepth_p10\tdepth_p90\tzero_bases\tread_rpm\n' > "work/${RUN}/metrics.tsv"
+          while read -r ref len rest; do
+            mapped=$(samtools view -c -F 2308 "work/${RUN}/mapped.primary.bam" "$ref")
+            mapq20=$(samtools view -c -q 20 -F 2308 "work/${RUN}/mapped.primary.bam" "$ref")
+            proper=$(samtools view -c -f 2 -F 2308 "work/${RUN}/mapped.primary.bam" "$ref")
+            samtools depth -aa -r "$ref" "work/${RUN}/mapped.primary.bam" > "work/${RUN}/${ref}.depth.tsv"
+            python - "$RUN" "$ALIAS" "$ref" "$len" "$pairs" "$total_reads" "$mapped" "$mapq20" "$proper" "work/${RUN}/${ref}.depth.tsv" >> "work/${RUN}/metrics.tsv" <<'PY'
+          import statistics,sys
+          run,alias,ref,length,pairs,total,mapped,mapq20,proper,depth_file=sys.argv[1:]
+          depths=[]
+          with open(depth_file) as f:
+              for line in f:
+                  depths.append(int(line.rstrip().split('\t')[2]))
+          if len(depths)<int(length): depths += [0]*(int(length)-len(depths))
+          s=sorted(depths)
+          def pct(p):
+              if not s: return 0
+              return s[min(len(s)-1,max(0,int(round((len(s)-1)*p))))]
+          breadth=lambda k: sum(d>=k for d in depths)/len(depths) if depths else 0
+          mean=sum(depths)/len(depths) if depths else 0
+          median=statistics.median(depths) if depths else 0
+          rpm=(int(mapped)/int(total)*1e6) if int(total) else 0
+          print('\t'.join(map(str,[run,alias,ref,length,pairs,total,mapped,mapq20,proper,
+              f'{breadth(1):.6f}',f'{breadth(5):.6f}',f'{breadth(10):.6f}',
+              f'{mean:.6f}',f'{median:.3f}',pct(.10),pct(.90),sum(d==0 for d in depths),f'{rpm:.6f}'])))
+          PY
+          done < work/refs.fna.fai
+          cat "work/${RUN}/metrics.tsv"
+
+      - name: Call variants and build depth-masked consensus
+        shell: bash
+        env:
+          RUN: ${{ matrix.run }}
+        run: |
+          set -euo pipefail
+          bcftools mpileup -f work/refs.fna -q 20 -Q 20 -a FORMAT/DP,FORMAT/AD -Ou "work/${RUN}/mapped.primary.bam" \
+            | bcftools call -mv -Oz -o "work/${RUN}/variants.vcf.gz"
+          bcftools index -t "work/${RUN}/variants.vcf.gz"
+          bcftools query -f '%CHROM\t%POS\t%REF\t%ALT[\t%DP\t%AD]\n' "work/${RUN}/variants.vcf.gz" > "work/${RUN}/variants.tsv" || true
+          bcftools consensus -f work/refs.fna "work/${RUN}/variants.vcf.gz" > "work/${RUN}/consensus.unmasked.fna"
+          python - "$RUN" <<'PY'
+          from pathlib import Path
+          import sys
+          run=sys.argv[1]
+          def read_fa(path):
+              d={}; name=None; chunks=[]
+              for line in Path(path).read_text().splitlines():
+                  if line.startswith('>'):
+                      if name is not None: d[name]=''.join(chunks)
+                      name=line[1:].split()[0]; chunks=[]
+                  else: chunks.append(line.strip())
+              if name is not None: d[name]=''.join(chunks)
+              return d
+          seqs=read_fa(f'work/{run}/consensus.unmasked.fna')
+          with open(f'work/{run}/consensus.masked_min5x.fna','w') as out:
+              for ref,seq in seqs.items():
+                  depths=[]
+                  with open(f'work/{run}/{ref}.depth.tsv') as f:
+                      for line in f: depths.append(int(line.rstrip().split('\t')[2]))
+                  if len(depths)<len(seq): depths += [0]*(len(seq)-len(depths))
+                  masked=''.join(base if d>=5 else 'N' for base,d in zip(seq,depths))
+                  out.write(f'>{run}|{ref}|mask=depth_lt_5\n')
+                  for i in range(0,len(masked),80): out.write(masked[i:i+80]+'\n')
+          PY
+          rm -rf "work/${RUN}/fastq"
+          find "work/${RUN}" -maxdepth 1 -type f ! -name 'mapped.primary.bam' ! -name 'mapped.primary.bam.bai' -print0 | sort -z | xargs -0 sha256sum > "work/${RUN}/EVIDENCE_SHA256.txt"
+
+      - name: Upload compact immutable evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: panax-sixrun-${{ matrix.run }}
+          path: |
+            work/${{ matrix.run }}/RUN_INPUT.tsv
+            work/${{ matrix.run }}/metrics.tsv
+            work/${{ matrix.run }}/*.depth.tsv
+            work/${{ matrix.run }}/variants.vcf.gz
+            work/${{ matrix.run }}/variants.vcf.gz.tbi
+            work/${{ matrix.run }}/variants.tsv
+            work/${{ matrix.run }}/consensus.masked_min5x.fna
+            work/${{ matrix.run }}/flagstat.txt
+            work/${{ matrix.run }}/minimap2.log
+            work/${{ matrix.run }}/FASTQ_SHA256.txt
+            work/${{ matrix.run }}/EVIDENCE_SHA256.txt
+            work/refs.fna
+            work/refs.fna.fai
+            work/REFERENCE_SHA256.txt
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 9
+
+  aggregate:
+    name: aggregate six-library evidence
+    needs: map
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download all completed run artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: panax-sixrun-*
+          path: collected
+          merge-multiple: false
+
+      - name: Build strict presence and sequence-diversity summaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p final
+          python - <<'PY'
+          from pathlib import Path
+          import csv,json,math,itertools
+          rows=[]
+          for p in sorted(Path('collected').rglob('metrics.tsv')):
+              with p.open() as f: rows.extend(csv.DictReader(f,delimiter='\t'))
+          if not rows: raise SystemExit('No completed metrics found')
+          fields=list(rows[0]) + ['strict_positive','strong_positive']
+          for r in rows:
+              mq=int(r['mapped_mapq20']); b1=float(r['breadth_1x']); b5=float(r['breadth_5x'])
+              r['strict_positive']=str(mq>=20 and b1>=0.80).lower()
+              r['strong_positive']=str(mq>=50 and b1>=0.90 and b5>=0.50).lower()
+          with open('final/ALL_RUN_METRICS.tsv','w',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=fields,delimiter='\t'); w.writeheader(); w.writerows(rows)
+          runs=['DRR853907','DRR853908','DRR853909','DRR853910','DRR853911','DRR853912']
+          aliases={'DRR853907':'ZhA','DRR853908':'ZhB','DRR853909':'ZhC','DRR853910':'BhA','DRR853911':'BhB','DRR853912':'BhC'}
+          refs=['PNX_Picorna_A1_ref','PNX_Picorna_A2_ref','PNX_Picorna_B_ref']
+          by={(r['run'],r['reference']):r for r in rows}
+          with open('final/PRESENCE_MATRIX.tsv','w',newline='') as f:
+              w=csv.writer(f,delimiter='\t'); w.writerow(['run','alias']+refs)
+              for run in runs:
+                  w.writerow([run,aliases[run]]+[by.get((run,ref),{}).get('strict_positive','missing') for ref in refs])
+          def comb(n,k): return math.comb(n,k) if 0<=k<=n else 0
+          def fisher_two(a,b,c,d):
+              n=a+b+c+d; r1=a+b; c1=a+c
+              lo=max(0,r1-(n-c1)); hi=min(r1,c1)
+              def prob(x): return comb(c1,x)*comb(n-c1,r1-x)/comb(n,r1)
+              p0=prob(a)
+              return min(1.0,sum(prob(x) for x in range(lo,hi+1) if prob(x)<=p0+1e-15))
+          summary={'strict_definition':'MAPQ>=20 reads >=20 and breadth_1x >=0.80',
+                   'strong_definition':'MAPQ>=20 reads >=50, breadth_1x >=0.90, and breadth_5x >=0.50',
+                   'completed_runs':sorted({r['run'] for r in rows}), 'references':{}}
+          for ref in refs:
+              zh=sum(by.get((r,ref),{}).get('strict_positive')=='true' for r in runs[:3])
+              bh=sum(by.get((r,ref),{}).get('strict_positive')=='true' for r in runs[3:])
+              summary['references'][ref]={'Zh_prefix_positive':zh,'Bh_prefix_positive':bh,
+                  'alias_prefix_fisher_two_sided_p':fisher_two(bh,3-bh,zh,3-zh)}
+          Path('final/SUMMARY.json').write_text(json.dumps(summary,indent=2)+'\n')
+          seqs={}
+          for p in sorted(Path('collected').rglob('consensus.masked_min5x.fna')):
+              name=None; chunks=[]
+              for line in p.read_text().splitlines():
+                  if line.startswith('>'):
+                      if name is not None: seqs[name]=''.join(chunks)
+                      name=line[1:].split()[0]; chunks=[]
+                  else: chunks.append(line.strip())
+              if name is not None: seqs[name]=''.join(chunks)
+          with open('final/PAIRWISE_MASKED_CONSENSUS.tsv','w',newline='') as f:
+              w=csv.writer(f,delimiter='\t'); w.writerow(['reference','sample1','sample2','overlap_non_N','differences','identity'])
+              for ref in refs:
+                  items=[(k.split('|')[0],v) for k,v in seqs.items() if f'|{ref}|' in k]
+                  for (n1,s1),(n2,s2) in itertools.combinations(items,2):
+                      pairs=[(a,b) for a,b in zip(s1,s2) if a!='N' and b!='N']
+                      ov=len(pairs); diff=sum(a!=b for a,b in pairs)
+                      ident=(ov-diff)/ov if ov else float('nan')
+                      w.writerow([ref,n1,n2,ov,diff,'' if not ov else f'{ident:.6f}'])
+          cellw,cellh=170,42; left,top=180,70
+          width=left+cellw*len(refs)+30; height=top+cellh*len(runs)+80
+          svg=[f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
+               '<rect width="100%" height="100%" fill="white"/>',
+               '<style>text{font-family:Arial,sans-serif;fill:#111}.h{font-weight:700}.s{font-size:12px}</style>',
+               '<text x="20" y="28" class="h" font-size="18">Competitive raw-read support across six archived libraries</text>']
+          for j,ref in enumerate(refs):
+              svg.append(f'<text x="{left+j*cellw+cellw/2}" y="55" text-anchor="middle" class="h s">{ref.replace("PNX_Picorna_","").replace("_ref","")}</text>')
+          for i,run in enumerate(runs):
+              y=top+i*cellh
+              svg.append(f'<text x="10" y="{y+26}" class="h s">{run} ({aliases[run]})</text>')
+              for j,ref in enumerate(refs):
+                  r=by.get((run,ref)); x=left+j*cellw
+                  if not r: fill='#dddddd'; label='missing'
+                  else:
+                      fill='#c8e6c9' if r['strict_positive']=='true' else '#ffcdd2'
+                      label=f"{float(r['breadth_1x'])*100:.1f}% / {float(r['mean_depth']):.1f}x"
+                  svg.append(f'<rect x="{x}" y="{y}" width="{cellw-5}" height="{cellh-5}" rx="4" fill="{fill}" stroke="#555"/>')
+                  svg.append(f'<text x="{x+(cellw-5)/2}" y="{y+24}" text-anchor="middle" class="s">{label}</text>')
+          svg.append(f'<text x="20" y="{height-32}" class="s">Cell: breadth at >=1x / mean depth. Green meets the pre-specified strict support rule.</text>')
+          svg.append('</svg>')
+          Path('final/SIX_LIBRARY_SUPPORT.svg').write_text('\n'.join(svg)+'\n')
+          Path('final/INTERPRETATION_BOUNDARY.md').write_text('''# Interpretation boundary\n\nThis audit tests whether three divergent Picornavirales-like reference contigs are supported by complete paired FASTQ files from six archived run objects. The Zh/Bh strings are archive aliases only in this package. Distinct run, experiment, or BioSample accessions do not by themselves establish distinct plants or independent infections. Presence or enrichment does not establish the true host, active replication, causality, pathogenicity, transmissibility, or agricultural/medical impact. The candidates are partial polyprotein/RdRP sequences rather than complete viral genomes.\n''')
+          PY
+          find final -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > final/SHA256SUMS.txt
+          cat final/SUMMARY.json
+          cat final/PRESENCE_MATRIX.tsv
+
+      - name: Upload final six-library evidence package
+        uses: actions/upload-artifact@v4
+        with:
+          name: PANAX_SIX_LIBRARY_CLEAN_AUDIT_20260819
+          path: final
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 9
