@@ -29,22 +29,6 @@ Hint: Omit it from the simp argument list.
   simp [C̵,̵ ̵Fml.size] at hsy hsz
 
 Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
-U4Formal.lean:175:23: error: Tactic `rewrite` failed: Did not find an occurrence of the pattern
-  C y' z' u'
-in the target expression
-  P (C y (C y' y u') u)
-
-case inl.inl
-X Y x y z u : Fml
-hmaj : Phi x y z u = I X Y
-majorParts : I (I x y) z = X ∧ C y z u = Y
-x' y' z' u' : Fml
-hmin : Phi x' y' z' u' = X
-common : Phi x' y' z' u' = I (I x y) z
-commonParts : I (I x' y') z' = I x y ∧ C y' z' u' = z
-anteParts : I x' y' = x ∧ z' = y
-hp : P (C y (C y' y u') u)
-⊢ P Y
 explicitU4Countermodel : U4Countermodel
 u4_countermodel_exists :
   ∃ pred,
