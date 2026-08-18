@@ -1,0 +1,3 @@
+name	source_run	source_contig	source_contig_nt_length	orf_aa_length	orf_nt_length	strand	frame	original_coordinates_1based	five_prime_boundary	three_prime_boundary	interpretation
+PNX_Picorna_A_long	DRR853912	DRR853912_10707	1988	606	1818	-	1	171-1988	contig boundary/no upstream stop	stop codon immediately downstream	partial C-terminal polyprotein ORF containing RdRP; not a complete viral genome
+PNX_Picorna_B_long	DRR853910	DRR853910_21434	3458	1135	3405	-	3	52-3456	contig boundary/no upstream stop	stop codon immediately downstream	partial C-terminal polyprotein ORF containing RdRP; not a complete viral genome
