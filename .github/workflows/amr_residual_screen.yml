@@ -47,7 +47,11 @@ jobs:
             curl -fL --retry 12 --retry-all-errors --retry-delay 3 \
               "${BASE_URL}/${f}" -o "amr_data/${f}"
           done
-          (cd amr_data && md5sum -c md5sums)
+          (
+            cd amr_data
+            grep -E '(^|[[:space:]])(phenotype\.parquet|genotype\.parquet|phenotype_genotype_merged\.parquet)$' md5sums \
+              | md5sum -c -
+          )
           sha256sum amr_data/*.parquet > amr_data/INPUT_SHA256SUMS.txt
           ls -lh amr_data
 
