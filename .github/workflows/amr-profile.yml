@@ -4,12 +4,14 @@ on:
   push:
     branches: [amr-unexplained-marker-discovery-20260819]
     paths:
-      - 'amr_discovery/**'
+      - 'amr_discovery/profile_portal.py'
+      - 'amr_discovery/README.md'
       - '.github/workflows/amr-profile.yml'
   pull_request:
     branches: [main]
     paths:
-      - 'amr_discovery/**'
+      - 'amr_discovery/profile_portal.py'
+      - 'amr_discovery/README.md'
       - '.github/workflows/amr-profile.yml'
   workflow_dispatch:
 
