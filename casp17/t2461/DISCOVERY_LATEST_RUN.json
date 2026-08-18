@@ -1,0 +1,10 @@
+{
+  "artifact_digest": "d27cdf9c0bfdbcfff2dcb0b150a1fa67354e192e308ecd3e339d86431a2c09be",
+  "artifact_id": 9316596624,
+  "artifact_url": "https://github.com/ByungwoongYoo/ntg-optn-tbk1-tkm-triage/actions/runs/32115709445/artifacts/9316596624",
+  "commit": "29af0a09c374b5528863e42f9b10d2d8bbdca5f1",
+  "run_attempt": 1,
+  "run_id": 32115709445,
+  "schema": "casp17-t2461-discovery-run-v1",
+  "workflow": "CASP17 T2461 public template discovery 20260818"
+}
