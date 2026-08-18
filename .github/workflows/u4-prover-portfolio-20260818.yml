@@ -1,0 +1,140 @@
+name: Ulrich u4 proof-producing prover portfolio 20260818
+on:
+  workflow_dispatch:
+  push:
+    branches: [crossdomain-open-problem-tournament-20260817]
+    paths:
+      - 'crossdomain/u4/u4.p'
+      - 'crossdomain/u4/u4_prover9.in'
+      - '.github/workflows/u4-prover-portfolio-20260818.yml'
+permissions:
+  contents: write
+jobs:
+  controls:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Vampire 5.0.1 and official controls
+        run: |
+          mkdir -p artifact/u4_controls /tmp/vamp
+          curl -L --retry 5 -o /tmp/vampire.zip https://github.com/vprover/vampire/releases/download/v5.0.1/vampire-Linux-X64.zip
+          unzip -q /tmp/vampire.zip -d /tmp/vamp
+          V=$(find /tmp/vamp -type f -name 'vampire*' | head -1); chmod +x "$V"; echo "$V" > /tmp/VPATH
+          "$V" --version > artifact/u4_controls/VAMPIRE_VERSION.txt 2>&1
+          git clone --depth 1 --branch v1.0.1 https://github.com/fitelson/ulrich-JAR.git /tmp/ulrich
+          for q in u1 u2 u3; do
+            set +e
+            timeout 180 "$V" --mode portfolio --schedule casc_sat --saturation_algorithm lrs --time_limit 150 --proof tptp "/tmp/ulrich/${q}.p" > "artifact/u4_controls/${q}.txt" 2>&1
+            echo $? > "artifact/u4_controls/${q}_EXIT_CODE.txt"
+            set -e
+          done
+          python - <<'PY'
+          import json,re,pathlib
+          out=pathlib.Path('artifact/u4_controls'); d={}
+          for q in ['u1','u2','u3']:
+              t=(out/f'{q}.txt').read_text(errors='ignore')
+              d[q]={'statuses':re.findall(r'SZS status\s+([A-Za-z]+)',t),'counter_satisfiable':'CounterSatisfiable' in t}
+          d['all_controls_reproduced']=all(v['counter_satisfiable'] for v in d.values() if isinstance(v,dict))
+          (out/'SUMMARY.json').write_text(json.dumps(d,indent=2))
+          if not d['all_controls_reproduced']: raise SystemExit('positive controls failed')
+          PY
+          find artifact/u4_controls -type f -print0 | sort -z | xargs -0 sha256sum > artifact/u4_controls/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: u4-positive-controls-20260818
+          path: artifact/u4_controls
+          retention-days: 90
+          if-no-files-found: error
+  prover:
+    strategy:
+      fail-fast: false
+      matrix:
+        prover: [vampire_casc_sat, vampire_casc, eprover_auto, eprover_sat, prover9, iprover]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install available provers
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y eprover prover9 >/tmp/apt-main.txt 2>&1 || true
+          sudo apt-get install -y iprover >/tmp/apt-iprover.txt 2>&1 || true
+          mkdir -p /tmp/vamp
+          curl -L --retry 5 -o /tmp/vampire.zip https://github.com/vprover/vampire/releases/download/v5.0.1/vampire-Linux-X64.zip
+          unzip -q /tmp/vampire.zip -d /tmp/vamp
+          V=$(find /tmp/vamp -type f -name 'vampire*' | head -1); chmod +x "$V"; echo "$V" > /tmp/VPATH
+      - name: Run selected prover and preserve all output
+        env:
+          PROVER: ${{ matrix.prover }}
+        run: |
+          d=artifact/u4_${PROVER}; mkdir -p "$d"; cp crossdomain/u4/u4.p crossdomain/u4/u4_prover9.in "$d"/
+          V=$(cat /tmp/VPATH)
+          set +e
+          case "$PROVER" in
+            vampire_casc_sat) timeout 700 "$V" --mode portfolio --schedule casc_sat --saturation_algorithm lrs --time_limit 600 --proof tptp crossdomain/u4/u4.p > "$d/OUTPUT.txt" 2>&1 ;;
+            vampire_casc) timeout 700 "$V" --mode portfolio --schedule casc --time_limit 600 --proof tptp crossdomain/u4/u4.p > "$d/OUTPUT.txt" 2>&1 ;;
+            eprover_auto) if command -v eprover; then timeout 700 eprover --auto-schedule --cpu-limit=600 --proof-object crossdomain/u4/u4.p > "$d/OUTPUT.txt" 2>&1; else echo NOT_AVAILABLE > "$d/OUTPUT.txt"; false; fi ;;
+            eprover_sat) if command -v eprover; then timeout 700 eprover --satauto --cpu-limit=600 --proof-object crossdomain/u4/u4.p > "$d/OUTPUT.txt" 2>&1; else echo NOT_AVAILABLE > "$d/OUTPUT.txt"; false; fi ;;
+            prover9) if command -v prover9; then timeout 700 prover9 -f crossdomain/u4/u4_prover9.in > "$d/OUTPUT.txt" 2>&1; else echo NOT_AVAILABLE > "$d/OUTPUT.txt"; false; fi ;;
+            iprover) IP=$(command -v iproveropt || command -v iprover || true); if [ -n "$IP" ]; then timeout 700 "$IP" --time_out_real 600 crossdomain/u4/u4.p > "$d/OUTPUT.txt" 2>&1; else echo NOT_AVAILABLE > "$d/OUTPUT.txt"; false; fi ;;
+          esac
+          rc=$?
+          set -e
+          echo "$rc" > "$d/EXIT_CODE.txt"
+          python - "$d" "$PROVER" <<'PY'
+          import json,re,sys,pathlib
+          d=pathlib.Path(sys.argv[1]); p=sys.argv[2]; t=(d/'OUTPUT.txt').read_text(errors='ignore')
+          statuses=re.findall(r'SZS status\s+([A-Za-z]+)',t)
+          result={'prover':p,'exit_code':int((d/'EXIT_CODE.txt').read_text()),'szs_statuses':statuses,'proof_marker':any(x in t for x in ['SZS output start Proof','THEOREM PROVED','Proof found!']),'countermodel_marker':any(x in t for x in ['CounterSatisfiable','Satisfiable','MODEL']), 'output_bytes':len(t.encode())}
+          if result['proof_marker']: result['claim_boundary']='Candidate proof output requires a separate proof checker.'
+          elif result['countermodel_marker']: result['claim_boundary']='Candidate model/saturation requires an explicit independent model or saturation check.'
+          else: result['claim_boundary']='Timeout/not found is not a conclusion.'
+          (d/'SUMMARY.json').write_text(json.dumps(result,indent=2))
+          PY
+          cp /tmp/apt-main.txt /tmp/apt-iprover.txt "$d"/ || true
+          "$V" --version > "$d/VAMPIRE_VERSION.txt" 2>&1 || true
+          find "$d" -type f -print0 | sort -z | xargs -0 sha256sum > "$d/SHA256SUMS.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: u4-${{ matrix.prover }}-20260818
+          path: artifact/u4_${{ matrix.prover }}
+          retention-days: 90
+          if-no-files-found: error
+  aggregate:
+    needs: [controls, prover]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: crossdomain-open-problem-tournament-20260817
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: u4-*-20260818
+          path: downloaded
+      - name: Aggregate exact statuses and commit
+        run: |
+          python - <<'PY'
+          import json,pathlib,shutil,hashlib
+          out=pathlib.Path('crossdomain/u4/prover_ci'); out.mkdir(parents=True,exist_ok=True)
+          rows=[]; controls=None
+          for p in pathlib.Path('downloaded').rglob('SUMMARY.json'):
+              d=json.loads(p.read_text())
+              if 'all_controls_reproduced' in d: controls=d
+              else: rows.append(d)
+          summary={'positive_controls':controls,'portfolio':sorted(rows,key=lambda x:x['prover']),'accepted_result':None,'claim_boundary':'No timeout/not-found is accepted. Any proof/model marker still requires its independent checker.'}
+          (out/'SUMMARY.json').write_text(json.dumps(summary,indent=2))
+          (out/'STATUS.txt').write_text('PORTFOLIO_COMPLETE_NO_UNCHECKED_RESULT_ACCEPTED\n')
+          for p in pathlib.Path('downloaded').rglob('OUTPUT.txt'):
+              shutil.copy2(p,out/(p.parent.name+'_OUTPUT.txt'))
+          with (out/'SHA256SUMS.txt').open('w') as f:
+              for q in sorted(out.glob('*')):
+                  if q.name!='SHA256SUMS.txt': f.write(hashlib.sha256(q.read_bytes()).hexdigest()+'  '+q.name+'\n')
+          print(json.dumps(summary,indent=2))
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -f crossdomain/u4/prover_ci
+          git commit -m 'Record proof-producing prover portfolio for Ulrich u4' || exit 0
+          git push origin HEAD:crossdomain-open-problem-tournament-20260817
