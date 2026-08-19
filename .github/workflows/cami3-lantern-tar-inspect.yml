@@ -1,0 +1,44 @@
+name: CAMI III LANTERN Toy archive inspection
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cami3-lantern-tar-inspect.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect archive member names with streaming early termination
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p archive_inspect
+          declare -A URLS
+          URLS[short0]='https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_0_reads.tar.gz'
+          URLS[long0]='https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy-long/sample_0_reads.tar.gz'
+          URLS[gsa0]='https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_0_gsa.tar.gz'
+          URLS[coverages]='https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/coverages.tar.gz'
+          for key in short0 long0 gsa0 coverages; do
+            set +o pipefail
+            curl -fsSL --retry 5 --retry-all-errors "${URLS[$key]}" | tar -tzf - | head -200 > "archive_inspect/${key}_members.txt"
+            rc=$?
+            set -o pipefail
+            echo "pipeline_exit=$rc" >> "archive_inspect/${key}_members.txt"
+            echo "=== $key ==="
+            cat "archive_inspect/${key}_members.txt"
+          done
+          find archive_inspect -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > archive_inspect/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LANTERN_CAMI3_TOY_ARCHIVE_INSPECTION_20260819
+          path: archive_inspect
+          if-no-files-found: error
+          retention-days: 90
