@@ -1,0 +1,250 @@
+name: Final K. pneumoniae colistin known-mechanism audit
+
+on:
+  push:
+    branches: [amr-kp-colistin-known-mechanism-audit-final-20260819]
+    paths:
+      - '.github/workflows/amr-kp-colistin-known-mechanism-audit-final.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+env:
+  UPSTREAM_RUN_ID: '32211046692'
+  UPSTREAM_ARTIFACT: 'KP_COLISTIN_TARGETED_PORTAL_GWAS_20260819_V2'
+
+jobs:
+  known-mechanism-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Download frozen cohort artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.UPSTREAM_ARTIFACT }}
+          path: upstream
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.UPSTREAM_RUN_ID }}
+
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: kleborate-audit
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11 pandas=2.3.1 numpy scipy biopython
+            blast mash minimap2 ncbi-datasets-cli ncbi-amrfinderplus
+            pip tabulate
+          cache-downloads: true
+          post-cleanup: all
+
+      - name: Reconstruct exact 716-assembly cohort
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          rm -rf known_audit download assemblies
+          mkdir -p known_audit/provenance known_audit/results download assemblies
+          labels=$(find upstream -type f -name 'residual_cohort.csv' | head -1)
+          accessions=$(find upstream -type f -name 'accessions.txt' | head -1)
+          test -n "$labels"; test -n "$accessions"
+          cp "$labels" known_audit/residual_cohort.csv
+          cp "$accessions" known_audit/accessions.txt
+          sort -u known_audit/accessions.txt -o known_audit/accessions.txt
+          n=$(wc -l < known_audit/accessions.txt)
+          echo "n_accessions=$n" | tee known_audit/provenance/COHORT_COUNT.txt
+          [[ "$n" -ge 700 ]]
+          uname -a > known_audit/provenance/UNAME.txt
+          python --version > known_audit/provenance/PYTHON_VERSION.txt
+          datasets version > known_audit/provenance/DATASETS_VERSION.txt
+          amrfinder --version > known_audit/provenance/AMRFINDER_VERSION.txt 2>&1 || true
+          git rev-parse HEAD > known_audit/provenance/GIT_HEAD.txt
+
+      - name: Download exact public assemblies
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          ok=0
+          for attempt in 1 2 3; do
+            rm -f download/genomes.zip
+            datasets download genome accession --inputfile known_audit/accessions.txt --include genome --filename download/genomes.zip --no-progressbar \
+              2>&1 | tee "known_audit/provenance/DOWNLOAD_${attempt}.log" && unzip -tq download/genomes.zip && { ok=1; break; }
+            sleep 20
+          done
+          [[ "$ok" == 1 ]]
+          sha256sum download/genomes.zip > known_audit/provenance/GENOME_ZIP_SHA256.txt
+          unzip -q download/genomes.zip -d download/package
+          cp download/package/ncbi_dataset/data/assembly_data_report.jsonl known_audit/assembly_data_report.jsonl
+          find download/package/ncbi_dataset/data -mindepth 2 -maxdepth 2 -type f -name '*.fna' -print0 | while IFS= read -r -d '' f; do
+            acc=$(basename "$(dirname "$f")")
+            ln -s "$PWD/$f" "assemblies/${acc}.fna"
+          done
+          n=$(find assemblies -type l | wc -l)
+          echo "n_downloaded=$n" | tee known_audit/provenance/DOWNLOAD_COUNT.txt
+          [[ "$n" -ge 680 ]]
+          rm -f download/genomes.zip
+
+      - name: Install a Kleborate-Kaptive compatible pair
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p known_audit/venvs
+          winner=''
+          specs=(
+            'kleborate==3.2.4 kaptive==2.0.8'
+            'kleborate==3.2.4 kaptive==2.0.7'
+            'kleborate==3.2.4 kaptive<3'
+            'kleborate kaptive'
+          )
+          i=0
+          for spec in "${specs[@]}"; do
+            i=$((i+1))
+            envdir="$PWD/known_audit/venvs/v${i}"
+            python -m venv "$envdir"
+            set +e
+            "$envdir/bin/pip" install --upgrade pip wheel setuptools > "known_audit/provenance/PIP_BASE_${i}.log" 2>&1
+            "$envdir/bin/pip" install $spec > "known_audit/provenance/PIP_SPEC_${i}.log" 2>&1
+            "$envdir/bin/python" - <<'PY' > "known_audit/provenance/IMPORT_${i}.log" 2>&1
+          import importlib
+          importlib.import_module('kleborate')
+          importlib.import_module('kaptive.database')
+          print('compatible=true')
+          PY
+            rc=$?
+            set -e
+            if [[ "$rc" == 0 ]]; then winner="$envdir"; echo "$spec" > known_audit/provenance/WINNING_SPEC.txt; break; fi
+          done
+          test -n "$winner"
+          echo "$winner" > known_audit/provenance/WINNING_ENV.txt
+          "$winner/bin/kleborate" --version > known_audit/provenance/KLEBORATE_VERSION.txt 2>&1 || true
+          "$winner/bin/python" - <<'PY' > known_audit/provenance/PACKAGE_VERSIONS.txt
+          import importlib.metadata as m
+          for p in ['kleborate','kaptive']:
+              print(p, m.version(p))
+          PY
+
+      - name: Run Kleborate with compatible CLI variants
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          envdir=$(cat known_audit/provenance/WINNING_ENV.txt)
+          "$envdir/bin/kleborate" --help > known_audit/provenance/KLEBORATE_HELP.txt 2>&1 || true
+          mapfile -t fasta < <(find assemblies -type l -name '*.fna' | sort)
+          test "${#fasta[@]}" -ge 680
+          ok=0
+          set +e
+          "$envdir/bin/kleborate" --all --input "${fasta[@]}" --output known_audit/kleborate.tsv --threads 4 > known_audit/provenance/KLEBORATE_TRY1.log 2>&1
+          [[ -s known_audit/kleborate.tsv ]] && ok=1
+          if [[ "$ok" == 0 ]]; then
+            "$envdir/bin/kleborate" -a "${fasta[@]}" -o known_audit/kleborate.tsv --preset kpsc --threads 4 > known_audit/provenance/KLEBORATE_TRY2.log 2>&1
+            [[ -s known_audit/kleborate.tsv ]] && ok=1
+          fi
+          if [[ "$ok" == 0 ]]; then
+            "$envdir/bin/kleborate" -a "${fasta[@]}" -o known_audit/kleborate.tsv --preset kpsc > known_audit/provenance/KLEBORATE_TRY3.log 2>&1
+            [[ -s known_audit/kleborate.tsv ]] && ok=1
+          fi
+          if [[ "$ok" == 0 ]]; then
+            "$envdir/bin/kleborate" --input "${fasta[@]}" --output known_audit/kleborate.tsv > known_audit/provenance/KLEBORATE_TRY4.log 2>&1
+            [[ -s known_audit/kleborate.tsv ]] && ok=1
+          fi
+          set -e
+          [[ "$ok" == 1 ]]
+          head -3 known_audit/kleborate.tsv > known_audit/provenance/KLEBORATE_HEAD.txt
+
+      - name: Parse sequence-level known colistin signals
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, re, hashlib
+          from pathlib import Path
+          import pandas as pd
+
+          out=Path('known_audit/results'); out.mkdir(parents=True,exist_ok=True)
+          k=pd.read_csv('known_audit/kleborate.tsv',sep='\t',dtype=str).fillna('')
+          lab=pd.read_csv('known_audit/residual_cohort.csv',dtype=str).fillna('')
+
+          def choose(cols, terms):
+              for c in cols:
+                  lc=c.lower()
+                  if any(t in lc for t in terms): return c
+              return None
+          idcol=choose(k.columns,['assembly','strain','file','sample']) or k.columns[0]
+          def norm(v):
+              s=Path(str(v)).name
+              s=re.sub(r'_genomic\.fna$|\.fna$','',s)
+              m=re.search(r'(GC[AF]_\d+\.\d+)',s)
+              return m.group(1) if m else s
+          k['assembly_ID']=k[idcol].map(norm)
+          labid=choose(lab.columns,['assembly']) or lab.columns[0]
+          lab['assembly_ID']=lab[labid].map(norm)
+          phcol=choose(lab.columns,['phenotype','resistance','label'])
+          if phcol is None: raise SystemExit('phenotype column not found')
+          lab['phenotype']=lab[phcol].astype(str).str.upper().str[0]
+
+          keywords=['colistin','polymyxin','mcr','mgrb','pmra','pmrb','phop','phoq','crra','crrb','arna','arnb','arnc','arnd','arnt','epta','pmrc','pmrd','ugd']
+          candidate_cols=[]
+          for c in k.columns:
+              lc=re.sub(r'[^a-z0-9]','',c.lower())
+              if any(q in lc for q in keywords): candidate_cols.append(c)
+          def informative(v):
+              s=str(v).strip()
+              return s not in {'','-','.','0','None','none','NA','N/A','nan','false','False'}
+          def hits(row):
+              z=[]
+              for c in candidate_cols:
+                  if informative(row[c]): z.append(f'{c}={row[c]}')
+              return ' | '.join(z)
+          k['known_colistin_evidence']=k.apply(hits,axis=1)
+          k['known_colistin_signal']=k['known_colistin_evidence'].map(bool)
+
+          j=lab.merge(k.drop_duplicates('assembly_ID'),on='assembly_ID',how='left',suffixes=('_label','_kleborate'))
+          j['kleborate_available']=j[idcol].fillna('').astype(str).ne('') if idcol in j.columns else j['known_colistin_evidence'].fillna('').astype(str).ne('')
+          j['known_colistin_signal']=j['known_colistin_signal'].fillna(False).astype(bool)
+          j.to_csv(out/'KNOWN_MECHANISM_SAMPLE_AUDIT.csv',index=False)
+          pd.DataFrame({'column':candidate_cols}).to_csv(out/'KLEBORATE_COLISTIN_COLUMNS.csv',index=False)
+          signals=j[j['known_colistin_signal']].copy(); signals.to_csv(out/'SAMPLES_WITH_KLEBORATE_COLISTIN_SIGNAL.csv',index=False)
+          residual=j[(j['phenotype'].eq('R')) & (~j['known_colistin_signal'])].copy(); residual.to_csv(out/'RESISTANT_AFTER_KLEBORATE_FILTER.csv',index=False)
+
+          counts={
+            'n_labels':len(lab),'n_kleborate_rows':len(k),'n_joined_with_kleborate':int(j['kleborate_available'].sum()),
+            'n_candidate_columns':len(candidate_cols),
+            'R_total':int(j['phenotype'].eq('R').sum()),'S_total':int(j['phenotype'].eq('S').sum()),
+            'R_with_known_signal':int((j['phenotype'].eq('R') & j['known_colistin_signal']).sum()),
+            'S_with_known_signal':int((j['phenotype'].eq('S') & j['known_colistin_signal']).sum()),
+            'R_after_kleborate_filter':int(((j['phenotype'].eq('R')) & (~j['known_colistin_signal'])).sum()),
+            'boundary':'Absence of a Kleborate-reported signal does not prove absence of every known colistin mechanism. Targeted sequence/context and literature audits remain required.'}
+          (out/'KNOWN_MECHANISM_SUMMARY.json').write_text(json.dumps(counts,indent=2)+'\n')
+          report=['# Sequence-level Kleborate colistin audit','',*[f'- {k}: **{v}**' for k,v in counts.items() if k!='boundary'],'','## Claim boundary','',counts['boundary'],'','## Kleborate columns inspected','',pd.DataFrame({'column':candidate_cols}).to_markdown(index=False)]
+          (out/'KNOWN_MECHANISM_REPORT.md').write_text('\n'.join(report)+'\n')
+          hashes=[]
+          for p in sorted(out.rglob('*')):
+              if p.is_file() and p.name!='SHA256SUMS.txt': hashes.append(f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.relative_to(out)}')
+          (out/'SHA256SUMS.txt').write_text('\n'.join(hashes)+'\n')
+          print(json.dumps(counts,indent=2))
+          PY
+
+      - name: Commit compact audit evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf assemblies download known_audit/venvs
+          dest=amr_discovery/final_results/known_mechanism_20260819
+          rm -rf "$dest"; mkdir -p "$dest"
+          cp -a known_audit/results/. "$dest/" 2>/dev/null || true
+          cp -a known_audit/provenance "$dest/" 2>/dev/null || true
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$dest"
+          git commit -m 'Record final colistin known-mechanism audit evidence' || exit 0
+          git push origin HEAD:${{ github.ref_name }}
