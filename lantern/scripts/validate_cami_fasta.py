@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
-"""Strict CAMI assembly FASTA integrity and summary validator.
+"""CAMI FASTA integrity and summary validator.
 
-This validates only file syntax and sequence integrity. Passing does not imply biological
-accuracy, assembly quality, or CAMI acceptance.
+Two validation modes are intentionally separated:
+
+- ``submission``: CAMI assembly-output syntax, requiring uppercase A/T/C/G/N.
+- ``reference``: official source/gold-standard inputs, allowing upper/lowercase DNA
+  IUPAC symbols while reporting lowercase and non-ATCGN ambiguity explicitly.
+
+Passing validates syntax and file integrity only. It does not imply biological accuracy,
+assembly quality, novelty, or CAMI acceptance.
 """
 from __future__ import annotations
 
@@ -15,13 +21,22 @@ from pathlib import Path
 from typing import TextIO
 
 HEADER_RE = re.compile(r"^>[A-Za-z0-9\s\[\]_:;,\.\|\-]+$")
-SEQ_RE = re.compile(r"^[ATCGN]+$")
+SUBMISSION_SEQ_RE = re.compile(r"^[ATCGN]+$")
+REFERENCE_SEQ_RE = re.compile(r"^[ACGTRYSWKMBDHVNacgtryswkmbdhvn]+$")
+CANONICAL_UPPER = set("ATCGN")
+CANONICAL_BOTH_CASES = set("ATCGNatcgn")
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
     p.add_argument("fasta", type=Path)
     p.add_argument("--out", type=Path, required=True)
+    p.add_argument(
+        "--mode",
+        choices=("submission", "reference"),
+        default="submission",
+        help="submission=strict CAMI output; reference=official reference/GSA input",
+    )
     return p.parse_args()
 
 
@@ -57,12 +72,16 @@ def main() -> None:
     if not path.is_file():
         raise FileNotFoundError(path)
 
+    sequence_re = SUBMISSION_SEQ_RE if args.mode == "submission" else REFERENCE_SEQ_RE
     seen: set[str] = set()
     lengths: list[int] = []
     errors: list[str] = []
     current_id: str | None = None
     current_length = 0
     sequence_lines = 0
+    lowercase_bases = 0
+    iupac_ambiguity_bases = 0
+    canonical_n_bases = 0
 
     with open_text(path) as fh:
         for line_number, raw in enumerate(fh, 1):
@@ -81,17 +100,27 @@ def main() -> None:
                     seen.add(token)
                 current_id = token or None
                 current_length = 0
-            else:
-                if current_id is None:
-                    errors.append(f"line {line_number}: sequence before first header")
-                    continue
-                if not line:
-                    errors.append(f"line {line_number}: blank sequence line")
-                    continue
-                if not SEQ_RE.fullmatch(line):
-                    errors.append(f"line {line_number}: sequence contains non-ATCGN or lowercase characters")
-                current_length += len(line)
-                sequence_lines += 1
+                continue
+
+            if current_id is None:
+                errors.append(f"line {line_number}: sequence before first header")
+                continue
+            if not line:
+                errors.append(f"line {line_number}: blank sequence line")
+                continue
+            if not sequence_re.fullmatch(line):
+                requirement = (
+                    "uppercase ATCGN"
+                    if args.mode == "submission"
+                    else "upper/lowercase DNA IUPAC symbols"
+                )
+                errors.append(f"line {line_number}: sequence violates {requirement}")
+
+            lowercase_bases += sum(ch.islower() for ch in line)
+            iupac_ambiguity_bases += sum(ch not in CANONICAL_BOTH_CASES for ch in line)
+            canonical_n_bases += sum(ch in {"N", "n"} for ch in line)
+            current_length += len(line)
+            sequence_lines += 1
 
     if current_id is not None:
         lengths.append(current_length)
@@ -102,6 +131,7 @@ def main() -> None:
 
     summary = {
         "path": str(path),
+        "mode": args.mode,
         "bytes": path.stat().st_size,
         "sha256": file_sha256(path),
         "records": len(lengths),
@@ -111,9 +141,18 @@ def main() -> None:
         "max_length": max(lengths) if lengths else 0,
         "mean_length": (sum(lengths) / len(lengths)) if lengths else 0,
         "n50": n50(lengths),
+        "lowercase_bases": lowercase_bases,
+        "iupac_ambiguity_bases_excluding_n": iupac_ambiguity_bases,
+        "n_bases": canonical_n_bases,
+        "submission_compatible": (
+            not errors and lowercase_bases == 0 and iupac_ambiguity_bases == 0
+        ),
         "errors": errors,
         "valid": not errors,
-        "claim_boundary": "Syntax/integrity validation only; not biological assembly evaluation."
+        "claim_boundary": (
+            "Syntax/integrity validation only; not biological assembly evaluation. "
+            "Reference-mode validity is not CAMI submission-output compatibility."
+        ),
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
