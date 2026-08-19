@@ -1,0 +1,87 @@
+name: Independent structure-adjusted colistin score GWAS
+
+on:
+  pull_request:
+    branches: [amr-kp-colistin-genome-audit-20260819]
+    paths:
+      - '.github/workflows/amr-kp-colistin-score-gwas.yml'
+      - 'amr_discovery/run_structure_adjusted_score_gwas.py'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  UPSTREAM_RUN_ID: '32211046692'
+  UPSTREAM_ARTIFACT: 'KP_COLISTIN_TARGETED_PORTAL_GWAS_20260819_V2'
+
+jobs:
+  conditional-score-gwas:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download frozen pre-GWAS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.UPSTREAM_ARTIFACT }}
+          path: upstream
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.UPSTREAM_RUN_ID }}
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: amr-score-gwas
+          condarc: |
+            channels:
+              - conda-forge
+            channel_priority: strict
+          create-args: >-
+            python=3.11 numpy pandas=2.3.1 scipy scikit-learn tabulate=0.9.0
+          cache-downloads: true
+          post-cleanup: all
+      - name: Locate immutable inputs
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=$(dirname "$(find upstream -type f -path '*/gwas_inputs/gwas_sample_manifest.csv' | head -1)")
+          root=$(dirname "$root")
+          test -d "$root/gwas_inputs"
+          test -d "$root/structure"
+          test -d "$root/targeted_variants"
+          mkdir -p score_gwas/provenance
+          printf 'source_run=%s\nsource_artifact=%s\nsource_root=%s\n' "$UPSTREAM_RUN_ID" "$UPSTREAM_ARTIFACT" "$root" > score_gwas/provenance/UPSTREAM.txt
+          printf '%s\n' "$root" > /tmp/artifact_root
+          sha256sum "$root/gwas_inputs/gwas_sample_manifest.csv" "$root/gwas_inputs/all_variants.Rtab" "$root/structure/all_mash.tsv" "$root/targeted_variants/targeted_variant_metadata.csv" > score_gwas/provenance/INPUT_SHA256.txt
+          python --version > score_gwas/provenance/PYTHON_VERSION.txt
+          micromamba list > score_gwas/provenance/ENVIRONMENT.txt
+          git rev-parse HEAD > score_gwas/provenance/GIT_HEAD.txt
+      - name: Run independent conditional score tests and untouched validation
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=$(cat /tmp/artifact_root)
+          python amr_discovery/run_structure_adjusted_score_gwas.py \
+            --manifest "$root/gwas_inputs/gwas_sample_manifest.csv" \
+            --rtab "$root/gwas_inputs/all_variants.Rtab" \
+            --distance "$root/structure/all_mash.tsv" \
+            --feature-meta "$root/targeted_variants/targeted_variant_metadata.csv" \
+            --pc-dims 10,20,30 \
+            --out score_gwas/results \
+            2>&1 | tee score_gwas/console.log
+      - name: Finalize hashes
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          find score_gwas -type f ! -name SHA256SUMS_ALL.txt -print0 | sort -z | xargs -0 sha256sum > score_gwas/SHA256SUMS_ALL.txt || true
+          du -ah score_gwas | sort -h > score_gwas/FILE_SIZES.txt || true
+      - name: Upload independent score-GWAS evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: KP_COLISTIN_STRUCTURE_ADJUSTED_SCORE_GWAS_20260819
+          path: score_gwas
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
