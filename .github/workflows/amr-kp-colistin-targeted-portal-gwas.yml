@@ -152,14 +152,32 @@ jobs:
           import sys
           from pathlib import Path
           import pandas as pd
+
           name=sys.argv[1]
-          p=f'targeted_gwas/structure/{name}_raw.tsv'
-          x=pd.read_csv(p,sep='\t',index_col=0)
-          clean=lambda s: Path(str(s)).name.removesuffix('.fna')
-          x.index=[clean(v) for v in x.index]
-          x.columns=[clean(v) for v in x.columns]
-          x=x.loc[x.index,x.index]
+          raw=f'targeted_gwas/structure/{name}_raw.tsv'
+          refs_file=f'targeted_gwas/gwas_inputs/{name}_refs.txt'
+          refs=[Path(line.strip()).name.removesuffix('.fna') for line in open(refs_file) if line.strip()]
+          by_base={r.split('.')[0]: r for r in refs}
+          if len(by_base) != len(refs):
+              raise SystemExit('Assembly-version restoration is not one-to-one')
+
+          x=pd.read_csv(raw,sep='\t',index_col=0)
+          def restore(value):
+              token=Path(str(value)).name.removesuffix('.fna')
+              return by_base.get(token, by_base.get(token.split('.')[0], token))
+          x.index=[restore(v) for v in x.index]
+          x.columns=[restore(v) for v in x.columns]
+          if x.index.duplicated().any() or pd.Index(x.columns).duplicated().any():
+              raise SystemExit('Duplicate Mash sample IDs after version restoration')
+          missing=sorted(set(refs)-set(x.index))
+          extra=sorted(set(x.index)-set(refs))
+          if missing or extra:
+              raise SystemExit(f'Mash/sample mismatch missing={missing[:10]} extra={extra[:10]}')
+          x=x.loc[refs,refs]
           x.to_csv(f'targeted_gwas/structure/{name}_mash.tsv',sep='\t')
+          with open(f'targeted_gwas/structure/{name}_ID_AUDIT.txt','w') as f:
+              f.write(f'n_refs={len(refs)}\n')
+              f.write('exact_id_match=true\n')
           PY
           done
           rm -f targeted_gwas/structure/*_raw.tsv targeted_gwas/structure/*.msh
@@ -216,7 +234,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: KP_COLISTIN_TARGETED_PORTAL_GWAS_20260819
+          name: KP_COLISTIN_TARGETED_PORTAL_GWAS_20260819_V2
           path: targeted_gwas
           if-no-files-found: error
           retention-days: 90
