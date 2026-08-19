@@ -1,0 +1,29 @@
+{
+  "version": "LANTERN-backbone-rescue-v2-training-freeze-20260820",
+  "method": "LANTERN-backbone-rescue-v2",
+  "minimum_contig_length": 1000,
+  "maximum_n_fraction": 0.05,
+  "minimum_v1_score": 0.28,
+  "minimum_timepoints_supported": 2,
+  "minimum_short_breadth": 0.5,
+  "minimum_long_breadth": 0.0,
+  "minimum_long_spanning_reads": 0,
+  "minimum_source_count": 1,
+  "minimum_assembler_count": 1,
+  "require_single_scope": false,
+  "exclude_source_ids": [
+    "megahit_pair"
+  ],
+  "require_any_source_ids": [],
+  "require_v1_selected": true,
+  "redundancy_minimum_identity": 0.97,
+  "redundancy_minimum_query_coverage": 0.85,
+  "maximum_rescue_contigs": 0,
+  "maximum_rescue_bp": 0,
+  "development_pair": "CAMI III Toy samples 0 and 1",
+  "development_uses_public_gold": true,
+  "selected_training_config_id": "C0001",
+  "training_selection_rule": "Highest public-training genome-fraction gain among configurations satisfying the prespecified chimera, assembly-size, and recovered-90 feasibility constraints; ties use mean recovery, lower chimera, and fewer rescue contigs.",
+  "external_validation_required": true,
+  "claim_boundary": "Selected using public CAMI III Toy samples 0 and 1. This frozen configuration is applied unchanged to held-out Toy pairs before any held-out gold-standard archive is downloaded."
+}
