@@ -188,7 +188,8 @@ jobs:
               return token
           x=pd.read_csv('external_validation/structure/mash_long.tsv',sep='\t',header=None,
                         names=['reference','query','distance','pvalue','shared'])
-          x['reference']=x.reference.map(restore); x['query']=x.query.map(restore)
+          x['reference']=x['reference'].map(restore)
+          x['query']=x['query'].map(restore)
           if x.duplicated(['reference','query']).any():
               raise ValueError('Duplicate Mash pair')
           square=x.pivot(index='reference',columns='query',values='distance')
