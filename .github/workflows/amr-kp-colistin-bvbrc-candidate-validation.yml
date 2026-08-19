@@ -1,0 +1,238 @@
+name: Laboratory-only BV-BRC validation of frozen colistin candidates
+
+on:
+  pull_request:
+    branches: [amr-kp-colistin-targeted-portal-gwas-20260819]
+    paths:
+      - '.github/workflows/amr-kp-colistin-bvbrc-candidate-validation.yml'
+      - 'amr_final_extensions/download_bvbrc_genomes.py'
+      - 'amr_final_extensions/scan_frozen_unitigs.py'
+      - 'amr_final_extensions/evaluate_bvbrc_external_candidates.py'
+      - 'amr_discovery/build_colistin_variant_matrix.py'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  BVBRC_RUN_ID: '32248872646'
+  BVBRC_ARTIFACT: 'KP_COLISTIN_BVBRC_EXTERNAL_COHORT_AUDIT_20260819'
+  FINAL_RUN_ID: '32248872658'
+  FINAL_ARTIFACT: 'KP_COLISTIN_ARTIFACT_FINAL_GATES_20260819'
+
+jobs:
+  laboratory-external-validation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download candidate-blind BV-BRC laboratory cohort artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BVBRC_ARTIFACT }}
+          path: inputs/bvbrc
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.BVBRC_RUN_ID }}
+
+      - name: Download frozen candidate panel artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.FINAL_ARTIFACT }}
+          path: inputs/final
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.FINAL_RUN_ID }}
+
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: bvbrc-external-validation
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            pandas=2.3.1
+            numpy=2.2.6
+            scipy
+            scikit-learn
+            biopython
+            requests=2.32.5
+            blast
+            mash
+            ncbi-datasets-cli
+            pyahocorasick
+            tabulate=0.9.0
+          cache-downloads: true
+          post-cleanup: all
+
+      - name: Locate immutable cohort and candidate inputs
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          cohort=$(find inputs/bvbrc -type f -name BVBRC_EXTERNAL_LABORATORY_METHOD_FROZEN_COHORT.csv | head -1)
+          panel=$(find inputs/final -type f -name FROZEN_CANDIDATE_PANEL.csv | head -1)
+          test -n "$cohort"; test -n "$panel"
+          mkdir -p external_validation/provenance
+          printf '%s\n' "$cohort" > /tmp/bvbrc_cohort
+          printf '%s\n' "$panel" > /tmp/candidate_panel
+          printf 'bvbrc_run=%s\nbvbrc_artifact=%s\nfinal_run=%s\nfinal_artifact=%s\n' \
+            "$BVBRC_RUN_ID" "$BVBRC_ARTIFACT" "$FINAL_RUN_ID" "$FINAL_ARTIFACT" \
+            > external_validation/provenance/UPSTREAM.txt
+          sha256sum "$cohort" "$panel" > external_validation/provenance/INPUT_SHA256.txt
+          git rev-parse HEAD > external_validation/provenance/GIT_HEAD.txt
+          uname -a > external_validation/provenance/UNAME.txt
+          python --version > external_validation/provenance/PYTHON_VERSION.txt
+          datasets version > external_validation/provenance/DATASETS_VERSION.txt
+          tblastn -version > external_validation/provenance/BLAST_VERSION.txt
+          mash --version > external_validation/provenance/MASH_VERSION.txt
+          micromamba list > external_validation/provenance/MICROMAMBA_LIST.txt
+          python - "$cohort" "$panel" <<'PY'
+          import sys
+          import pandas as pd
+          cohort=pd.read_csv(sys.argv[1],dtype=str).fillna('')
+          panel=pd.read_csv(sys.argv[2],dtype=str).fillna('')
+          assert len(cohort)==124 and cohort.phenotype.value_counts().to_dict()=={'R':62,'S':62}
+          assert cohort.evidence.eq('Laboratory Method').all()
+          assert len(panel)==83 and panel.candidate_id.nunique()==83
+          print(cohort.phenotype.value_counts())
+          print(panel.candidate_type.value_counts())
+          PY
+
+      - name: Download exact BV-BRC genome FASTA and apply frozen quality gates
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          python amr_final_extensions/download_bvbrc_genomes.py \
+            --cohort "$(cat /tmp/bvbrc_cohort)" \
+            --out external_validation/genomes \
+            --threads 6 \
+            --min-per-class 50 \
+            2>&1 | tee external_validation/GENOME_DOWNLOAD_CONSOLE.log
+
+      - name: Download pinned K. pneumoniae reference annotation
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p external_validation/reference_download
+          datasets download genome accession GCF_000016305.1 \
+            --include genome,gbff \
+            --filename external_validation/reference_download/reference.zip \
+            --no-progressbar
+          unzip -tq external_validation/reference_download/reference.zip
+          unzip -q external_validation/reference_download/reference.zip \
+            -d external_validation/reference_download/package
+          gbff=$(find external_validation/reference_download/package -type f -name '*.gbff' | head -1)
+          test -n "$gbff"
+          cp "$gbff" external_validation/reference.gbff
+          sha256sum external_validation/reference.gbff > external_validation/provenance/REFERENCE_GBFF_SHA256.txt
+
+      - name: Build external target-pathway variant matrix
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import pandas as pd
+          x=pd.read_csv('external_validation/genomes/BVBRC_QC_PASSED_COHORT.csv',dtype=str).fillna('')
+          x.insert(0,'assembly_ID',x['genome_id'])
+          x.to_csv('external_validation/target_labels.csv',index=False)
+          print(x.phenotype.value_counts())
+          PY
+          python amr_discovery/build_colistin_variant_matrix.py \
+            --labels external_validation/target_labels.csv \
+            --assemblies-dir external_validation/genomes/assemblies \
+            --reference-gbff external_validation/reference.gbff \
+            --out external_validation/targeted \
+            --threads 4 \
+            2>&1 | tee external_validation/TARGETED_MATRIX_CONSOLE.log
+
+      - name: Scan all frozen unitigs exactly
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          python amr_final_extensions/scan_frozen_unitigs.py \
+            --candidate-panel "$(cat /tmp/candidate_panel)" \
+            --cohort external_validation/genomes/BVBRC_QC_PASSED_COHORT.csv \
+            --assemblies-dir external_validation/genomes/assemblies \
+            --out external_validation/unitigs \
+            2>&1 | tee external_validation/UNITIG_SCAN_CONSOLE.log
+
+      - name: Build exact-ID Mash distance matrix
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p external_validation/structure
+          mash sketch -p 4 -s 10000 \
+            -l external_validation/genomes/BVBRC_QC_PASSED_REFS.txt \
+            -o external_validation/structure/bvbrc
+          mash dist external_validation/structure/bvbrc.msh external_validation/structure/bvbrc.msh \
+            > external_validation/structure/mash_long.tsv
+          python - <<'PY'
+          from pathlib import Path
+          import pandas as pd
+          cohort=pd.read_csv('external_validation/genomes/BVBRC_QC_PASSED_COHORT.csv',dtype=str)
+          ids=cohort.genome_id.astype(str).tolist()
+          known=set(ids)
+          def restore(value):
+              token=Path(str(value)).name
+              if token.endswith('.fna'):
+                  token=token[:-4]
+              if token not in known:
+                  raise ValueError(f'Unresolved Mash ID: {value!r} -> {token!r}')
+              return token
+          x=pd.read_csv('external_validation/structure/mash_long.tsv',sep='\t',header=None,
+                        names=['reference','query','distance','pvalue','shared'])
+          x['reference']=x['reference'].map(restore)
+          x['query']=x['query'].map(restore)
+          if x.duplicated(['reference','query']).any():
+              raise ValueError('Duplicate Mash pair')
+          square=x.pivot(index='reference',columns='query',values='distance')
+          missing=known-set(square.index); extra=set(square.index)-known
+          if missing or extra or set(square.columns)!=known:
+              raise ValueError(f'Mash matrix mismatch missing={sorted(missing)[:5]} extra={sorted(extra)[:5]}')
+          square=square.loc[ids,ids]
+          square.to_csv('external_validation/structure/all_mash.tsv',sep='\t')
+          print(square.shape)
+          PY
+          rm -f external_validation/structure/bvbrc.msh external_validation/structure/mash_long.tsv
+
+      - name: Evaluate the frozen 83 candidates in the external laboratory cohort
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          python amr_final_extensions/evaluate_bvbrc_external_candidates.py \
+            --cohort external_validation/genomes/BVBRC_QC_PASSED_COHORT.csv \
+            --candidate-panel "$(cat /tmp/candidate_panel)" \
+            --targeted-rtab external_validation/targeted/targeted_variants.Rtab \
+            --unitig-rtab external_validation/unitigs/BVBRC_FROZEN_UNITIGS.Rtab \
+            --distance external_validation/structure/all_mash.tsv \
+            --pc-dims 10,20,30 \
+            --min-carriers 5 \
+            --min-odds-ratio 2.0 \
+            --out external_validation/final_evaluation \
+            2>&1 | tee external_validation/EXTERNAL_EVALUATION_CONSOLE.log
+
+      - name: Remove public genome bytes and finalize hashes
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          rm -rf external_validation/genomes/assemblies external_validation/reference_download
+          find external_validation -type f ! -name SHA256SUMS_ALL.txt -print0 | sort -z | xargs -0 sha256sum \
+            > external_validation/SHA256SUMS_ALL.txt || true
+          du -ah external_validation | sort -h > external_validation/FILE_SIZES.txt || true
+
+      - name: Upload laboratory-only BV-BRC external validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: KP_COLISTIN_BVBRC_LAB_EXTERNAL_VALIDATION_20260819
+          path: external_validation
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9

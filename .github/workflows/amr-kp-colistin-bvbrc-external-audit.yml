@@ -1,0 +1,88 @@
+name: Candidate-blind BV-BRC K. pneumoniae colistin external cohort audit
+
+on:
+  pull_request:
+    branches: [amr-kp-colistin-targeted-portal-gwas-20260819]
+    paths:
+      - '.github/workflows/amr-kp-colistin-bvbrc-external-audit.yml'
+      - 'amr_final_extensions/bvbrc_external_cohort_audit.py'
+      - 'amr_final_extensions/bvbrc_external_cohort_audit_v2.py'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  TARGETED_RUN_ID: '32230694234'
+  TARGETED_ARTIFACT: 'KP_COLISTIN_TARGETED_GWAS_20260819_V4_BIOPROJECT_FIXED'
+
+jobs:
+  bvbrc-external-cohort-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download frozen AMR Portal cohort artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.TARGETED_ARTIFACT }}
+          path: inputs/targeted
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.TARGETED_RUN_ID }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install exact audit dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pandas==2.3.1 numpy==2.2.6 requests==2.32.5
+
+      - name: Locate immutable inputs and record provenance
+        run: |
+          set -euo pipefail
+          labels=$(find inputs/targeted -type f -path '*/portal/target_labels.csv' | head -1)
+          manifest=$(find inputs/targeted -type f -path '*/gwas_inputs_bioproject/gwas_sample_manifest.csv' | head -1)
+          test -n "$labels"; test -n "$manifest"
+          mkdir -p bvbrc_external/provenance
+          printf '%s\n' "$labels" > /tmp/portal_labels
+          printf '%s\n' "$manifest" > /tmp/portal_manifest
+          printf 'source_run=%s\nsource_artifact=%s\n' "$TARGETED_RUN_ID" "$TARGETED_ARTIFACT" > bvbrc_external/provenance/UPSTREAM.txt
+          sha256sum "$labels" "$manifest" > bvbrc_external/provenance/INPUT_SHA256.txt
+          uname -a > bvbrc_external/provenance/UNAME.txt
+          python --version > bvbrc_external/provenance/PYTHON_VERSION.txt
+          python -m pip freeze > bvbrc_external/provenance/PIP_FREEZE.txt
+          git rev-parse HEAD > bvbrc_external/provenance/GIT_HEAD.txt
+
+      - name: Query BV-BRC and freeze independent cohorts before candidate testing
+        run: |
+          set -euo pipefail
+          python amr_final_extensions/bvbrc_external_cohort_audit_v2.py \
+            --portal-labels "$(cat /tmp/portal_labels)" \
+            --portal-manifest "$(cat /tmp/portal_manifest)" \
+            --per-class 250 \
+            --min-per-class 20 \
+            --seed 20260819 \
+            --out bvbrc_external/results \
+            2>&1 | tee bvbrc_external/console.log
+
+      - name: Finalize complete hashes
+        if: always()
+        run: |
+          mkdir -p bvbrc_external
+          find bvbrc_external -type f ! -name SHA256SUMS_ALL.txt -print0 | sort -z | xargs -0 sha256sum > bvbrc_external/SHA256SUMS_ALL.txt || true
+          du -ah bvbrc_external | sort -h > bvbrc_external/FILE_SIZES.txt || true
+
+      - name: Upload candidate-blind BV-BRC evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: KP_COLISTIN_BVBRC_EXTERNAL_COHORT_AUDIT_20260819
+          path: bvbrc_external
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
