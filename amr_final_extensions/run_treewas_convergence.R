@@ -86,14 +86,38 @@ build_tree <- function(dist) {
   tree
 }
 
-extract_sig <- function(result, test_name) {
+# treeWAS 1.1.1 may return SNP.locus as a one-based numeric column index even
+# when the input matrix has explicit pattern names. Normalize every reported
+# locus against the exact genotype column order before any set operation.
+normalize_locus_ids <- function(values, genotype_columns, context) {
+  values <- as.character(values)
+  out <- values
+  numeric_positions <- which(grepl("^[0-9]+$", values))
+  if (length(numeric_positions)) {
+    indices <- suppressWarnings(as.integer(values[numeric_positions]))
+    valid <- !is.na(indices) & indices >= 1L & indices <= length(genotype_columns)
+    if (any(!valid)) {
+      stop(context, ": treeWAS returned out-of-range numeric locus IDs: ",
+           paste(values[numeric_positions][!valid], collapse = ","))
+    }
+    out[numeric_positions] <- genotype_columns[indices]
+  }
+  unknown <- setdiff(unique(out), genotype_columns)
+  if (length(unknown)) {
+    stop(context, ": unresolved treeWAS locus IDs: ", paste(unknown, collapse = ","))
+  }
+  unique(out)
+}
+
+extract_sig <- function(result, test_name, genotype_columns) {
   obj <- result[[test_name]]$sig.snps
   if (is.null(obj) || length(obj) == 0) {
     return(data.frame(pattern_id = character(), test = character(),
                       score = numeric(), p_value = numeric()))
   }
   if (is.atomic(obj) && !is.data.frame(obj)) {
-    vals <- unique(as.character(obj[!is.na(obj)]))
+    vals <- normalize_locus_ids(obj[!is.na(obj)], genotype_columns,
+                                paste0(test_name, " atomic sig.snps"))
     return(data.frame(pattern_id = vals, test = test_name,
                       score = NA_real_, p_value = NA_real_))
   }
@@ -102,19 +126,36 @@ extract_sig <- function(result, test_name) {
     return(data.frame(pattern_id = character(), test = character(),
                       score = numeric(), p_value = numeric()))
   }
+  raw_ids <- as.character(obj$SNP.locus)
+  normalized_per_row <- raw_ids
+  numeric_positions <- which(grepl("^[0-9]+$", raw_ids))
+  if (length(numeric_positions)) {
+    indices <- suppressWarnings(as.integer(raw_ids[numeric_positions]))
+    valid <- !is.na(indices) & indices >= 1L & indices <= length(genotype_columns)
+    if (any(!valid)) {
+      stop(test_name, ": treeWAS returned out-of-range numeric locus IDs: ",
+           paste(raw_ids[numeric_positions][!valid], collapse = ","))
+    }
+    normalized_per_row[numeric_positions] <- genotype_columns[indices]
+  }
+  unknown <- setdiff(unique(normalized_per_row), genotype_columns)
+  if (length(unknown)) {
+    stop(test_name, ": unresolved treeWAS locus IDs: ", paste(unknown, collapse = ","))
+  }
+  keep <- !duplicated(normalized_per_row)
   data.frame(
-    pattern_id = as.character(obj$SNP.locus),
+    pattern_id = normalized_per_row[keep],
     test = test_name,
-    score = if ("score" %in% names(obj)) as.numeric(obj$score) else NA_real_,
-    p_value = if ("p.value" %in% names(obj)) as.numeric(obj$p.value) else NA_real_,
+    score = if ("score" %in% names(obj)) as.numeric(obj$score[keep]) else NA_real_,
+    p_value = if ("p.value" %in% names(obj)) as.numeric(obj$p.value[keep]) else NA_real_,
     stringsAsFactors = FALSE
   )
 }
 
-combined_sig <- function(result) {
+combined_sig <- function(result, genotype_columns) {
   x <- result$treeWAS.combined$treeWAS.combined
   if (is.null(x)) return(character())
-  unique(as.character(x[!is.na(x)]))
+  normalize_locus_ids(x[!is.na(x)], genotype_columns, "treeWAS combined")
 }
 
 haldane_or <- function(a, b, c, d) {
@@ -180,10 +221,10 @@ run_treewas <- function(geno, phen, dist, label, seed_value) {
   )
   saveRDS(result, file.path(out_dir, paste0(label, "_treewas_result.rds")))
   tests <- do.call(rbind, lapply(c("terminal", "simultaneous", "subsequent"),
-                                function(x) extract_sig(result, x)))
+                                function(x) extract_sig(result, x, colnames(geno))))
   write.csv(tests, file.path(out_dir, paste0(label, "_significant_by_test.csv")),
             row.names = FALSE)
-  combined <- combined_sig(result)
+  combined <- combined_sig(result, colnames(geno))
   writeLines(combined, file.path(out_dir, paste0(label, "_combined_significant.txt")))
   list(result = result, tests = tests, combined = combined,
        n_sim = n_sim, tree = tree)
