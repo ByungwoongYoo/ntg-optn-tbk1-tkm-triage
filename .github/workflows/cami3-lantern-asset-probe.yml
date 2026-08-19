@@ -5,7 +5,6 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/cami3-lantern-asset-probe.yml'
-      - 'lantern_cami3/**'
   workflow_dispatch:
 
 permissions:
@@ -24,7 +23,7 @@ jobs:
           set -euo pipefail
           mkdir -p lantern_probe
           python - <<'PY'
-          import hashlib, json, subprocess, time
+          import json, re, subprocess, time
           from pathlib import Path
 
           urls = {
@@ -43,35 +42,27 @@ jobs:
           }
           rows=[]
           for name,url in urls.items():
-              cmd=['curl','-fsSIL','--retry','4','--retry-all-errors','--connect-timeout','20','--max-time','90',url]
-              p=subprocess.run(cmd,text=True,capture_output=True)
-              headers=p.stdout.splitlines()
+              p=subprocess.run(['curl','-fsSIL','--retry','4','--retry-all-errors','--connect-timeout','20','--max-time','90',url],text=True,capture_output=True)
               blocks=[]; block={}
-              for line in headers:
+              for line in p.stdout.splitlines():
                   if line.startswith('HTTP/'):
                       if block: blocks.append(block)
                       block={'status_line':line.strip()}
                   elif ':' in line:
                       k,v=line.split(':',1); block[k.strip().lower()]=v.strip()
               if block: blocks.append(block)
-              final=blocks[-1] if blocks else {}
-              rows.append({
-                  'name':name,'url':url,'curl_exit':p.returncode,
-                  'status':final.get('status_line',''),
-                  'content_length':int(final['content-length']) if final.get('content-length','').isdigit() else None,
-                  'etag':final.get('etag'), 'last_modified':final.get('last-modified'),
-                  'accept_ranges':final.get('accept-ranges'),
-                  'stderr':p.stderr[-1000:],
-              })
-              time.sleep(0.2)
+              final=blocks[-1] if blocks else {}; status=final.get('status_line','')
+              rows.append({'name':name,'url':url,'curl_exit':p.returncode,'status':status,'content_length':int(final['content-length']) if final.get('content-length','').isdigit() else None,'etag':final.get('etag'),'last_modified':final.get('last-modified'),'accept_ranges':final.get('accept-ranges'),'stderr':p.stderr[-1000:]})
+              time.sleep(.2)
           Path('lantern_probe/ASSET_PROBE.json').write_text(json.dumps(rows,indent=2)+'\n')
           with Path('lantern_probe/ASSET_PROBE.tsv').open('w') as f:
               f.write('name\tstatus\tbytes\tGiB\tetag\tlast_modified\turl\n')
               for r in rows:
-                  n=r['content_length']; gib='' if n is None else f'{n/1024**3:.3f}'
+                  n=r['content_length'];gib='' if n is None else f'{n/1024**3:.3f}'
                   f.write(f"{r['name']}\t{r['status']}\t{n or ''}\t{gib}\t{r['etag'] or ''}\t{r['last_modified'] or ''}\t{r['url']}\n")
-          bad=[r for r in rows if r['curl_exit']!=0 or not r['status'].endswith('200 OK')]
+          bad=[r for r in rows if r['curl_exit']!=0 or re.search(r'\s200(?:\s|$)',r['status']) is None]
           Path('lantern_probe/PROBE_STATUS.json').write_text(json.dumps({'n':len(rows),'n_bad':len(bad),'bad':[r['name'] for r in bad]},indent=2)+'\n')
+          if bad: raise SystemExit(f'Asset probe failures: {[r["name"] for r in bad]}')
           PY
           uname -a > lantern_probe/UNAME.txt
           git rev-parse HEAD > lantern_probe/GIT_HEAD.txt
