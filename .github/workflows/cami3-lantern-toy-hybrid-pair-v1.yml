@@ -1,0 +1,379 @@
+name: CAMI III LANTERN Toy pair short-long-hybrid benchmark v1
+
+on:
+  pull_request:
+    branches: [cami3-lantern-20260819]
+    paths:
+      - '.github/workflows/cami3-lantern-toy-hybrid-pair-v1.yml'
+      - 'lantern_cami3/scripts/**'
+      - 'lantern_cami3/config/**'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  READ_RUN_ID: '32285680342'
+  READ_ARTIFACT_S0: 'LANTERN_CAMI3_TOY_READS_S0_V1'
+  READ_ARTIFACT_S1: 'LANTERN_CAMI3_TOY_READS_S1_V1'
+  SEED: '20260819'
+
+jobs:
+  hybrid-pair-benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download frozen S0 and S1 short/long read artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: LANTERN_CAMI3_TOY_READS_S*_V1
+          path: read_artifacts
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.READ_RUN_ID }}
+
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: lantern-hybrid
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            megahit=1.2.9
+            spades=4.3.0
+            flye
+            minimap2=2.31
+            samtools
+            mash=2.3
+            seqkit
+            quast=5.3.0
+            tabulate
+          cache-downloads: true
+          post-cleanup: all
+
+      - name: Locate and verify frozen read inputs
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          ROOT=lantern_hybrid_pair
+          mkdir -p "$ROOT"/{reads,assemblies,logs,provenance,failure_audit,truth_blind,evaluation,pseudo_novel,decision,metaquast,validation}
+          for s in 0 1; do
+            for kind in R1 R2 long; do
+              src=$(find read_artifacts -type f -name "S${s}_${kind}.fastq.gz" | head -1)
+              test -n "$src"
+              ln -s "$PWD/$src" "$ROOT/reads/S${s}_${kind}.fastq.gz"
+              gzip -t "$ROOT/reads/S${s}_${kind}.fastq.gz"
+            done
+            stats=$(find read_artifacts -type f -path "*/S${s}/READ_STATS.json" | head -1)
+            test -n "$stats"
+            cp "$stats" "$ROOT/provenance/S${s}_READ_STATS.json"
+            sums=$(find read_artifacts -type f -path "*/S${s}/SHA256SUMS.txt" | head -1)
+            test -n "$sums"
+            cp "$sums" "$ROOT/provenance/S${s}_UPSTREAM_SHA256SUMS.txt"
+          done
+          gzip -cd "$ROOT/reads/S0_R1.fastq.gz" "$ROOT/reads/S1_R1.fastq.gz" | gzip -1 > "$ROOT/reads/pair_R1.fastq.gz"
+          gzip -cd "$ROOT/reads/S0_R2.fastq.gz" "$ROOT/reads/S1_R2.fastq.gz" | gzip -1 > "$ROOT/reads/pair_R2.fastq.gz"
+          gzip -cd "$ROOT/reads/S0_long.fastq.gz" "$ROOT/reads/S1_long.fastq.gz" | gzip -1 > "$ROOT/reads/pair_long.fastq.gz"
+          gzip -t "$ROOT/reads/pair_R1.fastq.gz" "$ROOT/reads/pair_R2.fastq.gz" "$ROOT/reads/pair_long.fastq.gz"
+          seqkit stats -T "$ROOT"/reads/*.fastq.gz > "$ROOT/provenance/ALL_READ_STATS.tsv"
+          sha256sum "$ROOT"/reads/*.fastq.gz > "$ROOT/provenance/READ_SHA256SUMS.txt"
+          git rev-parse HEAD > "$ROOT/provenance/GIT_HEAD.txt"
+          uname -a > "$ROOT/provenance/UNAME.txt"
+          python --version > "$ROOT/provenance/PYTHON_VERSION.txt"
+          megahit --version > "$ROOT/provenance/MEGAHIT_VERSION.txt" 2>&1
+          metaspades.py --version > "$ROOT/provenance/METASPADES_VERSION.txt" 2>&1
+          flye --version > "$ROOT/provenance/FLYE_VERSION.txt" 2>&1
+          minimap2 --version > "$ROOT/provenance/MINIMAP2_VERSION.txt"
+          samtools --version > "$ROOT/provenance/SAMTOOLS_VERSION.txt"
+          mash --version > "$ROOT/provenance/MASH_VERSION.txt"
+          metaquast.py --version > "$ROOT/provenance/METAQUAST_VERSION.txt" 2>&1 || true
+          micromamba list > "$ROOT/provenance/MICROMAMBA_LIST.txt"
+          cp lantern_cami3/config/lantern_frozen_v1.json lantern_cami3/config/decision_gate_v1.json "$ROOT/provenance/"
+          printf 'read_run=%s\nS0_artifact=%s\nS1_artifact=%s\nseed=%s\ntruth_accessed=false\n' "$READ_RUN_ID" "$READ_ARTIFACT_S0" "$READ_ARTIFACT_S1" "$SEED" > "$ROOT/provenance/FROZEN_INPUTS.txt"
+
+      - name: Run prespecified short, long, and hybrid baselines
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          ROOT=lantern_hybrid_pair
+          run_assembler() {
+            local name="$1"; shift
+            local log="$ROOT/logs/${name}.log" status="$ROOT/failure_audit/${name}.status"
+            set +e
+            /usr/bin/time -v timeout --signal=TERM --kill-after=120s 210m "$@" >"$log" 2>&1
+            local rc=$?
+            set -e
+            printf 'name=%s\nexit_code=%s\ncommand=' "$name" "$rc" > "$status"
+            printf '%q ' "$@" >> "$status"; printf '\n' >> "$status"
+          }
+          run_assembler megahit_pair \
+            megahit -1 "$ROOT/reads/pair_R1.fastq.gz" -2 "$ROOT/reads/pair_R2.fastq.gz" \
+            -o "$ROOT/assemblies/megahit_pair" --min-contig-len 1000 -t 4 --memory 0.8
+          run_assembler metaspades_short_pair \
+            metaspades.py --only-assembler -t 4 -m 12 \
+            -1 "$ROOT/reads/pair_R1.fastq.gz" -2 "$ROOT/reads/pair_R2.fastq.gz" \
+            -o "$ROOT/assemblies/metaspades_short_pair"
+          run_assembler flye_long_s0 \
+            flye --nano-hq "$ROOT/reads/S0_long.fastq.gz" --meta --threads 4 \
+            --out-dir "$ROOT/assemblies/flye_long_s0"
+          run_assembler flye_long_s1 \
+            flye --nano-hq "$ROOT/reads/S1_long.fastq.gz" --meta --threads 4 \
+            --out-dir "$ROOT/assemblies/flye_long_s1"
+          run_assembler flye_long_pair \
+            flye --nano-hq "$ROOT/reads/pair_long.fastq.gz" --meta --threads 4 \
+            --out-dir "$ROOT/assemblies/flye_long_pair"
+          run_assembler metaspades_hybrid_pair \
+            metaspades.py --only-assembler -t 4 -m 12 \
+            -1 "$ROOT/reads/pair_R1.fastq.gz" -2 "$ROOT/reads/pair_R2.fastq.gz" \
+            --nanopore "$ROOT/reads/pair_long.fastq.gz" \
+            -o "$ROOT/assemblies/metaspades_hybrid_pair"
+
+      - name: Prepare successful assemblies and build the truth-blind ensemble
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          ROOT=lantern_hybrid_pair
+          cat > "$ROOT/assemblies/source_manifest.tsv" <<'EOF'
+          source_id	assembler	scope	mode
+          EOF
+          declare -a ASSEMBLY_ARGS
+          add_assembly() {
+            local id="$1" assembler="$2" scope="$3" mode="$4" path="$5"
+            if test -s "$path"; then
+              printf '%s\t%s\t%s\t%s\n' "$id" "$assembler" "$scope" "$mode" >> "$ROOT/assemblies/source_manifest.tsv"
+              ASSEMBLY_ARGS+=(--assembly "$id=$path")
+              sha256sum "$path" >> "$ROOT/provenance/TRUTH_BLIND_BASELINE_FASTA_SHA256.txt"
+            fi
+          }
+          add_assembly megahit_pair megahit longitudinal short "$ROOT/assemblies/megahit_pair/final.contigs.fa"
+          add_assembly metaspades_short_pair metaspades longitudinal short "$ROOT/assemblies/metaspades_short_pair/contigs.fasta"
+          add_assembly flye_long_s0 flye single long "$ROOT/assemblies/flye_long_s0/assembly.fasta"
+          add_assembly flye_long_s1 flye single long "$ROOT/assemblies/flye_long_s1/assembly.fasta"
+          add_assembly flye_long_pair flye longitudinal long "$ROOT/assemblies/flye_long_pair/assembly.fasta"
+          add_assembly metaspades_hybrid_pair metaspades longitudinal hybrid "$ROOT/assemblies/metaspades_hybrid_pair/contigs.fasta"
+          n=$(( ${#ASSEMBLY_ARGS[@]} / 2 ))
+          echo "successful_assemblies=$n" > "$ROOT/provenance/SUCCESSFUL_ASSEMBLY_COUNT.txt"
+          test "$n" -ge 3
+          mkdir -p "$ROOT/truth_blind"/{prepared,clusters,evidence}
+          python lantern_cami3/scripts/prepare_candidates.py \
+            "${ASSEMBLY_ARGS[@]}" \
+            --source-manifest "$ROOT/assemblies/source_manifest.tsv" --min-length 1000 \
+            --out "$ROOT/truth_blind/prepared" 2>&1 | tee "$ROOT/logs/PREPARE_CANDIDATES.log"
+          minimap2 -x asm5 -c -N 100 -t 4 \
+            "$ROOT/truth_blind/prepared/combined_candidates.fasta" \
+            "$ROOT/truth_blind/prepared/combined_candidates.fasta" \
+            > "$ROOT/truth_blind/all_vs_all.paf" 2> "$ROOT/logs/ALL_VS_ALL_MINIMAP2.log"
+          python lantern_cami3/scripts/cluster_candidates.py \
+            --fasta "$ROOT/truth_blind/prepared/combined_candidates.fasta" \
+            --metadata "$ROOT/truth_blind/prepared/candidates.tsv" \
+            --paf "$ROOT/truth_blind/all_vs_all.paf" \
+            --min-identity 0.97 --min-shorter-coverage 0.85 \
+            --out "$ROOT/truth_blind/clusters" 2>&1 | tee "$ROOT/logs/CLUSTER.log"
+
+      - name: Map short and long evidence at both longitudinal timepoints
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          ROOT=lantern_hybrid_pair
+          for s in 0 1; do
+            minimap2 -t 4 -ax sr "$ROOT/truth_blind/clusters/cluster_representatives.fasta" \
+              "$ROOT/reads/S${s}_R1.fastq.gz" "$ROOT/reads/S${s}_R2.fastq.gz" \
+              2> "$ROOT/logs/MAP_S${s}_SHORT.log" | samtools sort -@ 2 -o "$ROOT/truth_blind/evidence/S${s}_short.bam" -
+            samtools index "$ROOT/truth_blind/evidence/S${s}_short.bam"
+            samtools coverage "$ROOT/truth_blind/evidence/S${s}_short.bam" > "$ROOT/truth_blind/evidence/S${s}_short_coverage.tsv"
+            minimap2 -t 4 -ax map-ont "$ROOT/truth_blind/clusters/cluster_representatives.fasta" \
+              "$ROOT/reads/S${s}_long.fastq.gz" \
+              2> "$ROOT/logs/MAP_S${s}_LONG.log" | samtools sort -@ 2 -o "$ROOT/truth_blind/evidence/S${s}_long.bam" -
+            samtools index "$ROOT/truth_blind/evidence/S${s}_long.bam"
+            samtools coverage "$ROOT/truth_blind/evidence/S${s}_long.bam" > "$ROOT/truth_blind/evidence/S${s}_long_coverage.tsv"
+            minimap2 -t 4 -x map-ont -c "$ROOT/truth_blind/clusters/cluster_representatives.fasta" \
+              "$ROOT/reads/S${s}_long.fastq.gz" > "$ROOT/truth_blind/evidence/S${s}_long.paf" 2>> "$ROOT/logs/MAP_S${s}_LONG.log"
+          done
+          python lantern_cami3/scripts/merge_mapping_evidence.py \
+            --short-coverage "S0=$ROOT/truth_blind/evidence/S0_short_coverage.tsv" \
+            --short-coverage "S1=$ROOT/truth_blind/evidence/S1_short_coverage.tsv" \
+            --long-coverage "S0=$ROOT/truth_blind/evidence/S0_long_coverage.tsv" \
+            --long-coverage "S1=$ROOT/truth_blind/evidence/S1_long_coverage.tsv" \
+            --long-paf "S0=$ROOT/truth_blind/evidence/S0_long.paf" \
+            --long-paf "S1=$ROOT/truth_blind/evidence/S1_long.paf" \
+            --out "$ROOT/truth_blind/evidence/merged" 2>&1 | tee "$ROOT/logs/MERGE_EVIDENCE.log"
+
+      - name: Apply frozen LANTERN v1 and four ablations; freeze before truth access
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          ROOT=lantern_hybrid_pair
+          for ablation in full no_longitudinal no_long no_consensus; do
+            python lantern_cami3/scripts/lantern_select.py \
+              --fasta "$ROOT/truth_blind/clusters/cluster_representatives.fasta" \
+              --metadata "$ROOT/truth_blind/clusters/representative_metadata.tsv" \
+              --evidence "$ROOT/truth_blind/evidence/merged/mapping_evidence.tsv" \
+              --config lantern_cami3/config/lantern_frozen_v1.json \
+              --ablation "$ablation" --out "$ROOT/truth_blind/LANTERN_${ablation}" \
+              2>&1 | tee "$ROOT/logs/LANTERN_${ablation}.log"
+            python lantern_cami3/scripts/verify_cami_assembly.py \
+              "$ROOT/truth_blind/LANTERN_${ablation}/LANTERN_ASSEMBLY.fasta" \
+              --out "$ROOT/truth_blind/LANTERN_${ablation}/VALIDATION.json"
+          done
+          python - "$ROOT" <<'PY'
+          import hashlib,json,sys,time
+          from pathlib import Path
+          root=Path(sys.argv[1]); files=[]
+          for base in [root/'assemblies',root/'truth_blind',Path('lantern_cami3/config/lantern_frozen_v1.json'),Path('lantern_cami3/config/decision_gate_v1.json')]:
+              paths=[base] if base.is_file() else sorted(base.rglob('*'))
+              for p in paths:
+                  if p.is_file() and not p.name.endswith(('.bam','.bai')):
+                      files.append({'path':str(p),'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()})
+          out={'freeze_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'git_head':(root/'provenance/GIT_HEAD.txt').read_text().strip(),'truth_accessed':False,'n_files':len(files),'files':files,'boundary':'All short, long, hybrid assembly, clustering, evidence integration, LANTERN selection, ablations, thresholds, and hashes were frozen before gold-standard files were downloaded.'}
+          (root/'truth_blind/TRUTH_BLIND_FREEZE.json').write_text(json.dumps(out,indent=2)+'\n')
+          PY
+          sha256sum "$ROOT/truth_blind/TRUTH_BLIND_FREEZE.json" > "$ROOT/provenance/TRUTH_BLIND_FREEZE_SHA256.txt"
+
+      - name: Download gold standard only after truth-blind freeze
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          ROOT=lantern_hybrid_pair
+          mkdir -p "$ROOT/truth_download" "$ROOT/truth"
+          curl -fsSL --retry 8 --retry-all-errors \
+            'https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_0_gsa.tar.gz' \
+            -o "$ROOT/truth_download/sample0_gsa.tar.gz"
+          curl -fsSL --retry 8 --retry-all-errors \
+            'https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_1_gsa.tar.gz' \
+            -o "$ROOT/truth_download/sample1_gsa.tar.gz"
+          sha256sum "$ROOT/truth_download"/*.tar.gz > "$ROOT/provenance/GSA_INPUT_SHA256.txt"
+          python lantern_cami3/scripts/extract_gsa_truth.py \
+            --gsa-tar "S0=$ROOT/truth_download/sample0_gsa.tar.gz" \
+            --gsa-tar "S1=$ROOT/truth_download/sample1_gsa.tar.gz" \
+            --out "$ROOT/truth" 2>&1 | tee "$ROOT/logs/EXTRACT_TRUTH.log"
+
+      - name: Evaluate all successful baselines and LANTERN ablations
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          ROOT=lantern_hybrid_pair
+          cat > "$ROOT/evaluation/METHOD_MANIFEST.tsv" <<'EOF'
+          method	role	mode	scope	ablation	eligible_primary_baseline
+          EOF
+          declare -a METHOD_SPECS
+          add_method() {
+            local name="$1" role="$2" mode="$3" scope="$4" ablation="$5" eligible="$6" fasta="$7"
+            if test -s "$fasta"; then
+              printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$role" "$mode" "$scope" "$ablation" "$eligible" >> "$ROOT/evaluation/METHOD_MANIFEST.tsv"
+              METHOD_SPECS+=("$name=$fasta")
+            fi
+          }
+          add_method megahit_pair baseline short longitudinal none true "$ROOT/assemblies/megahit_pair/final.contigs.fa"
+          add_method metaspades_short_pair baseline short longitudinal none true "$ROOT/assemblies/metaspades_short_pair/contigs.fasta"
+          add_method flye_long_s0 baseline long single none true "$ROOT/assemblies/flye_long_s0/assembly.fasta"
+          add_method flye_long_s1 baseline long single none true "$ROOT/assemblies/flye_long_s1/assembly.fasta"
+          add_method flye_long_pair baseline long longitudinal none true "$ROOT/assemblies/flye_long_pair/assembly.fasta"
+          add_method metaspades_hybrid_pair baseline hybrid longitudinal none true "$ROOT/assemblies/metaspades_hybrid_pair/contigs.fasta"
+          add_method lantern_full lantern hybrid longitudinal full false "$ROOT/truth_blind/LANTERN_full/LANTERN_ASSEMBLY.fasta"
+          add_method lantern_no_longitudinal ablation hybrid longitudinal no_longitudinal false "$ROOT/truth_blind/LANTERN_no_longitudinal/LANTERN_ASSEMBLY.fasta"
+          add_method lantern_no_long ablation hybrid longitudinal no_long false "$ROOT/truth_blind/LANTERN_no_long/LANTERN_ASSEMBLY.fasta"
+          add_method lantern_no_consensus ablation hybrid longitudinal no_consensus false "$ROOT/truth_blind/LANTERN_no_consensus/LANTERN_ASSEMBLY.fasta"
+          test "${#METHOD_SPECS[@]}" -ge 7
+          : > "$ROOT/evaluation/METHOD_PATHS.tsv"
+          for spec in "${METHOD_SPECS[@]}"; do
+            name="${spec%%=*}"; fasta="${spec#*=}"; out="$ROOT/evaluation/$name"; mkdir -p "$out"
+            minimap2 -x asm5 -c -N 100 -t 4 "$ROOT/truth/combined_truth.fasta" "$fasta" > "$out/assembly_to_truth.paf" 2> "$out/minimap2.log"
+            python lantern_cami3/scripts/evaluate_gold_coverage.py \
+              --paf "$out/assembly_to_truth.paf" --truth-mapping "$ROOT/truth/truth_mapping.tsv" \
+              --assembly-fasta "$fasta" --min-identity 0.90 --min-alignment 500 --out "$out" \
+              > "$out/evaluate_console.log"
+            printf '%s\t%s\t%s\n' "$name" "$fasta" "$out" >> "$ROOT/evaluation/METHOD_PATHS.tsv"
+          done
+
+      - name: Build pseudo-novel distance tiers and apply frozen decision gate
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          ROOT=lantern_hybrid_pair
+          awk -F '\t' 'NR>1 && $3>=50000 {print $2}' "$ROOT/truth/genome_reference_manifest.tsv" > "$ROOT/pseudo_novel/reference_files.txt"
+          test "$(wc -l < "$ROOT/pseudo_novel/reference_files.txt")" -ge 2
+          mash sketch -k 21 -s 1000 -l "$ROOT/pseudo_novel/reference_files.txt" -o "$ROOT/pseudo_novel/truth_genomes" > "$ROOT/pseudo_novel/mash_sketch.log" 2>&1
+          mash dist "$ROOT/pseudo_novel/truth_genomes.msh" "$ROOT/pseudo_novel/truth_genomes.msh" > "$ROOT/pseudo_novel/truth_genome_distances.tsv"
+          RECOVERY_ARGS=(); METHOD_ARGS=(); BASELINE_NAMES=()
+          while IFS=$'\t' read -r name fasta out; do
+            test "$name" = method && continue
+            RECOVERY_ARGS+=(--recovery "$name=$out/per_genome_recovery.tsv")
+            METHOD_ARGS+=(--method "$name=$out")
+          done < "$ROOT/evaluation/METHOD_PATHS.tsv"
+          while IFS=$'\t' read -r method role mode scope ablation eligible; do
+            test "$method" = method && continue
+            if test "$role" = baseline && test "$eligible" = true; then BASELINE_NAMES+=("$method"); fi
+          done < "$ROOT/evaluation/METHOD_MANIFEST.tsv"
+          python lantern_cami3/scripts/build_pseudo_novel_audit.py \
+            --manifest "$ROOT/truth/genome_reference_manifest.tsv" \
+            --mash "$ROOT/pseudo_novel/truth_genome_distances.tsv" \
+            "${RECOVERY_ARGS[@]}" --min-truth-bp 50000 --out "$ROOT/pseudo_novel"
+          python - "$ROOT" <<'PY'
+          import csv,sys
+          from pathlib import Path
+          root=Path(sys.argv[1]);src=root/'pseudo_novel/PSEUDO_NOVEL_TARGETS.tsv';out=root/'pseudo_novel/PSEUDO_NOVEL_SPLITS.tsv'
+          tiers=['exact_target_withheld','species_neighbour_withheld','genus_neighbour_withheld','deep_neighbour_withheld'];rows=[]
+          for r in csv.DictReader(open(src),delimiter='\t'):
+              for tier in tiers:
+                  if r[tier].lower()=='true': rows.append({'genome_id':r['genome_id'],'tier':tier})
+          with open(out,'w',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=['genome_id','tier'],delimiter='\t');w.writeheader();w.writerows(rows)
+          if not rows: raise SystemExit('No pseudo-novel rows')
+          PY
+          python lantern_cami3/scripts/summarize_benchmark.py \
+            "${METHOD_ARGS[@]}" --manifest "$ROOT/evaluation/METHOD_MANIFEST.tsv" \
+            --decision-config lantern_cami3/config/decision_gate_v1.json \
+            --full-method lantern_full --no-longitudinal-method lantern_no_longitudinal \
+            --pseudo-splits "$ROOT/pseudo_novel/PSEUDO_NOVEL_SPLITS.tsv" \
+            --seed "$SEED" --bootstrap 5000 --out "$ROOT/decision" \
+            2>&1 | tee "$ROOT/decision/DECISION_CONSOLE.log"
+
+      - name: Attempt MetaQUAST sensitivity evaluation
+        shell: micromamba-shell {0}
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          ROOT=lantern_hybrid_pair
+          python - "$ROOT" <<'PY'
+          import csv,sys
+          from pathlib import Path
+          root=Path(sys.argv[1]);refs=[r['reference_path'] for r in csv.DictReader(open(root/'truth/genome_reference_manifest.tsv'),delimiter='\t') if int(r['truth_bp'])>=50000]
+          Path('/tmp/meta_refs').write_text(','.join(refs));print({'refs':len(refs)})
+          PY
+          declare -a ASMS LABELS
+          while IFS=$'\t' read -r name fasta out; do
+            test "$name" = method && continue
+            ASMS+=("$fasta"); LABELS+=("$name")
+          done < "$ROOT/evaluation/METHOD_PATHS.tsv"
+          LABEL_STRING=$(IFS=,; echo "${LABELS[*]}")
+          metaquast.py "${ASMS[@]}" --labels "$LABEL_STRING" -r "$(cat /tmp/meta_refs)" \
+            --min-contig 1000 --threads 4 --max-ref-number 10000 -o "$ROOT/metaquast" \
+            > "$ROOT/metaquast_console.log" 2>&1
+
+      - name: Compact reproducible evidence and remove public raw bytes
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          ROOT=lantern_hybrid_pair
+          rm -rf "$ROOT/reads" "$ROOT/truth_download" "$ROOT/truth/references"
+          rm -f "$ROOT/truth/combined_truth.fasta" "$ROOT/pseudo_novel/truth_genomes.msh"
+          rm -f "$ROOT/truth_blind/evidence"/*.bam "$ROOT/truth_blind/evidence"/*.bai
+          find "$ROOT" -type f ! -name SHA256SUMS_ALL.txt -print0 | sort -z | xargs -0 sha256sum > "$ROOT/SHA256SUMS_ALL.txt" || true
+          du -ah "$ROOT" | sort -h > "$ROOT/FILE_SIZES.txt" || true
+
+      - name: Upload hybrid-pair benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: LANTERN_CAMI3_TOY_HYBRID_PAIR_V1_20260820
+          path: lantern_hybrid_pair
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
