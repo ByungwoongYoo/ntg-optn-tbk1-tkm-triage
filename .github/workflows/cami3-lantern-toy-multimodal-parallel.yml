@@ -1,0 +1,265 @@
+name: CAMI III Toy multimodal baselines in parallel
+
+on:
+  pull_request:
+    branches: [cami3-lantern-hybrid-baselines-20260820]
+    paths:
+      - '.github/workflows/cami3-lantern-toy-multimodal-parallel.yml'
+      - 'lantern_cami3/scripts/evaluate_gold_coverage.py'
+      - 'lantern_cami3/scripts/extract_gsa_truth.py'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  READ_RUN_ID: '32285680342'
+  READ_ARTIFACT_PATTERN: 'LANTERN_CAMI3_TOY_READS_S*_V1'
+
+jobs:
+  baseline:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - method: megahit_short_pair
+            mode: short
+            scope: longitudinal
+          - method: metaspades_short_pair
+            mode: short
+            scope: longitudinal
+          - method: flye_long_s0
+            mode: long
+            scope: single
+          - method: flye_long_s1
+            mode: long
+            scope: single
+          - method: flye_long_pair
+            mode: long
+            scope: longitudinal
+          - method: metaspades_hybrid_pair
+            mode: hybrid
+            scope: longitudinal
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download frozen S0/S1 short and long read artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ${{ env.READ_ARTIFACT_PATTERN }}
+          path: read_artifacts
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.READ_RUN_ID }}
+
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: cami-multimodal-parallel
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            megahit=1.2.9
+            spades=4.3.0
+            flye
+            minimap2=2.31
+            seqkit
+            tabulate
+          cache-downloads: true
+          post-cleanup: all
+
+      - name: Locate exact frozen inputs
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          M='${{ matrix.method }}'; ROOT="multimodal_${M}"
+          mkdir -p "$ROOT"/{reads,assembly,truth_blind,truth_download,truth,evaluation,provenance,logs_summary,failure_audit,validation}
+          for s in 0 1; do
+            artifact_dir=$(dirname "$(find read_artifacts -type f -name "S${s}_R1.fastq.gz" | head -1)")
+            test -d "$artifact_dir"
+            for kind in R1 R2 long; do
+              src="$artifact_dir/S${s}_${kind}.fastq.gz"; test -s "$src"
+              ln -s "$PWD/$src" "$ROOT/reads/S${s}_${kind}.fastq.gz"
+              gzip -t "$ROOT/reads/S${s}_${kind}.fastq.gz"
+            done
+          done
+          gzip -cd "$ROOT/reads/S0_R1.fastq.gz" "$ROOT/reads/S1_R1.fastq.gz" | gzip -1 > "$ROOT/reads/pair_R1.fastq.gz"
+          gzip -cd "$ROOT/reads/S0_R2.fastq.gz" "$ROOT/reads/S1_R2.fastq.gz" | gzip -1 > "$ROOT/reads/pair_R2.fastq.gz"
+          gzip -cd "$ROOT/reads/S0_long.fastq.gz" "$ROOT/reads/S1_long.fastq.gz" | gzip -1 > "$ROOT/reads/pair_long.fastq.gz"
+          gzip -t "$ROOT/reads/pair_R1.fastq.gz" "$ROOT/reads/pair_R2.fastq.gz" "$ROOT/reads/pair_long.fastq.gz"
+          seqkit stats -T "$ROOT"/reads/*.fastq.gz > "$ROOT/provenance/READ_STATS.tsv"
+          sha256sum "$ROOT"/reads/*.fastq.gz > "$ROOT/provenance/READ_SHA256SUMS.txt"
+          git rev-parse HEAD > "$ROOT/provenance/GIT_HEAD.txt"
+          uname -a > "$ROOT/provenance/UNAME.txt"
+          python --version > "$ROOT/provenance/PYTHON_VERSION.txt"
+          megahit --version > "$ROOT/provenance/MEGAHIT_VERSION.txt" 2>&1
+          metaspades.py --version > "$ROOT/provenance/METASPADES_VERSION.txt" 2>&1
+          flye --version > "$ROOT/provenance/FLYE_VERSION.txt" 2>&1
+          minimap2 --version > "$ROOT/provenance/MINIMAP2_VERSION.txt"
+          micromamba list > "$ROOT/provenance/MICROMAMBA_LIST.txt"
+          printf 'method=%s\nmode=%s\nscope=%s\nupstream_read_run=%s\ntruth_accessed=false\n' \
+            "$M" '${{ matrix.mode }}' '${{ matrix.scope }}' "$READ_RUN_ID" > "$ROOT/provenance/FROZEN_INPUTS.txt"
+
+      - name: Run one truth-blind baseline
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          M='${{ matrix.method }}'; ROOT="multimodal_${M}"
+          set +e
+          case "$M" in
+            megahit_short_pair)
+              /usr/bin/time -v timeout --signal=TERM --kill-after=120s 300m \
+                megahit -1 "$ROOT/reads/pair_R1.fastq.gz" -2 "$ROOT/reads/pair_R2.fastq.gz" \
+                -o "$ROOT/assembly/out" --min-contig-len 1000 -t 4 --memory 0.8 \
+                > "$ROOT/logs_summary/ASSEMBLER.log" 2>&1
+              rc=$?; FASTA="$ROOT/assembly/out/final.contigs.fa" ;;
+            metaspades_short_pair)
+              /usr/bin/time -v timeout --signal=TERM --kill-after=120s 300m \
+                metaspades.py --only-assembler -t 4 -m 12 \
+                -1 "$ROOT/reads/pair_R1.fastq.gz" -2 "$ROOT/reads/pair_R2.fastq.gz" \
+                -o "$ROOT/assembly/out" > "$ROOT/logs_summary/ASSEMBLER.log" 2>&1
+              rc=$?; FASTA="$ROOT/assembly/out/contigs.fasta" ;;
+            flye_long_s0)
+              /usr/bin/time -v timeout --signal=TERM --kill-after=120s 300m \
+                flye --nano-hq "$ROOT/reads/S0_long.fastq.gz" --meta --threads 4 \
+                --out-dir "$ROOT/assembly/out" > "$ROOT/logs_summary/ASSEMBLER.log" 2>&1
+              rc=$?; FASTA="$ROOT/assembly/out/assembly.fasta" ;;
+            flye_long_s1)
+              /usr/bin/time -v timeout --signal=TERM --kill-after=120s 300m \
+                flye --nano-hq "$ROOT/reads/S1_long.fastq.gz" --meta --threads 4 \
+                --out-dir "$ROOT/assembly/out" > "$ROOT/logs_summary/ASSEMBLER.log" 2>&1
+              rc=$?; FASTA="$ROOT/assembly/out/assembly.fasta" ;;
+            flye_long_pair)
+              /usr/bin/time -v timeout --signal=TERM --kill-after=120s 300m \
+                flye --nano-hq "$ROOT/reads/pair_long.fastq.gz" --meta --threads 4 \
+                --out-dir "$ROOT/assembly/out" > "$ROOT/logs_summary/ASSEMBLER.log" 2>&1
+              rc=$?; FASTA="$ROOT/assembly/out/assembly.fasta" ;;
+            metaspades_hybrid_pair)
+              /usr/bin/time -v timeout --signal=TERM --kill-after=120s 300m \
+                metaspades.py --only-assembler -t 4 -m 12 \
+                -1 "$ROOT/reads/pair_R1.fastq.gz" -2 "$ROOT/reads/pair_R2.fastq.gz" \
+                --nanopore "$ROOT/reads/pair_long.fastq.gz" \
+                -o "$ROOT/assembly/out" > "$ROOT/logs_summary/ASSEMBLER.log" 2>&1
+              rc=$?; FASTA="$ROOT/assembly/out/contigs.fasta" ;;
+            *) echo "Unknown method $M" >&2; exit 2 ;;
+          esac
+          set -e
+          printf 'method=%s\nexit_code=%s\nfasta=%s\n' "$M" "$rc" "$FASTA" > "$ROOT/failure_audit/ASSEMBLER.status"
+          if test "$rc" -ne 0 || ! test -s "$FASTA"; then
+            printf '{"status":"ASSEMBLER_FAILED","method":"%s","exit_code":%s}\n' "$M" "$rc" > "$ROOT/RESULT_STATUS.json"
+            exit 1
+          fi
+          printf '%s\n' "$FASTA" > /tmp/baseline_fasta
+
+      - name: Freeze assembly before gold access
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          M='${{ matrix.method }}'; ROOT="multimodal_${M}"; FASTA=$(cat /tmp/baseline_fasta)
+          sha256sum "$FASTA" > "$ROOT/provenance/TRUTH_BLIND_ASSEMBLY_SHA256.txt"
+          python - "$M" '${{ matrix.mode }}' '${{ matrix.scope }}' "$FASTA" "$ROOT" <<'PY'
+          import hashlib,json,sys,time
+          from pathlib import Path
+          m,mode,scope,fa,root=sys.argv[1:]; p=Path(fa); out=Path(root)
+          obj={'freeze_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'truth_accessed':False,'method':m,'mode':mode,'scope':scope,'fasta':str(p),'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'boundary':'Assembly completed and hashed before public Toy gold access.'}
+          (out/'truth_blind/TRUTH_BLIND_FREEZE.json').write_text(json.dumps(obj,indent=2)+'\n')
+          print(json.dumps(obj,indent=2))
+          PY
+
+      - name: Download gold after freeze and evaluate
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          M='${{ matrix.method }}'; ROOT="multimodal_${M}"; FASTA=$(cat /tmp/baseline_fasta)
+          for s in 0 1; do
+            curl -fsSL --retry 8 --retry-all-errors \
+              "https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_${s}_gsa.tar.gz" \
+              -o "$ROOT/truth_download/sample_${s}_gsa.tar.gz"
+          done
+          sha256sum "$ROOT/truth_download"/*.tar.gz > "$ROOT/provenance/GSA_SHA256SUMS.txt"
+          python lantern_cami3/scripts/extract_gsa_truth.py \
+            --gsa-tar "S0=$ROOT/truth_download/sample_0_gsa.tar.gz" \
+            --gsa-tar "S1=$ROOT/truth_download/sample_1_gsa.tar.gz" \
+            --out "$ROOT/truth" > "$ROOT/logs_summary/EXTRACT_TRUTH.log" 2>&1
+          minimap2 -x asm5 -c -N 100 -t 4 "$ROOT/truth/combined_truth.fasta" "$FASTA" \
+            > "$ROOT/evaluation/assembly_to_truth.paf" 2> "$ROOT/evaluation/minimap2.log"
+          python lantern_cami3/scripts/evaluate_gold_coverage.py \
+            --paf "$ROOT/evaluation/assembly_to_truth.paf" \
+            --truth-mapping "$ROOT/truth/truth_mapping.tsv" \
+            --assembly-fasta "$FASTA" --min-identity 0.90 --min-alignment 500 \
+            --out "$ROOT/evaluation" > "$ROOT/evaluation/evaluate_console.log"
+          python - "$M" '${{ matrix.mode }}' '${{ matrix.scope }}' "$ROOT" "$FASTA" <<'PY'
+          import json,sys
+          from pathlib import Path
+          m,mode,scope,root,fa=sys.argv[1:]; root=Path(root)
+          s=json.loads((root/'evaluation/GOLD_COVERAGE_SUMMARY.json').read_text())
+          out={'status':'COMPLETE','method':m,'mode':mode,'scope':scope,'fasta':fa,'genome_fraction_percent':s['genome_fraction_percent'],'mean_genome_recovery_percent':100*s['mean_genome_recovery'],'median_genome_recovery_percent':100*s['median_genome_recovery'],'genomes_recovered_50':s['genomes_recovered_50'],'genomes_recovered_90':s['genomes_recovered_90'],'assembly_contigs_total':s['assembly_contigs_total'],'assembly_total_bp':s['assembly_total_bp'],'cross_binid_chimera_bp_fraction':s['cross_binid_chimeric_bp_fraction'],'alignment_to_unique_truth_ratio':s['alignment_to_unique_truth_ratio'],'truth_blind':True,'claim_boundary':'Public Toy baseline only; not a hidden CAMI challenge result or rank.'}
+          (root/'METHOD_RESULT.json').write_text(json.dumps(out,indent=2)+'\n'); print(json.dumps(out,indent=2))
+          PY
+
+      - name: Compact and hash method evidence
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          M='${{ matrix.method }}'; ROOT="multimodal_${M}"
+          rm -rf "$ROOT/reads" "$ROOT/truth_download" "$ROOT/truth/references"
+          rm -f "$ROOT/truth/combined_truth.fasta" "$ROOT/evaluation/assembly_to_truth.paf"
+          find "$ROOT/assembly/out" -type f ! -name '*.fasta' ! -name '*.fa' -delete 2>/dev/null || true
+          find "$ROOT" -type f ! -name SHA256SUMS_ALL.txt -print0 | sort -z | xargs -0 sha256sum > "$ROOT/SHA256SUMS_ALL.txt" || true
+          du -ah "$ROOT" | sort -h > "$ROOT/FILE_SIZES.txt" || true
+
+      - name: Upload compact method evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: LANTERN_CAMI3_MULTIMODAL_${{ matrix.method }}_20260820
+          path: multimodal_${{ matrix.method }}
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
+
+  aggregate:
+    needs: baseline
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: LANTERN_CAMI3_MULTIMODAL_*_20260820
+          path: method_artifacts
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Aggregate every completed method
+        run: |
+          set -euo pipefail
+          mkdir -p aggregate
+          python - <<'PY'
+          import csv,json
+          from pathlib import Path
+          files=sorted(Path('method_artifacts').rglob('METHOD_RESULT.json'))
+          rows=[json.loads(p.read_text()) for p in files]
+          if len(rows)<3: raise SystemExit(f'Fewer than three completed baselines: {len(rows)}')
+          rows.sort(key=lambda r:(-r['genome_fraction_percent'],-r['mean_genome_recovery_percent'],r['method']))
+          fields=sorted({k for r in rows for k in r})
+          with open('aggregate/MULTIMODAL_BASELINE_RESULTS.csv','w',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=fields);w.writeheader();w.writerows({k:r.get(k) for k in fields} for r in rows)
+          summary={'status':'COMPLETE','n_completed_methods':len(rows),'strongest_by_genome_fraction':rows[0]['method'],'best_genome_fraction_percent':rows[0]['genome_fraction_percent'],'methods':[r['method'] for r in rows],'claim_boundary':'Public Toy multimodal baseline ladder only; no hidden challenge result, rank, or LANTERN gain.'}
+          Path('aggregate/MULTIMODAL_BASELINE_SUMMARY.json').write_text(json.dumps(summary,indent=2)+'\n')
+          print(json.dumps(summary,indent=2))
+          PY
+          find aggregate -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > aggregate/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LANTERN_CAMI3_MULTIMODAL_AGGREGATE_20260820
+          path: aggregate
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
