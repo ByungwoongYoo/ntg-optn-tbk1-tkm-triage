@@ -1,0 +1,70 @@
+{
+  "snapshot_date": "2026-08-20",
+  "challenge": {
+    "name": "CAMI III Longitudinal Human Gut",
+    "opened": "2026-07-14",
+    "assembly_deadline": "2026-10-14",
+    "other_task_deadline": "2027-01-31",
+    "participants": 9,
+    "timepoints_per_participant": 4,
+    "sample_count": 36,
+    "read_types": ["simulated short-read shotgun metagenomics", "simulated long-read shotgun metagenomics"],
+    "domains_explicitly_listed": ["bacteria", "archaea", "fungi", "viruses", "plasmids", "host"],
+    "novel_microbials_included": true,
+    "assembly_submission_modes": [
+      "cross-sample assembly of all samples",
+      "patient-specific cross-sample assemblies",
+      "single-sample assemblies"
+    ],
+    "assembly_data_modes": ["short-read", "long-read", "combined short-and-long-read"],
+    "first_ten_sample_route_permitted": true,
+    "active_challenge_online_evaluation_enabled": false
+  },
+  "toy": {
+    "name": "CAMI III Toy Longitudinal Human Gut",
+    "participants": 10,
+    "timepoints_per_participant": 2,
+    "sample_count": 20,
+    "short_read_total_gbp": 100,
+    "short_read_length": "2 x 150 bp",
+    "long_read_total_gbp": 100,
+    "long_read_average_length_bp": 3998,
+    "long_read_chemistry": "Oxford Nanopore R10",
+    "gold_standards_available": true,
+    "source_genomes_public": true,
+    "reference_leakage_warning": "Reference-based evaluation on the Toy dataset can be exaggerated if the reference collection contains its public source genomes."
+  },
+  "format": {
+    "assembly": "FASTA-formatted contig/scaffold file",
+    "allowed_sequence_regex": "^[ATCGN]+$",
+    "compression_supported_by_portal": ["zip", "gzip"],
+    "tar_gz_supported_by_portal": false
+  },
+  "reproducibility": {
+    "accepted_tool_delivery": ["Docker container", "Bioconda script", "software repository with detailed installation instructions"],
+    "required_metadata": [
+      "exact software versions",
+      "parameters",
+      "reference databases",
+      "random seed behavior",
+      "whether multiple runs are combined",
+      "whether a best run is selected"
+    ]
+  },
+  "references": {
+    "challenge_announcement": "https://cami-challenge.org/cami-iii-challenges/",
+    "schedule": "https://cami-challenge.org/schedule/",
+    "toy_dataset": "https://cami-challenge.org/datasets/toy-human-gut/",
+    "challenge_dataset": "https://cami-challenge.org/datasets/human-gut/",
+    "file_formats": "https://cami-challenge.org/file-formats/",
+    "submit": "https://cami-challenge.org/submit/",
+    "faq": "https://cami-challenge.org/faq/",
+    "reference_databases": "https://cami-challenge.org/reference-databases/",
+    "toy_short_download_list": "https://cami-challenge.org/static/CAMI3_toy_dataset_download.list",
+    "toy_long_download_list": "https://cami-challenge.org/static/CAMI3_toy_dataset_long_download.list"
+  },
+  "toy_smoke_urls": {
+    "short_sample_0_contigs": "https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_0_contigs.tar.gz",
+    "short_sample_0_gsa": "https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_0_gsa.tar.gz"
+  }
+}
