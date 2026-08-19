@@ -45,10 +45,13 @@ jobs:
           LANTERN_MEMORY_GB: '12'
         run: |
           set -euo pipefail
-          # Temporary one-line correction to a header-skipping awk rule; the patched
-          # executable is preserved and hashed in the artifact for exact provenance.
+          # Temporary source corrections are applied to a copy. The exact executed
+          # script is retained and hashed in the artifact. Both corrections are
+          # independently covered by the synthetic integration test.
           cp lantern_cami3/scripts/run_toy_short_benchmark.sh /tmp/run_toy_short_benchmark.sh
           sed -i "s/NR==1 || \$3>=50000/NR>1 \&\& \$3>=50000/" /tmp/run_toy_short_benchmark.sh
+          sed -i 's|--truth-mapping "$ROOT/truth/truth_mapping.tsv" --min-identity|--truth-mapping "$ROOT/truth/truth_mapping.tsv" --assembly-fasta "$fasta" --min-identity|' /tmp/run_toy_short_benchmark.sh
+          grep -q -- '--assembly-fasta "$fasta"' /tmp/run_toy_short_benchmark.sh
           cp /tmp/run_toy_short_benchmark.sh lantern_short_benchmark_EXECUTED_SCRIPT.sh
           bash /tmp/run_toy_short_benchmark.sh lantern_short_benchmark
       - name: Preserve workflow-level provenance
