@@ -1,0 +1,182 @@
+name: Corrected primary-BioProject K. pneumoniae colistin targeted GWAS
+
+on:
+  pull_request:
+    branches: [amr-kp-colistin-genome-audit-20260819]
+    paths:
+      - '.github/workflows/amr-kp-colistin-bioproject-resplit.yml'
+      - 'amr_discovery/prepare_colistin_gwas_inputs.py'
+      - 'amr_discovery/evaluate_colistin_gwas.py'
+      - 'amr_discovery/tighten_colistin_gwas_gate.py'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  UPSTREAM_RUN_ID: '32213528855'
+  UPSTREAM_ARTIFACT: 'KP_COLISTIN_TARGETED_PORTAL_GWAS_20260819_V3_REPAIRED'
+
+jobs:
+  bioproject-resplit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download repaired complete targeted-GWAS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.UPSTREAM_ARTIFACT }}
+          path: corrected
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.UPSTREAM_RUN_ID }}
+
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: amr-bioproject
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            pandas=2.3.1
+            scipy
+            scikit-learn
+            pyseer
+            tabulate=0.9.0
+          cache-downloads: true
+          post-cleanup: all
+
+      - name: Reparse exact accessions and construct primary-BioProject holdout
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p corrected/bioproject_provenance corrected/dummy_assemblies
+          git rev-parse HEAD > corrected/bioproject_provenance/GIT_HEAD.txt
+          printf 'upstream_run=%s\nupstream_artifact=%s\n' "$UPSTREAM_RUN_ID" "$UPSTREAM_ARTIFACT" > corrected/bioproject_provenance/UPSTREAM.txt
+          python --version > corrected/bioproject_provenance/PYTHON_VERSION.txt
+          pyseer --version > corrected/bioproject_provenance/PYSEER_VERSION.txt
+          python - <<'PY'
+          from pathlib import Path
+          import pandas as pd
+          x=pd.read_csv('corrected/targeted_variants/targeted_sample_metadata.csv',dtype={'assembly_ID':str})
+          root=Path('corrected/dummy_assemblies')
+          for acc in x.assembly_ID.dropna().astype(str).unique():
+              (root/f'{acc}.fna').touch()
+          PY
+          rm -rf corrected/gwas_inputs_bioproject
+          python amr_discovery/prepare_colistin_gwas_inputs.py \
+            --metadata corrected/targeted_variants/targeted_sample_metadata.csv \
+            --rtab corrected/targeted_variants/targeted_variants.Rtab \
+            --assembly-report corrected/assembly_data_report.jsonl \
+            --assemblies-dir corrected/dummy_assemblies \
+            --out corrected/gwas_inputs_bioproject \
+            --validation-fraction 0.30 \
+            --seed 20260819 \
+            2>&1 | tee corrected/bioproject_input_console.log
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import pandas as pd
+          root=Path('corrected/gwas_inputs_bioproject')
+          s=json.loads((root/'GWAS_INPUT_SUMMARY.json').read_text())
+          if s.get('primary_bioproject_coverage',0)<0.95:
+              raise SystemExit(f'Insufficient primary BioProject coverage: {s}')
+          if not s.get('group_disjoint'):
+              raise SystemExit('Discovery and validation BioProjects overlap')
+          m=pd.read_csv(root/'gwas_sample_manifest.csv',dtype={'assembly_ID':str})
+          overlap=set(m.loc[m.split.eq('discovery'),'BioProject']) & set(m.loc[m.split.eq('validation'),'BioProject'])
+          overlap.discard(float('nan')) if float('nan') in overlap else None
+          if overlap:
+              raise SystemExit(f'BioProject overlap: {sorted(overlap)[:10]}')
+          print(json.dumps(s,indent=2))
+          PY
+          rm -rf corrected/dummy_assemblies
+
+      - name: Subset exact all-sample Mash matrix for corrected discovery cohort
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          rm -rf corrected/structure_bioproject corrected/pyseer_bioproject corrected/evaluation_bioproject corrected/final_gate_bioproject
+          mkdir -p corrected/structure_bioproject
+          python - <<'PY'
+          from pathlib import Path
+          import pandas as pd
+          allx=pd.read_csv('corrected/structure/all_mash.tsv',sep='\t',index_col=0)
+          allx.index=allx.index.astype(str); allx.columns=allx.columns.astype(str)
+          m=pd.read_csv('corrected/gwas_inputs_bioproject/gwas_sample_manifest.csv',dtype={'assembly_ID':str})
+          all_ids=m.assembly_ID.astype(str).tolist(); disc=m.loc[m.split.eq('discovery'),'assembly_ID'].astype(str).tolist()
+          if set(all_ids)!=set(allx.index):
+              raise SystemExit(f'All-sample Mash mismatch missing={sorted(set(all_ids)-set(allx.index))[:10]} extra={sorted(set(allx.index)-set(all_ids))[:10]}')
+          allx.loc[all_ids,all_ids].to_csv('corrected/structure_bioproject/all_mash.tsv',sep='\t')
+          allx.loc[disc,disc].to_csv('corrected/structure_bioproject/discovery_mash.tsv',sep='\t')
+          Path('corrected/bioproject_provenance/MASH_SUBSET_AUDIT.txt').write_text(f'n_all={len(all_ids)}\nn_discovery={len(disc)}\nexact_match=true\n')
+          PY
+
+      - name: Run corrected population-structure sensitivity models
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p corrected/pyseer_bioproject
+          for dim in 10 20 30; do
+            pyseer \
+              --phenotypes corrected/gwas_inputs_bioproject/discovery_phenotypes.tsv \
+              --pres corrected/gwas_inputs_bioproject/discovery_variants.Rtab \
+              --distances corrected/structure_bioproject/discovery_mash.tsv \
+              --max-dimensions "$dim" --min-af 0.01 --max-af 0.99 \
+              --filter-pvalue 1 --print-samples \
+              --output-patterns "corrected/pyseer_bioproject/discovery_dim${dim}.patterns" \
+              > "corrected/pyseer_bioproject/discovery_dim${dim}.tsv" \
+              2> "corrected/pyseer_bioproject/discovery_dim${dim}.log"
+            pyseer \
+              --phenotypes corrected/gwas_inputs_bioproject/all_phenotypes.tsv \
+              --pres corrected/gwas_inputs_bioproject/all_variants.Rtab \
+              --distances corrected/structure_bioproject/all_mash.tsv \
+              --max-dimensions "$dim" --min-af 0.01 --max-af 0.99 \
+              --filter-pvalue 1 --print-samples \
+              --output-patterns "corrected/pyseer_bioproject/all_dim${dim}.patterns" \
+              > "corrected/pyseer_bioproject/all_dim${dim}.tsv" \
+              2> "corrected/pyseer_bioproject/all_dim${dim}.log"
+          done
+          for f in corrected/pyseer_bioproject/*.tsv; do test -s "$f"; done
+
+      - name: Evaluate corrected held-out and cross-source evidence
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          python amr_discovery/evaluate_colistin_gwas.py \
+            --manifest corrected/gwas_inputs_bioproject/gwas_sample_manifest.csv \
+            --rtab corrected/gwas_inputs_bioproject/all_variants.Rtab \
+            --feature-meta corrected/targeted_variants/targeted_variant_metadata.csv \
+            --discovery corrected/pyseer_bioproject/discovery_dim10.tsv corrected/pyseer_bioproject/discovery_dim20.tsv corrected/pyseer_bioproject/discovery_dim30.tsv \
+            --whole corrected/pyseer_bioproject/all_dim10.tsv corrected/pyseer_bioproject/all_dim20.tsv corrected/pyseer_bioproject/all_dim30.tsv \
+            --out corrected/evaluation_bioproject \
+            2>&1 | tee corrected/bioproject_evaluation_console.log
+          python amr_discovery/tighten_colistin_gwas_gate.py \
+            --evidence corrected/evaluation_bioproject/ALL_MARKER_EVIDENCE.csv \
+            --meta-details corrected/evaluation_bioproject/MARKER_META_ANALYSIS_DETAILS.json \
+            --out corrected/final_gate_bioproject \
+            2>&1 | tee corrected/final_gate_console.log
+
+      - name: Finalize corrected evidence hashes
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          rm -f corrected/SHA256SUMS_BIOPROJECT_FIXED.txt
+          find corrected -type f ! -name SHA256SUMS_BIOPROJECT_FIXED.txt -print0 | sort -z | xargs -0 sha256sum > corrected/SHA256SUMS_BIOPROJECT_FIXED.txt || true
+          du -ah corrected | sort -h | tail -200 > corrected/FILE_SIZES_BIOPROJECT_FIXED.txt || true
+
+      - name: Upload corrected primary-BioProject evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: KP_COLISTIN_TARGETED_GWAS_20260819_V4_BIOPROJECT_FIXED
+          path: corrected
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9

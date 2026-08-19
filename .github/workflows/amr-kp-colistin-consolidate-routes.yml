@@ -1,0 +1,111 @@
+name: Consolidate K. pneumoniae colistin candidate routes
+
+on:
+  pull_request:
+    branches: [amr-kp-colistin-genome-audit-20260819]
+    paths:
+      - '.github/workflows/amr-kp-colistin-consolidate-routes.yml'
+      - 'amr_discovery/consolidate_candidate_routes.py'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  consolidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: amr-consolidate
+          condarc: |
+            channels:
+              - conda-forge
+            channel_priority: strict
+          create-args: >-
+            python=3.11 pandas=2.3.1 tabulate=0.9.0
+          cache-downloads: true
+          post-cleanup: all
+      - name: Download latest available artifacts from all prespecified routes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p route_artifacts route_consolidation/provenance
+          python - <<'PY'
+          import json, os, re, shutil, urllib.request, zipfile
+          from pathlib import Path
+
+          repo=os.environ['REPOSITORY']; token=os.environ['GH_TOKEN']
+          branches=['amr-kp-colistin-targeted-portal-gwas-20260819','amr-kp-colistin-portal-unitig-gwas-20260819']
+          wanted_prefixes=(
+              'KP_COLISTIN_STRUCTURE_ADJUSTED_SCORE_GWAS_',
+              'KP_COLISTIN_TARGETED_PORTAL_GWAS_',
+              'KP_COLISTIN_LINEAGE_CMH_',
+              'KP_COLISTIN_RARE_VARIANT_BURDEN_',
+              'KP_COLISTIN_PORTAL_UNITIG_GWAS_',
+          )
+          headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json','User-Agent':'AMR-route-consolidator'}
+          def get(url):
+              req=urllib.request.Request(url,headers=headers)
+              with urllib.request.urlopen(req,timeout=60) as r:return json.load(r)
+          def download(url,path):
+              req=urllib.request.Request(url,headers=headers)
+              with urllib.request.urlopen(req,timeout=180) as r:path.write_bytes(r.read())
+          runs=[]
+          for branch in branches:
+              data=get(f'https://api.github.com/repos/{repo}/actions/runs?branch={branch}&per_page=100')
+              runs.extend(data.get('workflow_runs',[]))
+          runs=sorted(runs,key=lambda r:r.get('created_at',''),reverse=True)
+          selected={}
+          provenance=[]
+          for run in runs:
+              if run.get('status')!='completed':continue
+              arts=get(f'https://api.github.com/repos/{repo}/actions/runs/{run["id"]}/artifacts').get('artifacts',[])
+              for art in arts:
+                  name=art.get('name','')
+                  if art.get('expired') or not name.startswith(wanted_prefixes):continue
+                  family=next(p for p in wanted_prefixes if name.startswith(p))
+                  if family in selected:continue
+                  selected[family]=(run,art)
+          out=Path('route_artifacts')
+          for family,(run,art) in selected.items():
+              safe=re.sub(r'[^A-Za-z0-9_.-]','_',art['name'])
+              z=out/f'{run["id"]}_{art["id"]}_{safe}.zip'
+              ex=out/f'{run["id"]}_{art["id"]}_{safe}'
+              download(art['archive_download_url'],z)
+              ex.mkdir(parents=True,exist_ok=True)
+              with zipfile.ZipFile(z) as fh:fh.extractall(ex)
+              z.unlink()
+              provenance.append({'family':family,'workflow_run_id':run['id'],'workflow_name':run.get('name'),'head_sha':run.get('head_sha'),'run_conclusion':run.get('conclusion'),'artifact_id':art['id'],'artifact_name':art['name'],'artifact_digest':art.get('digest')})
+          Path('route_consolidation/provenance/DOWNLOADED_ARTIFACTS.json').write_text(json.dumps(provenance,indent=2)+'\n')
+          if not provenance:raise SystemExit('No route artifacts were available')
+          PY
+      - name: Apply cross-method promotion gate
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          python amr_discovery/consolidate_candidate_routes.py \
+            --artifacts-root route_artifacts \
+            --out route_consolidation/results \
+            2>&1 | tee route_consolidation/console.log
+      - name: Finalize hashes
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          find route_consolidation -type f ! -name SHA256SUMS_ALL.txt -print0 | sort -z | xargs -0 sha256sum > route_consolidation/SHA256SUMS_ALL.txt || true
+          du -ah route_consolidation | sort -h > route_consolidation/FILE_SIZES.txt || true
+      - name: Upload consolidated route evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: KP_COLISTIN_CROSS_METHOD_CONSOLIDATION_20260819
+          path: route_consolidation
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9

@@ -1,0 +1,159 @@
+name: Resume targeted portal colistin GWAS from frozen artifact V3
+
+on:
+  pull_request:
+    branches: [amr-kp-colistin-genome-audit-20260819]
+    paths:
+      - '.github/workflows/amr-kp-colistin-targeted-portal-gwas-v3.yml'
+      - 'amr_discovery/evaluate_colistin_gwas.py'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  UPSTREAM_RUN_ID: '32211046692'
+  UPSTREAM_ARTIFACT: 'KP_COLISTIN_TARGETED_PORTAL_GWAS_20260819_V2'
+
+jobs:
+  resume-targeted-gwas:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download frozen pre-GWAS evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.UPSTREAM_ARTIFACT }}
+          path: upstream
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.UPSTREAM_RUN_ID }}
+
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: amr-targeted-v3
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11 pandas=2.3.1 scipy scikit-learn pyseer=1.4.0 tabulate=0.9.0
+          cache-downloads: true
+          post-cleanup: all
+
+      - name: Locate and freeze the artifact root
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=$(dirname "$(find upstream -type f -path '*/gwas_inputs/gwas_sample_manifest.csv' | head -1)")
+          root=$(dirname "$root")
+          test -d "$root/gwas_inputs"
+          test -d "$root/structure"
+          test -d "$root/targeted_variants"
+          cp -a "$root" targeted_gwas_v3
+          printf 'upstream_run=%s\nupstream_artifact=%s\nsource_root=%s\n' "$UPSTREAM_RUN_ID" "$UPSTREAM_ARTIFACT" "$root" > targeted_gwas_v3/RESUME_PROVENANCE.txt
+          sha256sum targeted_gwas_v3/gwas_inputs/discovery_variants.Rtab targeted_gwas_v3/gwas_inputs/all_variants.Rtab \
+            targeted_gwas_v3/structure/discovery_mash.tsv targeted_gwas_v3/structure/all_mash.tsv \
+            targeted_gwas_v3/gwas_inputs/gwas_sample_manifest.csv > targeted_gwas_v3/RESUMED_INPUT_SHA256.txt
+
+      - name: Convert phenotype files to explicit pyseer no-header format and audit IDs
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import pandas as pd
+
+          base=Path('targeted_gwas_v3')
+          for cohort in ['discovery','all']:
+              src=base/'gwas_inputs'/f'{cohort}_phenotypes.tsv'
+              x=pd.read_csv(src,sep='\t',dtype=str)
+              if x.shape[1] < 2:
+                  raise SystemExit(f'Bad phenotype table: {src}')
+              x=x.iloc[:, :2].copy()
+              x.columns=['samples','phenotype']
+              x['samples']=x['samples'].astype(str)
+              x['phenotype']=pd.to_numeric(x['phenotype'],errors='raise').astype(int)
+              if not set(x['phenotype']).issubset({0,1}):
+                  raise SystemExit(f'Non-binary phenotype in {src}')
+              out=base/'gwas_inputs'/f'{cohort}_phenotypes_pyseer.tsv'
+              x.to_csv(out,sep='\t',index=False,header=False)
+
+              rtab=pd.read_csv(base/'gwas_inputs'/f'{cohort}_variants.Rtab',sep='\t',nrows=1)
+              feature_sample_ids=[str(c) for c in rtab.columns[1:]]
+              dist=pd.read_csv(base/'structure'/f'{cohort}_mash.tsv',sep='\t',index_col=0,nrows=3)
+              dist_ids=[str(c) for c in dist.columns]
+              p=set(x.samples); f=set(feature_sample_ids); d=set(dist_ids)
+              if not (p==f==d):
+                  raise SystemExit(f'{cohort} ID mismatch phenotype-feature={len(p^f)} phenotype-distance={len(p^d)}')
+              (base/f'{cohort}_PYSEER_INPUT_AUDIT.txt').write_text(
+                  f'n={len(x)}\nclass0={(x.phenotype==0).sum()}\nclass1={(x.phenotype==1).sum()}\nexact_id_match=true\nheader_removed=true\n'
+              )
+          PY
+          echo '=== converted phenotype examples ==='
+          sed -n '1,5p' targeted_gwas_v3/gwas_inputs/discovery_phenotypes_pyseer.tsv
+          sed -n '1,5p' targeted_gwas_v3/gwas_inputs/all_phenotypes_pyseer.tsv
+
+      - name: Run population-structure sensitivity models
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          rm -rf targeted_gwas_v3/pyseer_v3
+          mkdir -p targeted_gwas_v3/pyseer_v3
+          for dim in 10 20 30; do
+            for cohort in discovery all; do
+              log="targeted_gwas_v3/pyseer_v3/${cohort}_dim${dim}.log"
+              out="targeted_gwas_v3/pyseer_v3/${cohort}_dim${dim}.tsv"
+              set +e
+              pyseer \
+                --phenotypes "targeted_gwas_v3/gwas_inputs/${cohort}_phenotypes_pyseer.tsv" \
+                --pres "targeted_gwas_v3/gwas_inputs/${cohort}_variants.Rtab" \
+                --distances "targeted_gwas_v3/structure/${cohort}_mash.tsv" \
+                --max-dimensions "$dim" --min-af 0.01 --max-af 0.99 \
+                --filter-pvalue 1 --lrt-pvalue 1 --print-samples \
+                > "$out" 2> "$log"
+              rc=$?
+              set -e
+              if [[ "$rc" -ne 0 ]]; then
+                echo "PYSEER_FAILED cohort=$cohort dim=$dim rc=$rc"
+                cat "$log"
+                exit "$rc"
+              fi
+              test -s "$out"
+              echo "PYSEER_OK cohort=$cohort dim=$dim lines=$(wc -l < "$out")"
+            done
+          done
+
+      - name: Evaluate untouched holdout and cross-source replication
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          python amr_discovery/evaluate_colistin_gwas.py \
+            --manifest targeted_gwas_v3/gwas_inputs/gwas_sample_manifest.csv \
+            --rtab targeted_gwas_v3/gwas_inputs/all_variants.Rtab \
+            --feature-meta targeted_gwas_v3/targeted_variants/targeted_variant_metadata.csv \
+            --discovery targeted_gwas_v3/pyseer_v3/discovery_dim10.tsv targeted_gwas_v3/pyseer_v3/discovery_dim20.tsv targeted_gwas_v3/pyseer_v3/discovery_dim30.tsv \
+            --whole targeted_gwas_v3/pyseer_v3/all_dim10.tsv targeted_gwas_v3/pyseer_v3/all_dim20.tsv targeted_gwas_v3/pyseer_v3/all_dim30.tsv \
+            --out targeted_gwas_v3/final_evaluation_v3 \
+            2>&1 | tee targeted_gwas_v3/evaluation_v3_console.log
+
+      - name: Finalize immutable evidence hashes
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          find targeted_gwas_v3 -type f ! -name SHA256SUMS_ALL_V3.txt -print0 | sort -z | xargs -0 sha256sum > targeted_gwas_v3/SHA256SUMS_ALL_V3.txt || true
+          du -ah targeted_gwas_v3 | sort -h | tail -200 > targeted_gwas_v3/FILE_SIZES_V3.txt || true
+
+      - name: Upload targeted GWAS V3 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: KP_COLISTIN_TARGETED_PORTAL_GWAS_20260819_V3
+          path: targeted_gwas_v3
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9

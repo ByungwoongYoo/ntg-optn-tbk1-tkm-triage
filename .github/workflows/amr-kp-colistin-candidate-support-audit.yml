@@ -1,0 +1,124 @@
+name: Audit promoted colistin candidate support and pathway context
+
+on:
+  pull_request:
+    branches: [amr-kp-colistin-genome-audit-20260819]
+    paths:
+      - '.github/workflows/amr-kp-colistin-candidate-support-audit.yml'
+      - 'amr_discovery/audit_promoted_candidate_support.py'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  UPSTREAM_RUN_ID: '32211046692'
+  UPSTREAM_ARTIFACT: 'KP_COLISTIN_TARGETED_PORTAL_GWAS_20260819_V2'
+
+jobs:
+  support-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: amr-support-audit
+          condarc: |
+            channels:
+              - conda-forge
+            channel_priority: strict
+          create-args: >-
+            python=3.11 numpy pandas=2.3.1 tabulate=0.9.0
+          cache-downloads: true
+          post-cleanup: all
+      - name: Download frozen upstream, consolidation, and route artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p support_inputs/upstream support_inputs/consolidation support_inputs/routes candidate_support/provenance
+          python - <<'PY'
+          import json,os,re,urllib.request,zipfile
+          from pathlib import Path
+          repo=os.environ['REPOSITORY'];token=os.environ['GH_TOKEN'];headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json','User-Agent':'AMR-candidate-support-audit'}
+          def get(url):
+              req=urllib.request.Request(url,headers=headers)
+              with urllib.request.urlopen(req,timeout=60) as r:return json.load(r)
+          def dl(url,path):
+              req=urllib.request.Request(url,headers=headers)
+              with urllib.request.urlopen(req,timeout=180) as r:path.write_bytes(r.read())
+          def extract_artifact(art,dest,run_id):
+              z=dest/f'{run_id}_{art["id"]}.zip';dl(art['archive_download_url'],z);ex=dest/f'{run_id}_{art["id"]}';ex.mkdir(parents=True,exist_ok=True)
+              with zipfile.ZipFile(z) as f:f.extractall(ex)
+              z.unlink();return ex
+          provenance=[]
+          # Frozen upstream artifact.
+          upstream_run=int(os.environ.get('UPSTREAM_RUN_ID','32211046692'))
+          arts=get(f'https://api.github.com/repos/{repo}/actions/runs/{upstream_run}/artifacts').get('artifacts',[])
+          art=next(a for a in arts if a['name']==os.environ.get('UPSTREAM_ARTIFACT','KP_COLISTIN_TARGETED_PORTAL_GWAS_20260819_V2'))
+          ex=extract_artifact(art,Path('support_inputs/upstream'),upstream_run);provenance.append({'role':'upstream','run_id':upstream_run,'artifact':art['name'],'digest':art.get('digest'),'path':str(ex)})
+          # Latest consolidation artifact.
+          branches=['amr-kp-colistin-targeted-portal-gwas-20260819']
+          runs=[]
+          for b in branches:runs+=get(f'https://api.github.com/repos/{repo}/actions/runs?branch={b}&per_page=100').get('workflow_runs',[])
+          selected=None
+          for run in sorted(runs,key=lambda r:r.get('created_at',''),reverse=True):
+              if run.get('status')!='completed':continue
+              aa=get(f'https://api.github.com/repos/{repo}/actions/runs/{run["id"]}/artifacts').get('artifacts',[])
+              hit=next((a for a in aa if a['name'].startswith('KP_COLISTIN_CROSS_METHOD_CONSOLIDATION_')),None)
+              if hit:selected=(run,hit);break
+          if selected is None:raise SystemExit('No consolidation artifact')
+          run,art=selected;ex=extract_artifact(art,Path('support_inputs/consolidation'),run['id']);provenance.append({'role':'consolidation','run_id':run['id'],'artifact':art['name'],'digest':art.get('digest'),'path':str(ex)})
+          # Latest route artifacts, including unitig call matrices when available.
+          prefixes=('KP_COLISTIN_STRUCTURE_ADJUSTED_SCORE_GWAS_','KP_COLISTIN_TARGETED_PORTAL_GWAS_','KP_COLISTIN_LINEAGE_CMH_','KP_COLISTIN_RARE_VARIANT_BURDEN_','KP_COLISTIN_PORTAL_UNITIG_GWAS_')
+          allruns=[]
+          for b in ['amr-kp-colistin-targeted-portal-gwas-20260819','amr-kp-colistin-portal-unitig-gwas-20260819']:
+              allruns+=get(f'https://api.github.com/repos/{repo}/actions/runs?branch={b}&per_page=100').get('workflow_runs',[])
+          chosen={}
+          for run in sorted(allruns,key=lambda r:r.get('created_at',''),reverse=True):
+              if run.get('status')!='completed':continue
+              aa=get(f'https://api.github.com/repos/{repo}/actions/runs/{run["id"]}/artifacts').get('artifacts',[])
+              for artifact in aa:
+                  if artifact.get('expired'):continue
+                  pref=next((p for p in prefixes if artifact['name'].startswith(p)),None)
+                  if pref and pref not in chosen:chosen[pref]=(run,artifact)
+          for pref,(run,artifact) in chosen.items():
+              ex=extract_artifact(artifact,Path('support_inputs/routes'),run['id']);provenance.append({'role':'route','family':pref,'run_id':run['id'],'artifact':artifact['name'],'digest':artifact.get('digest'),'path':str(ex)})
+          Path('candidate_support/provenance/DOWNLOADS.json').write_text(json.dumps(provenance,indent=2)+'\n')
+          PY
+          find support_inputs/consolidation -type f -name CROSS_METHOD_PROMOTED_CANDIDATES.csv -print -quit > /tmp/promoted_path
+          find support_inputs/upstream -type f -path '*/gwas_inputs/gwas_sample_manifest.csv' -print -quit > /tmp/upstream_manifest
+          test -s /tmp/promoted_path
+          test -s /tmp/upstream_manifest
+      - name: Reconstruct accession-level support and pathway classification
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          consolidation=$(dirname "$(cat /tmp/promoted_path)")
+          upstream_manifest=$(cat /tmp/upstream_manifest)
+          upstream_root=$(dirname "$(dirname "$upstream_manifest")")
+          python amr_discovery/audit_promoted_candidate_support.py \
+            --consolidation "$consolidation" \
+            --route-artifacts support_inputs/routes \
+            --upstream-root "$upstream_root" \
+            --out candidate_support/results \
+            2>&1 | tee candidate_support/console.log
+      - name: Finalize hashes
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          find candidate_support -type f ! -name SHA256SUMS_ALL.txt -print0 | sort -z | xargs -0 sha256sum > candidate_support/SHA256SUMS_ALL.txt || true
+          du -ah candidate_support | sort -h > candidate_support/FILE_SIZES.txt || true
+      - name: Upload support audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: KP_COLISTIN_PROMOTED_CANDIDATE_SUPPORT_AUDIT_20260819
+          path: candidate_support
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
