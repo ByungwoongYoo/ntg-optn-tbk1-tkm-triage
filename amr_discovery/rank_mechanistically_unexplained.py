@@ -63,7 +63,7 @@ CREATE OR REPLACE TEMP VIEW phenotype_binary AS
 WITH raw AS (
   SELECT
     ph.*,
-    lower(trim(antibiotic_name)) AS drug,
+    lower(trim(ph.antibiotic_name)) AS drug,
     CASE
       WHEN lower(trim(resistance_phenotype)) IN ('resistant','r','non-susceptible','nonsusceptible','ns') THEN 'R'
       WHEN lower(trim(resistance_phenotype)) IN ('susceptible','sensitive','s') THEN 'S'
@@ -209,9 +209,6 @@ md = [
 ]
 (OUT / "TARGET_RANKING_REPORT.md").write_text("\n".join(md) + "\n")
 
-for path in OUT.iterdir():
-    if path.is_file() and path.name != "SHA256SUMS.txt":
-        pass
 with open(OUT / "SHA256SUMS.txt", "w") as f:
     for path in sorted(OUT.iterdir()):
         if path.is_file() and path.name != "SHA256SUMS.txt":
