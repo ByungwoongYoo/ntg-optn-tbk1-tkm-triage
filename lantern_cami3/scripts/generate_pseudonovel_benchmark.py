@@ -16,7 +16,6 @@ import csv
 import gzip
 import hashlib
 import json
-import math
 import random
 from pathlib import Path
 
@@ -33,6 +32,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--insert-mean", type=int, default=350)
     p.add_argument("--error-rate", type=float, default=0.005)
     return p.parse_args()
+
+
+def stable_offset(*parts: object) -> int:
+    payload = "|".join(map(str, parts)).encode("utf-8")
+    return int.from_bytes(hashlib.sha256(payload).digest()[:8], "big") % 1_000_000
 
 
 def gc_sequence(length: int, gc: float, rng: random.Random) -> str:
@@ -108,7 +112,6 @@ def write_fastq_pair(prefix: Path, records: list[tuple[str,str,str]], rng: rando
 
 def main() -> None:
     args=parse_args(); out=args.out; out.mkdir(parents=True,exist_ok=True)
-    rng=random.Random(args.seed)
     gc_values=[0.34,0.43,0.52,0.64]
     divergence=[0.02,0.05,0.08,0.12]
     coverage_profiles=[(5.0,1.2),(1.2,5.0),(3.0,3.0),(1.5,1.5)]
@@ -132,7 +135,7 @@ def main() -> None:
     timepoint_records={'T0':[],'T1':[]}
     for row,(gid,seq) in zip(manifest,targets):
         for tp,key in [('T0','coverage_t0'),('T1','coverage_t1')]:
-            timepoint_records[tp].extend(simulate_pairs(gid,seq,float(row[key]),args.read_length,args.insert_mean,args.error_rate,random.Random(args.seed+hash((gid,tp))%1000000)))
+            timepoint_records[tp].extend(simulate_pairs(gid,seq,float(row[key]),args.read_length,args.insert_mean,args.error_rate,random.Random(args.seed+stable_offset(gid,tp))))
     read_summary={}
     for tp in ['T0','T1']:
         n,h1,h2=write_fastq_pair(out/tp,timepoint_records[tp],random.Random(args.seed+(0 if tp=='T0' else 1)))
