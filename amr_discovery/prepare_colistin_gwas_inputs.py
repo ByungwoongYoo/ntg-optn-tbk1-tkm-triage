@@ -164,6 +164,10 @@ def main() -> None:
     meta = pd.read_csv(a.metadata, dtype={"assembly_ID": str})
     if "qc_pass" in meta.columns: meta = meta[meta.qc_pass.astype(bool)].copy()
     meta = meta.drop_duplicates("assembly_ID")
+    # The NCBI assembly report is the sole authoritative source for these fields.
+    # Input manifests may already contain earlier parsed copies; dropping them prevents
+    # BioProject_x/BioProject_y suffixes and makes the split provenance unambiguous.
+    meta = meta.drop(columns=["BioProject", "BioProjects_all", "BioSample_report", "Submitter"], errors="ignore")
     report = parse_assembly_report(Path(a.assembly_report)); report["base"] = report.assembly_ID.astype(str).str.split(".").str[0]
     meta["base"] = meta.assembly_ID.astype(str).str.split(".").str[0]; meta = meta.merge(report.drop(columns=["assembly_ID"]), on="base", how="left").drop(columns=["base"])
     rtab = pd.read_csv(a.rtab, sep="\t", dtype=str); sample_cols = set(rtab.columns[1:]); meta = meta[meta.assembly_ID.isin(sample_cols)].reset_index(drop=True)
