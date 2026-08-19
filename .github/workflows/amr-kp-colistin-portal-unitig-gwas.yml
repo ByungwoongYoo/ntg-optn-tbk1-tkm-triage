@@ -105,17 +105,22 @@ jobs:
           import pandas as pd
           x=pd.read_csv('portal_unitig/gwas_sample_manifest.csv',dtype={'assembly_ID':str})
           paths=list(Path('assemblies').glob('*.fna'))
+          by_name={p.stem:p for p in paths}
           def find(acc):
-              for p in paths:
-                  if acc in p.name: return str(p.resolve())
+              p=by_name.get(acc)
+              if p is not None: return str(p)
               base=acc.split('.')[0]
-              for p in paths:
-                  if base in p.name: return str(p.resolve())
+              hits=[q for key,q in by_name.items() if key.split('.')[0]==base]
+              return str(hits[0]) if len(hits)==1 else None
           x['assembly_path']=x.assembly_ID.map(find); x=x[x.assembly_path.notna()].copy(); x.to_csv('portal_unitig/gwas_sample_manifest.csv',index=False)
           for name,sub in [('discovery',x[x.split.eq('discovery')]),('validation',x[x.split.eq('validation')]),('all',x)]:
               Path(f'portal_unitig/{name}_refs.txt').write_text('\n'.join(sub.assembly_path.astype(str))+'\n')
               y=sub[['assembly_ID','phenotype']].copy(); y.phenotype=y.phenotype.eq('R').astype(int); y.columns=['samples','phenotype']; y.to_csv(f'portal_unitig/{name}_phenotypes.tsv',sep='\t',index=False)
           assert len(x)>=480 and len(x[x.split.eq('discovery')])>=290 and len(x[x.split.eq('validation')])>=190
+          for name in ('discovery','validation','all'):
+              refs=[Path(v.strip()).stem for v in Path(f'portal_unitig/{name}_refs.txt').read_text().splitlines() if v.strip()]
+              phen=pd.read_csv(f'portal_unitig/{name}_phenotypes.tsv',sep='\t',dtype={'samples':str}).samples.tolist()
+              assert refs==phen, (name, refs[:3], phen[:3])
           PY
           rm -f download/genomes.zip
 
@@ -133,17 +138,20 @@ jobs:
         shell: micromamba-shell {0}
         run: |
           cat > /tmp/normalize_mash.py <<'PY'
-          import sys
+          import re, sys
           from pathlib import Path
           import pandas as pd
           raw,refs_file,out=sys.argv[1:]
-          refs=[Path(x.strip()).name.removesuffix('.fna') for x in open(refs_file) if x.strip()]
-          by_base={r.split('.')[0]:r for r in refs}
-          if len(by_base)!=len(refs): raise SystemExit('nonunique base accessions')
+          pat=re.compile(r'(GC[AF]_\d+\.\d+)')
+          def acc(v):
+              m=pat.search(str(v))
+              if not m: raise SystemExit(f'No assembly accession in {v!r}')
+              return m.group(1)
+          refs=[acc(x.strip()) for x in open(refs_file) if x.strip()]
+          if len(refs)!=len(set(refs)): raise SystemExit('nonunique assembly accessions')
           x=pd.read_csv(raw,sep='\t',index_col=0)
-          def f(v):
-              t=Path(str(v)).name.removesuffix('.fna'); return by_base.get(t,by_base.get(t.split('.')[0],t))
-          x.index=[f(v) for v in x.index]; x.columns=[f(v) for v in x.columns]
+          x.index=[acc(v) for v in x.index]; x.columns=[acc(v) for v in x.columns]
+          if x.index.duplicated().any() or pd.Index(x.columns).duplicated().any(): raise SystemExit('duplicate Mash accessions')
           if set(x.index)!=set(refs): raise SystemExit(f'ID mismatch missing={set(refs)-set(x.index)} extra={set(x.index)-set(refs)}')
           x.loc[refs,refs].to_csv(out,sep='\t')
           PY
