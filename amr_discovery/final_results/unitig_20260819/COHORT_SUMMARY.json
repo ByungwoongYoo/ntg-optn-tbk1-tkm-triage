@@ -1,0 +1,15 @@
+{
+  "n_discovery": 300,
+  "n_validation": 214,
+  "n_all": 514,
+  "discovery_counts": {
+    "R": 150,
+    "S": 150
+  },
+  "validation_counts": {
+    "R": 107,
+    "S": 107
+  },
+  "source_group_disjoint": true,
+  "boundary": "Validation BioProjects were untouched during discovery unitig generation and selection."
+}
