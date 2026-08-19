@@ -1,0 +1,256 @@
+name: Deep-residual BioProject-held-out K. pneumoniae colistin unitig GWAS
+
+on:
+  pull_request:
+    branches: [amr-kp-colistin-targeted-portal-gwas-20260819]
+    paths:
+      - '.github/workflows/amr-kp-colistin-deep-residual-unitig-gwas.yml'
+      - 'amr_discovery/select_stable_unitigs.py'
+      - 'amr_discovery/evaluate_portal_unitig_replication.py'
+      - 'amr_discovery/prepare_colistin_gwas_inputs.py'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  V4_RUN_ID: '32214559594'
+  V4_ARTIFACT: 'KP_COLISTIN_TARGETED_GWAS_20260819_V4_BIOPROJECT_FIXED'
+  CORE_RUN_ID: '32209530341'
+  CORE_ARTIFACT: 'KP_COLISTIN_CORE_KLEBORATE_AUDIT_20260819'
+
+jobs:
+  deep-residual-unitig:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download corrected BioProject metadata
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.V4_ARTIFACT }}
+          path: v4
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.V4_RUN_ID }}
+
+      - name: Download independent known-mechanism audit
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.CORE_ARTIFACT }}
+          path: core
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.CORE_RUN_ID }}
+
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: deep-unitig
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11 pandas=2.3.1 scipy scikit-learn biopython
+            unitig-caller pyseer mash ncbi-datasets-cli tabulate
+          cache-downloads: true
+          post-cleanup: all
+
+      - name: Reconstruct deep-residual true-BioProject split and freeze discovery subset
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p deep_unitig/provenance deep_unitig/dummy_assemblies
+          cp core/summary/residual_matched_sequence_audit_cohort.csv deep_unitig/deep_residual_input.csv
+          python - <<'PY'
+          from pathlib import Path
+          import pandas as pd
+          x=pd.read_csv('deep_unitig/deep_residual_input.csv',dtype={'assembly_ID':str})
+          assert x.phenotype.value_counts().to_dict()=={'R':222,'S':222}
+          assert not x.has_kleborate_known_colistin_evidence.fillna(False).astype(bool).any()
+          cols=pd.read_csv('v4/targeted_variants/targeted_variants.Rtab',sep='\t',nrows=0).columns[1:]
+          x=x[x.assembly_ID.isin(set(cols))].copy()
+          x.to_csv('deep_unitig/deep_residual_matrix_available.csv',index=False)
+          for acc in x.assembly_ID: (Path('deep_unitig/dummy_assemblies')/f'{acc}.fna').touch()
+          print(x.phenotype.value_counts())
+          PY
+          python amr_discovery/prepare_colistin_gwas_inputs.py \
+            --metadata deep_unitig/deep_residual_matrix_available.csv \
+            --rtab v4/targeted_variants/targeted_variants.Rtab \
+            --assembly-report v4/assembly_data_report.jsonl \
+            --assemblies-dir deep_unitig/dummy_assemblies \
+            --out deep_unitig/residual_split \
+            --validation-fraction 0.30 --seed 20260819 --min-class 25 \
+            2>&1 | tee deep_unitig/residual_split_console.log
+          rm -rf deep_unitig/dummy_assemblies
+          python - <<'PY'
+          from collections import deque
+          from pathlib import Path
+          import json
+          import pandas as pd
+          m=pd.read_csv('deep_unitig/residual_split/gwas_sample_manifest.csv',dtype={'assembly_ID':str,'BioProject':str})
+          d=m[m.split.eq('discovery')].copy(); v=m[m.split.eq('validation')].copy()
+          assert set(d.BioProject).isdisjoint(set(v.BioProject))
+          def rr(frame,n):
+              qs=[deque(g.to_dict('records')) for _,g in frame.sort_values(['BioProject','assembly_ID']).groupby('BioProject',sort=True)]
+              out=[]
+              while qs and len(out)<n:
+                  nxt=[]
+                  for q in qs:
+                      if q and len(out)<n: out.append(q.popleft())
+                      if q: nxt.append(q)
+                  qs=nxt
+              return pd.DataFrame(out)
+          parts=[]
+          for ph in ('R','S'):
+              z=rr(d[d.phenotype.eq(ph)],min(150,len(d[d.phenotype.eq(ph)])))
+              if len(z)<100: raise SystemExit(f'Too few discovery {ph}: {len(z)}')
+              parts.append(z)
+          d2=pd.concat(parts,ignore_index=True).sort_values(['phenotype','BioProject','assembly_ID'])
+          final=pd.concat([d2,v],ignore_index=True)
+          assert final.assembly_ID.is_unique and set(d2.BioProject).isdisjoint(set(v.BioProject))
+          final.to_csv('deep_unitig/gwas_sample_manifest.csv',index=False)
+          for name,sub in [('discovery',d2),('validation',v),('all',final)]:
+              Path(f'deep_unitig/{name}_accessions.txt').write_text('\n'.join(sub.assembly_ID.astype(str))+'\n')
+              y=sub[['assembly_ID','phenotype']].copy(); y.phenotype=y.phenotype.eq('R').astype(int); y.columns=['samples','phenotype']; y.to_csv(f'deep_unitig/{name}_phenotypes.tsv',sep='\t',index=False)
+          summary={'n_matrix_available':len(m),'n_discovery':len(d2),'n_validation':len(v),'n_all':len(final),'discovery_counts':d2.phenotype.value_counts().to_dict(),'validation_counts':v.phenotype.value_counts().to_dict(),'discovery_bioprojects':d2.BioProject.nunique(),'validation_bioprojects':v.BioProject.nunique(),'bioproject_disjoint':True,'known_mechanism_filter':'No mcr-family call and no Kleborate-detected MgrB/PmrB inactivation','boundary':'Validation BioProjects remain untouched until discovery unitigs are frozen.'}
+          Path('deep_unitig/COHORT_FREEZE.json').write_text(json.dumps(summary,indent=2)+'\n')
+          print(json.dumps(summary,indent=2))
+          PY
+          uname -a > deep_unitig/provenance/UNAME.txt
+          python --version > deep_unitig/provenance/PYTHON_VERSION.txt
+          unitig-caller --version > deep_unitig/provenance/UNITIG_CALLER_VERSION.txt
+          pyseer --version > deep_unitig/provenance/PYSEER_VERSION.txt
+          mash --version > deep_unitig/provenance/MASH_VERSION.txt
+          datasets version > deep_unitig/provenance/DATASETS_VERSION.txt
+          micromamba list > deep_unitig/provenance/MICROMAMBA_LIST.txt
+          git rev-parse HEAD > deep_unitig/provenance/GIT_HEAD.txt
+          printf 'v4_run=%s\nv4_artifact=%s\ncore_run=%s\ncore_artifact=%s\n' "$V4_RUN_ID" "$V4_ARTIFACT" "$CORE_RUN_ID" "$CORE_ARTIFACT" > deep_unitig/provenance/UPSTREAM.txt
+
+      - name: Download exact residual-cohort assemblies
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p download assemblies
+          ok=0
+          for attempt in 1 2 3; do
+            rm -f download/genomes.zip
+            datasets download genome accession --inputfile deep_unitig/all_accessions.txt --include genome --filename download/genomes.zip --no-progressbar \
+              2>&1 | tee "deep_unitig/provenance/DOWNLOAD_${attempt}.log" && unzip -tq download/genomes.zip && { ok=1; break; }
+            sleep 20
+          done
+          [[ "$ok" == 1 ]]
+          sha256sum download/genomes.zip > deep_unitig/provenance/GENOME_ZIP_SHA256.txt
+          unzip -q download/genomes.zip -d download/package
+          cp download/package/ncbi_dataset/data/assembly_data_report.jsonl deep_unitig/assembly_data_report.jsonl
+          find download/package/ncbi_dataset/data -mindepth 2 -maxdepth 2 -type f -name '*.fna' -print0 | while IFS= read -r -d '' f; do acc=$(basename "$(dirname "$f")"); ln -s "$PWD/$f" "assemblies/${acc}.fna"; done
+          python - <<'PY'
+          from pathlib import Path
+          import pandas as pd
+          m=pd.read_csv('deep_unitig/gwas_sample_manifest.csv',dtype={'assembly_ID':str})
+          paths={p.stem:p for p in Path('assemblies').glob('*.fna')}
+          def get(acc):
+              if acc in paths:return str(paths[acc])
+              base=acc.split('.')[0]; hits=[p for k,p in paths.items() if k.split('.')[0]==base]
+              return str(hits[0]) if len(hits)==1 else None
+          m['assembly_path']=m.assembly_ID.map(get)
+          if m.assembly_path.isna().any(): raise SystemExit(m[m.assembly_path.isna()].assembly_ID.tolist()[:20])
+          m.to_csv('deep_unitig/gwas_sample_manifest.csv',index=False)
+          for name,sub in [('discovery',m[m.split.eq('discovery')]),('validation',m[m.split.eq('validation')]),('all',m)]:
+              Path(f'deep_unitig/{name}_refs.txt').write_text('\n'.join(sub.assembly_path.astype(str))+'\n')
+              if [Path(v).stem for v in sub.assembly_path] != sub.assembly_ID.tolist(): raise SystemExit(f'{name} path ID mismatch')
+          PY
+          rm -f download/genomes.zip
+
+      - name: Build discovery-only unitigs and Mash matrices
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p deep_unitig/discovery_unitigs deep_unitig/structure
+          unitig-caller --call --refs deep_unitig/discovery_refs.txt --out deep_unitig/discovery_unitigs/discovery --pyseer --threads 4 2>&1 | tee deep_unitig/discovery_unitigs/unitig_caller.log
+          test -s deep_unitig/discovery_unitigs/discovery.pyseer
+          wc -l < deep_unitig/discovery_unitigs/discovery.pyseer > deep_unitig/discovery_unitigs/N_UNITIG_TESTS.txt
+          cat > /tmp/norm_mash.py <<'PY'
+          import re,sys
+          from pathlib import Path
+          import pandas as pd
+          raw,refsfile,out=sys.argv[1:]
+          refs=[Path(v.strip()).stem for v in open(refsfile) if v.strip()]; base={r.split('.')[0]:r for r in refs}; pat=re.compile(r'(GC[AF]_\d+(?:\.\d+)?)')
+          def f(v):
+              m=pat.search(str(v)); token=m.group(1) if m else None
+              if token is None: raise SystemExit(f'No accession: {v}')
+              return token if token in refs else base.get(token.split('.')[0],token)
+          x=pd.read_csv(raw,sep='\t',index_col=0); x.index=[f(v) for v in x.index]; x.columns=[f(v) for v in x.columns]
+          if x.index.duplicated().any() or set(x.index)!=set(refs): raise SystemExit(f'Mash mismatch missing={set(refs)-set(x.index)} extra={set(x.index)-set(refs)}')
+          x.loc[refs,refs].to_csv(out,sep='\t')
+          PY
+          for cohort in discovery all; do
+            mash sketch -p 4 -s 10000 -l "deep_unitig/${cohort}_refs.txt" -o "deep_unitig/structure/${cohort}"
+            mash dist "deep_unitig/structure/${cohort}.msh" "deep_unitig/structure/${cohort}.msh" | square_mash > "deep_unitig/structure/${cohort}_raw.tsv"
+            python /tmp/norm_mash.py "deep_unitig/structure/${cohort}_raw.tsv" "deep_unitig/${cohort}_refs.txt" "deep_unitig/structure/${cohort}_mash.tsv"
+            rm -f "deep_unitig/structure/${cohort}.msh" "deep_unitig/structure/${cohort}_raw.tsv"
+          done
+
+      - name: Discovery pyseer sensitivity models and unitig freeze
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p deep_unitig/pyseer_discovery
+          for dim in 10 20 30; do
+            pyseer --phenotypes deep_unitig/discovery_phenotypes.tsv --kmers deep_unitig/discovery_unitigs/discovery.pyseer --uncompressed \
+              --distances deep_unitig/structure/discovery_mash.tsv --max-dimensions "$dim" --min-af 0.01 --max-af 0.99 \
+              --filter-pvalue 0.01 --lrt-pvalue 0.01 --cpu 4 --print-samples --output-patterns "deep_unitig/pyseer_discovery/dim${dim}.patterns" \
+              > "deep_unitig/pyseer_discovery/dim${dim}.tsv" 2> "deep_unitig/pyseer_discovery/dim${dim}.log"
+          done
+          n=$(cat deep_unitig/discovery_unitigs/N_UNITIG_TESTS.txt)
+          python amr_discovery/select_stable_unitigs.py --pyseer deep_unitig/pyseer_discovery/dim10.tsv deep_unitig/pyseer_discovery/dim20.tsv deep_unitig/pyseer_discovery/dim30.tsv \
+            --n-tests "$n" --p-screen 1e-4 --max-candidates 5000 --out deep_unitig/selection 2>&1 | tee deep_unitig/selection_console.log
+          grep -c '^>' deep_unitig/selection/selected_unitigs.fasta > deep_unitig/selection/SELECTED_COUNT.txt || true
+
+      - name: Untouched validation query and whole-cohort adjusted models
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          n=$(cat deep_unitig/selection/SELECTED_COUNT.txt || echo 0)
+          if [[ "$n" == 0 ]]; then touch deep_unitig/NO_UNITIG_SELECTED; exit 0; fi
+          mkdir -p deep_unitig/calls deep_unitig/pyseer_all
+          unitig-caller --query --refs deep_unitig/validation_refs.txt --unitigs deep_unitig/selection/selected_unitigs.fasta --out deep_unitig/calls/validation --rtab --threads 4
+          unitig-caller --query --refs deep_unitig/all_refs.txt --unitigs deep_unitig/selection/selected_unitigs.fasta --out deep_unitig/calls/all --rtab --threads 4
+          for dim in 10 20 30; do
+            pyseer --phenotypes deep_unitig/all_phenotypes.tsv --pres deep_unitig/calls/all.rtab --distances deep_unitig/structure/all_mash.tsv \
+              --max-dimensions "$dim" --min-af 0.01 --max-af 0.99 --filter-pvalue 1 --print-samples --output-patterns "deep_unitig/pyseer_all/dim${dim}.patterns" \
+              > "deep_unitig/pyseer_all/dim${dim}.tsv" 2> "deep_unitig/pyseer_all/dim${dim}.log"
+          done
+
+      - name: Evaluate held-out and cross-stratum replication
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p deep_unitig/final_evaluation
+          if [[ -f deep_unitig/NO_UNITIG_SELECTED ]]; then printf '{"status":"NO_DISCOVERY_UNITIG","n_strict_statistically_replicated":0}\n' > deep_unitig/final_evaluation/UNITIG_REPLICATION_SUMMARY.json; exit 0; fi
+          python amr_discovery/evaluate_portal_unitig_replication.py \
+            --selection deep_unitig/selection/SELECTED_DISCOVERY_UNITIGS.csv --manifest deep_unitig/gwas_sample_manifest.csv \
+            --validation-rtab deep_unitig/calls/validation.rtab --all-rtab deep_unitig/calls/all.rtab \
+            --whole-pyseer deep_unitig/pyseer_all/dim10.tsv deep_unitig/pyseer_all/dim20.tsv deep_unitig/pyseer_all/dim30.tsv \
+            --out deep_unitig/final_evaluation 2>&1 | tee deep_unitig/evaluation_console.log
+
+      - name: Remove public genome bytes and finalize hashes
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          rm -rf assemblies download
+          find deep_unitig -type f ! -name SHA256SUMS_ALL.txt -print0 | sort -z | xargs -0 sha256sum > deep_unitig/SHA256SUMS_ALL.txt || true
+          du -ah deep_unitig | sort -h | tail -250 > deep_unitig/FILE_SIZES.txt || true
+
+      - name: Upload deep-residual unitig evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: KP_COLISTIN_DEEP_RESIDUAL_UNITIG_GWAS_20260819
+          path: deep_unitig
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
