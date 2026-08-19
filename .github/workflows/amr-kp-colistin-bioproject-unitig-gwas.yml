@@ -1,0 +1,284 @@
+name: BioProject-held-out K. pneumoniae colistin whole-genome unitig GWAS
+
+on:
+  pull_request:
+    branches: [amr-kp-colistin-targeted-portal-gwas-20260819]
+    paths:
+      - '.github/workflows/amr-kp-colistin-bioproject-unitig-gwas.yml'
+      - 'amr_discovery/select_stable_unitigs.py'
+      - 'amr_discovery/evaluate_portal_unitig_replication.py'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  UPSTREAM_RUN_ID: '32214559594'
+  UPSTREAM_ARTIFACT: 'KP_COLISTIN_TARGETED_GWAS_20260819_V4_BIOPROJECT_FIXED'
+
+jobs:
+  bioproject-unitig-gwas:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download corrected primary-BioProject artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.UPSTREAM_ARTIFACT }}
+          path: upstream
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.UPSTREAM_RUN_ID }}
+
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: bioproject-unitig
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11 pandas=2.3.1 scipy biopython
+            unitig-caller pyseer mash ncbi-datasets-cli tabulate
+          cache-downloads: true
+          post-cleanup: all
+
+      - name: Freeze diverse discovery subset and untouched validation cohort
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p unitig/provenance
+          cp upstream/gwas_inputs_bioproject/gwas_sample_manifest.csv unitig/full_corrected_manifest.csv
+          python - <<'PY'
+          from collections import deque
+          from pathlib import Path
+          import json
+          import pandas as pd
+
+          x=pd.read_csv('unitig/full_corrected_manifest.csv',dtype={'assembly_ID':str,'BioProject':str})
+          disc=x[x.split.eq('discovery')].copy()
+          val=x[x.split.eq('validation')].copy()
+          assert set(disc.BioProject).isdisjoint(set(val.BioProject))
+
+          def round_robin(frame,n):
+              queues=[]
+              for _,g in frame.sort_values(['BioProject','assembly_ID']).groupby('BioProject',sort=True):
+                  queues.append(deque(g.to_dict('records')))
+              out=[]
+              while queues and len(out)<n:
+                  nxt=[]
+                  for q in queues:
+                      if q and len(out)<n: out.append(q.popleft())
+                      if q: nxt.append(q)
+                  queues=nxt
+              return pd.DataFrame(out)
+
+          sampled=[]
+          for ph in ('R','S'):
+              z=round_robin(disc[disc.phenotype.eq(ph)],150)
+              assert len(z)==150
+              sampled.append(z)
+          disc2=pd.concat(sampled,ignore_index=True).sort_values(['phenotype','BioProject','assembly_ID'])
+          final=pd.concat([disc2,val],ignore_index=True)
+          assert final.assembly_ID.is_unique
+          assert set(disc2.BioProject).isdisjoint(set(val.BioProject))
+          final.to_csv('unitig/gwas_sample_manifest.csv',index=False)
+          for name,sub in [('discovery',disc2),('validation',val),('all',final)]:
+              Path(f'unitig/{name}_accessions.txt').write_text('\n'.join(sub.assembly_ID.astype(str))+'\n')
+              y=sub[['assembly_ID','phenotype']].copy(); y.phenotype=y.phenotype.eq('R').astype(int); y.columns=['samples','phenotype']; y.to_csv(f'unitig/{name}_phenotypes.tsv',sep='\t',index=False)
+          summary={
+            'n_discovery':len(disc2),'n_validation':len(val),'n_all':len(final),
+            'discovery_counts':disc2.phenotype.value_counts().to_dict(),
+            'validation_counts':val.phenotype.value_counts().to_dict(),
+            'n_discovery_bioprojects':disc2.BioProject.nunique(),
+            'n_validation_bioprojects':val.BioProject.nunique(),
+            'bioproject_disjoint':True,
+            'selection':'deterministic phenotype-balanced round-robin across discovery BioProjects; no genomic feature inspected',
+            'boundary':'The validation BioProjects remain untouched until after unitig selection.'}
+          Path('unitig/COHORT_FREEZE.json').write_text(json.dumps(summary,indent=2)+'\n')
+          print(json.dumps(summary,indent=2))
+          PY
+          uname -a > unitig/provenance/UNAME.txt
+          python --version > unitig/provenance/PYTHON_VERSION.txt
+          unitig-caller --version > unitig/provenance/UNITIG_CALLER_VERSION.txt
+          pyseer --version > unitig/provenance/PYSEER_VERSION.txt
+          mash --version > unitig/provenance/MASH_VERSION.txt
+          datasets version > unitig/provenance/DATASETS_VERSION.txt
+          micromamba list > unitig/provenance/MICROMAMBA_LIST.txt
+          git rev-parse HEAD > unitig/provenance/GIT_HEAD.txt
+          printf 'upstream_run=%s\nupstream_artifact=%s\n' "$UPSTREAM_RUN_ID" "$UPSTREAM_ARTIFACT" > unitig/provenance/UPSTREAM.txt
+
+      - name: Download exact public assemblies
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p download assemblies
+          ok=0
+          for attempt in 1 2 3; do
+            rm -f download/genomes.zip
+            datasets download genome accession --inputfile unitig/all_accessions.txt --include genome --filename download/genomes.zip --no-progressbar \
+              2>&1 | tee "unitig/provenance/DOWNLOAD_${attempt}.log" && unzip -tq download/genomes.zip && { ok=1; break; }
+            sleep 20
+          done
+          [[ "$ok" == 1 ]]
+          sha256sum download/genomes.zip > unitig/provenance/GENOME_ZIP_SHA256.txt
+          unzip -q download/genomes.zip -d download/package
+          cp download/package/ncbi_dataset/data/assembly_data_report.jsonl unitig/assembly_data_report.jsonl
+          find download/package/ncbi_dataset/data -mindepth 2 -maxdepth 2 -type f -name '*.fna' -print0 | while IFS= read -r -d '' f; do
+            acc=$(basename "$(dirname "$f")"); ln -s "$PWD/$f" "assemblies/${acc}.fna"
+          done
+          python - <<'PY'
+          from pathlib import Path
+          import pandas as pd
+          m=pd.read_csv('unitig/gwas_sample_manifest.csv',dtype={'assembly_ID':str})
+          paths={p.stem:p for p in Path('assemblies').glob('*.fna')}
+          def get(acc):
+              if acc in paths: return str(paths[acc])
+              base=acc.split('.')[0]; hits=[p for k,p in paths.items() if k.split('.')[0]==base]
+              return str(hits[0]) if len(hits)==1 else None
+          m['assembly_path']=m.assembly_ID.map(get)
+          missing=m[m.assembly_path.isna()].assembly_ID.tolist()
+          if missing: raise SystemExit(f'Missing assemblies: {missing[:20]}')
+          m.to_csv('unitig/gwas_sample_manifest.csv',index=False)
+          for name,sub in [('discovery',m[m.split.eq('discovery')]),('validation',m[m.split.eq('validation')]),('all',m)]:
+              Path(f'unitig/{name}_refs.txt').write_text('\n'.join(sub.assembly_path.astype(str))+'\n')
+              ids=[Path(v).stem for v in sub.assembly_path]
+              expected=sub.assembly_ID.astype(str).tolist()
+              if ids!=expected: raise SystemExit(f'{name} path/ID mismatch: {list(zip(ids[:3],expected[:3]))}')
+          print(m.groupby(['split','phenotype']).size())
+          PY
+          rm -f download/genomes.zip
+
+      - name: Build discovery-only unitigs
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p unitig/discovery_unitigs
+          unitig-caller --call --refs unitig/discovery_refs.txt --out unitig/discovery_unitigs/discovery --pyseer --threads 4 \
+            2>&1 | tee unitig/discovery_unitigs/unitig_caller.log
+          test -s unitig/discovery_unitigs/discovery.pyseer
+          wc -l < unitig/discovery_unitigs/discovery.pyseer > unitig/discovery_unitigs/N_UNITIG_TESTS.txt
+
+      - name: Build exact-accession Mash matrices
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          cat > /tmp/normalize_mash.py <<'PY'
+          import re,sys
+          from pathlib import Path
+          import pandas as pd
+          raw,refs_file,out=sys.argv[1:]
+          refs=[Path(v.strip()).stem for v in open(refs_file) if v.strip()]
+          by_base={v.split('.')[0]:v for v in refs}
+          if len(by_base)!=len(refs): raise SystemExit('Non-unique accession bases')
+          pat=re.compile(r'(GC[AF]_\d+(?:\.\d+)?)')
+          def restore(v):
+              m=pat.search(str(v))
+              if not m: raise SystemExit(f'No accession in Mash ID {v!r}')
+              token=m.group(1)
+              if token in refs: return token
+              base=token.split('.')[0]
+              if base not in by_base: raise SystemExit(f'Unknown Mash accession {token}')
+              return by_base[base]
+          x=pd.read_csv(raw,sep='\t',index_col=0)
+          x.index=[restore(v) for v in x.index]; x.columns=[restore(v) for v in x.columns]
+          if x.index.duplicated().any() or pd.Index(x.columns).duplicated().any(): raise SystemExit('Duplicate normalized Mash IDs')
+          if set(x.index)!=set(refs): raise SystemExit(f'Mash mismatch missing={set(refs)-set(x.index)} extra={set(x.index)-set(refs)}')
+          x.loc[refs,refs].to_csv(out,sep='\t')
+          PY
+          mkdir -p unitig/structure
+          for cohort in discovery all; do
+            mash sketch -p 4 -s 10000 -l "unitig/${cohort}_refs.txt" -o "unitig/structure/${cohort}"
+            mash dist "unitig/structure/${cohort}.msh" "unitig/structure/${cohort}.msh" | square_mash > "unitig/structure/${cohort}_raw.tsv"
+            python /tmp/normalize_mash.py "unitig/structure/${cohort}_raw.tsv" "unitig/${cohort}_refs.txt" "unitig/structure/${cohort}_mash.tsv"
+            rm -f "unitig/structure/${cohort}.msh" "unitig/structure/${cohort}_raw.tsv"
+          done
+
+      - name: Run discovery population-structure models
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p unitig/pyseer_discovery
+          for dim in 10 20 30; do
+            pyseer --phenotypes unitig/discovery_phenotypes.tsv --kmers unitig/discovery_unitigs/discovery.pyseer --uncompressed \
+              --distances unitig/structure/discovery_mash.tsv --max-dimensions "$dim" --min-af 0.01 --max-af 0.99 \
+              --filter-pvalue 0.01 --lrt-pvalue 0.01 --cpu 4 --print-samples \
+              --output-patterns "unitig/pyseer_discovery/dim${dim}.patterns" \
+              > "unitig/pyseer_discovery/dim${dim}.tsv" 2> "unitig/pyseer_discovery/dim${dim}.log"
+          done
+
+      - name: Freeze discovery-selected unitigs
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          n=$(cat unitig/discovery_unitigs/N_UNITIG_TESTS.txt)
+          python amr_discovery/select_stable_unitigs.py \
+            --pyseer unitig/pyseer_discovery/dim10.tsv unitig/pyseer_discovery/dim20.tsv unitig/pyseer_discovery/dim30.tsv \
+            --n-tests "$n" --p-screen 1e-4 --max-candidates 5000 --out unitig/selection \
+            2>&1 | tee unitig/selection_console.log
+          grep -c '^>' unitig/selection/selected_unitigs.fasta > unitig/selection/SELECTED_COUNT.txt || true
+
+      - name: Query frozen unitigs in untouched validation and all samples
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          n=$(cat unitig/selection/SELECTED_COUNT.txt || echo 0)
+          if [[ "$n" == 0 ]]; then touch unitig/NO_UNITIG_SELECTED; exit 0; fi
+          mkdir -p unitig/calls
+          unitig-caller --query --refs unitig/validation_refs.txt --unitigs unitig/selection/selected_unitigs.fasta --out unitig/calls/validation --rtab --threads 4
+          unitig-caller --query --refs unitig/all_refs.txt --unitigs unitig/selection/selected_unitigs.fasta --out unitig/calls/all --rtab --threads 4
+          test -s unitig/calls/validation.rtab
+          test -s unitig/calls/all.rtab
+
+      - name: Run whole-cohort sensitivity models
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          [[ -f unitig/NO_UNITIG_SELECTED ]] && exit 0
+          mkdir -p unitig/pyseer_all
+          for dim in 10 20 30; do
+            pyseer --phenotypes unitig/all_phenotypes.tsv --pres unitig/calls/all.rtab \
+              --distances unitig/structure/all_mash.tsv --max-dimensions "$dim" --min-af 0.01 --max-af 0.99 \
+              --filter-pvalue 1 --print-samples --output-patterns "unitig/pyseer_all/dim${dim}.patterns" \
+              > "unitig/pyseer_all/dim${dim}.tsv" 2> "unitig/pyseer_all/dim${dim}.log"
+          done
+
+      - name: Evaluate held-out, source, country, and adjusted-model replication
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p unitig/final_evaluation
+          if [[ -f unitig/NO_UNITIG_SELECTED ]]; then
+            printf '{"status":"NO_DISCOVERY_UNITIG","n_strict_statistically_replicated":0}\n' > unitig/final_evaluation/UNITIG_REPLICATION_SUMMARY.json
+            exit 0
+          fi
+          python amr_discovery/evaluate_portal_unitig_replication.py \
+            --selection unitig/selection/SELECTED_DISCOVERY_UNITIGS.csv \
+            --manifest unitig/gwas_sample_manifest.csv \
+            --validation-rtab unitig/calls/validation.rtab \
+            --all-rtab unitig/calls/all.rtab \
+            --whole-pyseer unitig/pyseer_all/dim10.tsv unitig/pyseer_all/dim20.tsv unitig/pyseer_all/dim30.tsv \
+            --out unitig/final_evaluation \
+            2>&1 | tee unitig/evaluation_console.log
+
+      - name: Remove public genome bytes and finalize hashes
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          rm -rf assemblies download
+          find unitig -type f ! -name SHA256SUMS_ALL.txt -print0 | sort -z | xargs -0 sha256sum > unitig/SHA256SUMS_ALL.txt || true
+          du -ah unitig | sort -h | tail -250 > unitig/FILE_SIZES.txt || true
+
+      - name: Upload authoritative unitig evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: KP_COLISTIN_BIOPROJECT_UNITIG_GWAS_20260819
+          path: unitig
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
