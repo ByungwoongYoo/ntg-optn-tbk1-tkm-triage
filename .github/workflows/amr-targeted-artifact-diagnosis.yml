@@ -1,0 +1,57 @@
+name: Diagnose targeted colistin GWAS artifact
+
+on:
+  pull_request:
+    branches: [amr-kp-colistin-genome-audit-20260819]
+    paths:
+      - '.github/workflows/amr-targeted-artifact-diagnosis.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  UPSTREAM_RUN_ID: '32211046692'
+  UPSTREAM_ARTIFACT: 'KP_COLISTIN_TARGETED_PORTAL_GWAS_20260819_V2'
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download failed evidence artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.UPSTREAM_ARTIFACT }}
+          path: upstream
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.UPSTREAM_RUN_ID }}
+      - name: Print exact pyseer error and input schemas
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== ARTIFACT TREE ==='
+          find upstream -maxdepth 5 -type f | sort | sed -n '1,240p'
+          echo '=== PYSEER LOGS ==='
+          find upstream -type f -path '*pyseer*' -name '*.log' -print0 | sort -z | while IFS= read -r -d '' f; do
+            echo "--- $f ---"
+            cat "$f"
+          done
+          echo '=== PHENOTYPE HEADERS ==='
+          find upstream -type f -name '*phenotypes.tsv' -print0 | sort -z | while IFS= read -r -d '' f; do
+            echo "--- $f ---"
+            sed -n '1,8p' "$f"
+          done
+          echo '=== RTAB HEADERS ==='
+          find upstream -type f -name '*.Rtab' -print0 | sort -z | while IFS= read -r -d '' f; do
+            echo "--- $f ---"
+            sed -n '1,4p' "$f" | cut -c1-1200
+          done
+          echo '=== MASH MATRIX HEADERS ==='
+          find upstream -type f -name '*mash.tsv' -print0 | sort -z | while IFS= read -r -d '' f; do
+            echo "--- $f ---"
+            sed -n '1,4p' "$f" | cut -c1-1200
+          done
