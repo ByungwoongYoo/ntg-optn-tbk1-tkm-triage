@@ -1,0 +1,64 @@
+name: CAMI III LANTERN v2 development prefix audit
+
+on:
+  pull_request:
+    branches: [cami3-lantern-20260819]
+    paths:
+      - '.github/workflows/cami3-lantern-v2-prefix-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compare prespecified prefixes with complete development mappings
+        run: |
+          set -euo pipefail
+          mkdir -p prefix_audit/provenance
+          python lantern_cami3/scripts/audit_prefix_sampling.py \
+            --url https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_0_reads.tar.gz \
+            --head-molecules 500000 --paired --out prefix_audit/SHORT_PREFIX_AUDIT.json \
+            2>&1 | tee prefix_audit/SHORT_CONSOLE.log
+          python lantern_cami3/scripts/audit_prefix_sampling.py \
+            --url https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy-long/sample_0_reads.tar.gz \
+            --head-molecules 40000 --out prefix_audit/LONG_PREFIX_AUDIT.json \
+            2>&1 | tee prefix_audit/LONG_CONSOLE.log
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          s=json.load(open('prefix_audit/SHORT_PREFIX_AUDIT.json'))
+          l=json.load(open('prefix_audit/LONG_PREFIX_AUDIT.json'))
+          gates={
+            'short_jsd':s['jensen_shannon_divergence_bits']<=0.005,
+            'short_tvd':s['total_variation_distance']<=0.05,
+            'short_taxon_coverage':s['head_taxon_coverage']>=0.80,
+            'long_jsd':l['jensen_shannon_divergence_bits']<=0.01,
+            'long_tvd':l['total_variation_distance']<=0.10,
+            'long_taxon_coverage':l['head_taxon_coverage']>=0.70,
+          }
+          out={'prefix_allowed_for_heldout':all(gates.values()),'gates':gates,
+               'short_head_molecules':500000,'long_head_molecules':40000,
+               'fallback':'Use full-stream deterministic hash sampling if any representativeness gate fails.',
+               'boundary':'Sampling strategy is chosen only from sample0 development metadata and is frozen before sample2/3 mapping or gold truth access.'}
+          Path('prefix_audit/PREFIX_DECISION.json').write_text(json.dumps(out,indent=2)+'\n')
+          print(json.dumps(out,indent=2))
+          PY
+          git rev-parse HEAD > prefix_audit/provenance/GIT_HEAD.txt
+          python --version > prefix_audit/provenance/PYTHON_VERSION.txt
+          find prefix_audit -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > prefix_audit/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: LANTERN_CAMI3_V2_PREFIX_AUDIT_20260820
+          path: prefix_audit
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
