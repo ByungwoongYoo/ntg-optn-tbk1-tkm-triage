@@ -40,7 +40,7 @@ for org,drug in pairs:
         AND lower(trim(resistance_phenotype)) IN ('resistant','r','non-susceptible','nonsusceptible','ns')
         AND assembly_ID IS NOT NULL
     )
-    SELECT ?, ? AS phenotype_drug,
+    SELECT ? AS organism, ? AS phenotype_drug,
            coalesce(class,'') AS class, coalesce(subclass,'') AS subclass,
            coalesce(split_subclass,'') AS split_subclass,
            coalesce(antibiotic_name,'') AS genotype_antibiotic_name,
