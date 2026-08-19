@@ -36,6 +36,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--max-contigs", type=int, default=1000)
     p.add_argument("--min-n50", type=int, default=5000)
     p.add_argument("--max-n-fraction", type=float, default=0.02)
+    p.add_argument("--min-per-class", type=int, default=50)
     return p.parse_args()
 
 
@@ -93,10 +94,7 @@ def get_one(genome_id: str, out_dir: Path, timeout: int, attempts: int) -> dict:
         f"{API}?{expression}&sort(%2Bsequence_id)&limit(25000,0)"
         "&http_accept=application/dna%2Bfasta"
     )
-    headers = {
-        "Accept": "application/dna+fasta",
-        "User-Agent": UA,
-    }
+    headers = {"Accept": "application/dna+fasta", "User-Agent": UA}
     errors: list[str] = []
     for attempt in range(1, attempts + 1):
         try:
@@ -122,12 +120,7 @@ def get_one(genome_id: str, out_dir: Path, timeout: int, attempts: int) -> dict:
             errors.append(repr(exc))
         if attempt < attempts:
             time.sleep(5 * attempt)
-    return {
-        "genome_id": genome_id,
-        "status": "failed",
-        "path": "",
-        "error": " | ".join(errors)[-4000:],
-    }
+    return {"genome_id": genome_id, "status": "failed", "path": "", "error": " | ".join(errors)[-4000:]}
 
 
 def main() -> None:
@@ -145,13 +138,9 @@ def main() -> None:
 
     results: list[dict] = []
     with cf.ThreadPoolExecutor(max_workers=max(1, args.threads)) as pool:
-        futures = {
-            pool.submit(get_one, gid, assemblies, args.timeout, args.attempts): gid
-            for gid in genome_ids
-        }
+        futures = {pool.submit(get_one, gid, assemblies, args.timeout, args.attempts): gid for gid in genome_ids}
         for i, future in enumerate(cf.as_completed(futures), start=1):
-            result = future.result()
-            results.append(result)
+            results.append(future.result())
             if i % 25 == 0 or i == len(futures):
                 print(f"downloaded_or_attempted={i}/{len(futures)}", flush=True)
 
@@ -192,20 +181,21 @@ def main() -> None:
             "min_n50": args.min_n50,
             "max_n_fraction": args.max_n_fraction,
         },
-        "validation_size_gate": bool(counts.get("R", 0) >= 100 and counts.get("S", 0) >= 100),
-        "boundary": "Genome quality filters were fixed before candidate sequence testing. BV-BRC phenotype provenance remains heterogeneous and method metadata are incomplete.",
+        "min_per_class": args.min_per_class,
+        "validation_size_gate": bool(
+            counts.get("R", 0) >= args.min_per_class and counts.get("S", 0) >= args.min_per_class
+        ),
+        "boundary": "Genome quality filters and the minimum class size were fixed before candidate sequence testing. Only the laboratory-method frozen cohort is eligible for validation.",
     }
-    (out / "BVBRC_GENOME_DOWNLOAD_SUMMARY.json").write_text(
-        json.dumps(summary, indent=2, ensure_ascii=False) + "\n"
-    )
+    (out / "BVBRC_GENOME_DOWNLOAD_SUMMARY.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n")
     hashes = []
     for path in sorted(out.rglob("*")):
-        if path.is_file() and path.name not in {"SHA256SUMS.txt"} and "assemblies" not in path.parts:
+        if path.is_file() and path.name != "SHA256SUMS.txt" and "assemblies" not in path.parts:
             hashes.append(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.relative_to(out)}")
     (out / "SHA256SUMS.txt").write_text("\n".join(hashes) + "\n")
     print(json.dumps(summary, indent=2, ensure_ascii=False))
     if not summary["validation_size_gate"]:
-        raise SystemExit("Fewer than 100 QC-passing genomes per phenotype")
+        raise SystemExit(f"Fewer than {args.min_per_class} QC-passing genomes per phenotype")
 
 
 if __name__ == "__main__":
