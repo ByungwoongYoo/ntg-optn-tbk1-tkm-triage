@@ -30,7 +30,8 @@ def parse_args() -> argparse.Namespace:
 def find_one(root: str | Path, name: str, contains: str | None = None) -> Path:
     hits = []
     for p in Path(root).rglob(name):
-        if contains is None or contains in str(p):
+        normalized = str(p).replace("\\", "/")
+        if contains is None or contains.replace("\\", "/") in normalized:
             hits.append(p)
     if not hits:
         raise FileNotFoundError(f"{name} not found under {root} contains={contains}")
@@ -175,17 +176,20 @@ def main() -> None:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
-    extended_manifest = pd.read_csv(find_one(args.extended_root, "gwas_sample_manifest.csv", "extended_analysis/inputs"), dtype=str)
-    extended_rtab = load_rtab(find_one(args.extended_root, "all_variants.Rtab", "extended_analysis/inputs"))
-    extended_distance_path = find_one(args.extended_root, "all_mash.tsv", "extended_analysis/inputs")
+    # GitHub Actions artifacts are extracted at their artifact root, so the
+    # top-level workflow directory name is not retained. Resolve unique filenames
+    # inside each separately downloaded artifact rather than assuming a prefix.
+    extended_manifest = pd.read_csv(find_one(args.extended_root, "gwas_sample_manifest.csv"), dtype=str)
+    extended_rtab = load_rtab(find_one(args.extended_root, "all_variants.Rtab"))
+    extended_distance_path = find_one(args.extended_root, "all_mash.tsv")
     extended_distance = pd.read_csv(extended_distance_path, sep="\t", index_col=0)
     extended_distance.index = extended_distance.index.astype(str)
     extended_distance.columns = extended_distance.columns.astype(str)
-    extended_meta = pd.read_csv(find_one(args.extended_root, "targeted_variant_metadata.csv", "extended_matrix"), dtype=str)
+    extended_meta = pd.read_csv(find_one(args.extended_root, "targeted_variant_metadata.csv"), dtype=str)
 
     unitig_manifest = pd.read_csv(find_one(args.unitig_root, "gwas_sample_manifest.csv"), dtype=str)
-    unitig_rtab = load_rtab(find_one(args.unitig_root, "all.rtab", "/calls/"))
-    unitig_distance = pd.read_csv(find_one(args.unitig_root, "all_mash.tsv", "/structure/"), sep="\t", index_col=0)
+    unitig_rtab = load_rtab(find_one(args.unitig_root, "all.rtab"))
+    unitig_distance = pd.read_csv(find_one(args.unitig_root, "all_mash.tsv"), sep="\t", index_col=0)
     unitig_distance.index = unitig_distance.index.astype(str)
     unitig_distance.columns = unitig_distance.columns.astype(str)
     unitig_selection = pd.read_csv(find_one(args.unitig_root, "SELECTED_DISCOVERY_UNITIGS.csv"), dtype=str)
