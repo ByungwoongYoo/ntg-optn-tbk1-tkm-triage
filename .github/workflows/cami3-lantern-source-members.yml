@@ -1,0 +1,33 @@
+name: CAMI III Toy source archive metadata check
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cami3-lantern-source-members.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect public archive member names
+        run: |
+          set -euo pipefail
+          mkdir -p source_inspect
+          set +o pipefail
+          curl -fsSL --retry 5 --retry-all-errors https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/source_genomes.tar.gz | tar -tzf - | head -300 > source_inspect/members.txt
+          set -o pipefail
+          test -s source_inspect/members.txt
+          git rev-parse HEAD > source_inspect/GIT_HEAD.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LANTERN_CAMI3_SOURCE_MEMBERS_20260819
+          path: source_inspect
+          if-no-files-found: error
+          retention-days: 90
