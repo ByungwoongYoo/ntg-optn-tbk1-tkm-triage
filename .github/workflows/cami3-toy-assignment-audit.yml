@@ -1,0 +1,154 @@
+name: CAMI III Toy corrected sample-to-individual assignment audit
+
+on:
+  pull_request:
+    branches: [cami3-lantern-20260819]
+    paths:
+      - '.github/workflows/cami3-toy-assignment-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Retrieve official CAMI pages and static lists with full provenance
+        run: |
+          set -euo pipefail
+          mkdir -p assignment_audit/raw assignment_audit/provenance assignment_audit/results
+          urls=(
+            'https://cami-challenge.org/'
+            'https://cami-challenge.org/datasets/toy-human-gut/'
+            'https://cami-challenge.org/static/CAMI3_toy_dataset_download.list'
+            'https://cami-challenge.org/static/CAMI3_toy_dataset_long_download.list'
+          )
+          names=(home toy_page short_list long_list)
+          for i in "${!urls[@]}"; do
+            u="${urls[$i]}"; n="${names[$i]}"
+            set +e
+            curl --fail --location --retry 5 --retry-all-errors --connect-timeout 30 --max-time 300 \
+              --dump-header "assignment_audit/provenance/${n}_headers.txt" \
+              --output "assignment_audit/raw/${n}.txt" "$u" \
+              2> "assignment_audit/provenance/${n}_curl.log"
+            rc=$?
+            set -e
+            printf '%s\t%s\t%s\n' "$n" "$rc" "$u" >> assignment_audit/provenance/URL_STATUS.tsv
+          done
+          sha256sum assignment_audit/raw/* > assignment_audit/provenance/RAW_SHA256SUMS.txt || true
+          stat --printf='%n\t%s\t%y\n' assignment_audit/raw/* > assignment_audit/provenance/RAW_STAT.tsv || true
+          git rev-parse HEAD > assignment_audit/provenance/GIT_HEAD.txt
+          uname -a > assignment_audit/provenance/UNAME.txt
+          python --version > assignment_audit/provenance/PYTHON_VERSION.txt
+          curl --version > assignment_audit/provenance/CURL_VERSION.txt
+
+      - name: Parse every assignment clue and independently infer overlap-based pairs
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib, json, re, tarfile, urllib.request, csv, collections
+
+          root=Path('assignment_audit')
+          texts={p.stem:p.read_text(errors='replace') for p in (root/'raw').glob('*.txt')}
+          patterns=[r'(?i).{0,200}(?:individual|participant|patient|subject).{0,200}',r'(?i).{0,200}sample[_ -]?\d+.{0,200}',r'(?i).{0,200}(?:assignment|longitudinal|timepoint).{0,200}']
+          clues=[]
+          for name,text in texts.items():
+              for pat in patterns:
+                  for m in re.finditer(pat,text,re.S):
+                      snippet=' '.join(m.group(0).split())
+                      if snippet not in {c['snippet'] for c in clues}:
+                          clues.append({'source':name,'pattern':pat,'snippet':snippet[:1000]})
+          (root/'results'/'OFFICIAL_TEXT_CLUES.json').write_text(json.dumps(clues,indent=2,ensure_ascii=False)+'\n')
+
+          # The official correction may be represented only in gold-standard composition.
+          # For each sample, retrieve the compact GSA archive and compare its genome-ID set.
+          # True longitudinal partners should have the highest community overlap, but this is
+          # explicitly an inference and is kept separate from official-text evidence.
+          sets={}; counts={}; hashes={}
+          for s in range(20):
+              url=f'https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_{s}_gsa.tar.gz'
+              path=root/'raw'/f'sample_{s}_gsa.tar.gz'
+              urllib.request.urlretrieve(url,path)
+              hashes[s]=hashlib.sha256(path.read_bytes()).hexdigest()
+              ids=set(); nseq=0
+              with tarfile.open(path,'r:gz') as tf:
+                  for member in tf:
+                      if not member.isfile(): continue
+                      lname=member.name.lower()
+                      if not lname.endswith(('.fa','.fasta','.fna','.fa.gz','.fasta.gz','.fna.gz')): continue
+                      fh=tf.extractfile(member)
+                      if fh is None: continue
+                      import gzip, io
+                      raw=fh
+                      if lname.endswith('.gz'): raw=gzip.GzipFile(fileobj=fh,mode='rb')
+                      text=io.TextIOWrapper(raw,encoding='ascii',errors='replace')
+                      for line in text:
+                          if line.startswith('>'):
+                              nseq+=1
+                              token=line[1:].split()[0]
+                              ids.add(token.split('|',1)[0])
+              sets[s]=ids; counts[s]={'sample':s,'n_genomes':len(ids),'n_sequences':nseq,'sha256':hashes[s]}
+          with (root/'results'/'GSA_SAMPLE_COUNTS.csv').open('w',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=['sample','n_genomes','n_sequences','sha256']);w.writeheader();w.writerows(counts[s] for s in range(20))
+          rows=[]
+          for a in range(20):
+              for b in range(a+1,20):
+                  inter=len(sets[a]&sets[b]); union=len(sets[a]|sets[b]); jac=inter/union if union else 0
+                  ca=inter/len(sets[a]) if sets[a] else 0; cb=inter/len(sets[b]) if sets[b] else 0
+                  rows.append({'sample_a':a,'sample_b':b,'intersection':inter,'union':union,'jaccard':jac,'containment_a':ca,'containment_b':cb})
+          rows.sort(key=lambda r:(-r['jaccard'],-r['intersection'],r['sample_a'],r['sample_b']))
+          with (root/'results'/'ALL_PAIR_OVERLAPS.csv').open('w',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=list(rows[0]));w.writeheader();w.writerows(rows)
+          # maximum-weight perfect matching using networkx if available, otherwise exhaustive DP
+          from functools import lru_cache
+          score={(r['sample_a'],r['sample_b']):r['jaccard'] for r in rows}
+          @lru_cache(None)
+          def dp(remaining):
+              rem=list(remaining)
+              if not rem: return (0.0,())
+              a=rem[0]; best=(-1.0,())
+              for i in range(1,len(rem)):
+                  b=rem[i]; rest=tuple(rem[1:i]+rem[i+1:]); val,pairs=dp(rest); val+=score[tuple(sorted((a,b)))]
+                  cand=(val,((a,b),)+pairs)
+                  if cand[0]>best[0]: best=cand
+              return best
+          total,pairs=dp(tuple(range(20)))
+          pair_rows=[]
+          for a,b in sorted(tuple(sorted(p)) for p in pairs):
+              r=next(x for x in rows if x['sample_a']==a and x['sample_b']==b)
+              pair_rows.append(r)
+          with (root/'results'/'INFERRED_MAXIMUM_OVERLAP_MATCHING.csv').open('w',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=list(pair_rows[0]));w.writeheader();w.writerows(pair_rows)
+          result={
+            'status':'OFFICIAL_TEXT_AND_COMPOSITION_AUDIT_COMPLETE',
+            'official_text_clue_count':len(clues),
+            'inferred_pairs':[[r['sample_a'],r['sample_b']] for r in pair_rows],
+            'matching_total_jaccard':total,
+            'sequential_pairs_match_inference':set(tuple(sorted((2*i,2*i+1))) for i in range(10))==set(tuple(sorted(p)) for p in pairs),
+            'boundary':'The matching is inferred from public GSA genome-set overlap unless an explicit official mapping is found in the retrieved CAMI text. It must not be mislabeled as an official assignment.'
+          }
+          (root/'results'/'ASSIGNMENT_AUDIT_SUMMARY.json').write_text(json.dumps(result,indent=2)+'\n')
+          print(json.dumps(result,indent=2))
+          PY
+
+      - name: Remove public GSA bytes, hash compact audit, and upload
+        if: always()
+        run: |
+          rm -f assignment_audit/raw/sample_*_gsa.tar.gz
+          find assignment_audit -type f ! -name SHA256SUMS_ALL.txt -print0 | sort -z | xargs -0 sha256sum > assignment_audit/SHA256SUMS_ALL.txt || true
+          du -ah assignment_audit | sort -h > assignment_audit/FILE_SIZES.txt || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: CAMI3_TOY_SAMPLE_ASSIGNMENT_AUDIT_20260820
+          path: assignment_audit
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
