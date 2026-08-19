@@ -5,7 +5,7 @@ on:
     branches: [amr-kp-colistin-genome-audit-20260819]
     paths:
       - '.github/workflows/amr-kp-colistin-lineage-cmh.yml'
-      - 'amr_discovery/run_lineage_stratified_cmh_gwas.py'
+      - 'amr_discovery/run_lineage_stratified_cmh_gwas_v2.py'
   workflow_dispatch:
 
 permissions:
@@ -53,17 +53,17 @@ jobs:
           test -d "$root/targeted_variants"
           mkdir -p lineage_cmh/provenance
           printf '%s\n' "$root" > /tmp/artifact_root
-          printf 'source_run=%s\nsource_artifact=%s\nsource_root=%s\ninput_split=primary_BioProject_exact_accession\n' "$UPSTREAM_RUN_ID" "$UPSTREAM_ARTIFACT" "$root" > lineage_cmh/provenance/UPSTREAM.txt
+          printf 'source_run=%s\nsource_artifact=%s\nsource_root=%s\ninput_split=primary_BioProject_exact_accession\nevaluator=v2_explicit_discovery_validation_columns\n' "$UPSTREAM_RUN_ID" "$UPSTREAM_ARTIFACT" "$root" > lineage_cmh/provenance/UPSTREAM.txt
           sha256sum "$root/gwas_inputs_bioproject/gwas_sample_manifest.csv" "$root/gwas_inputs_bioproject/all_variants.Rtab" "$root/structure_bioproject/all_mash.tsv" "$root/targeted_variants/targeted_variant_metadata.csv" > lineage_cmh/provenance/INPUT_SHA256.txt
           python --version > lineage_cmh/provenance/PYTHON_VERSION.txt
           micromamba list > lineage_cmh/provenance/ENVIRONMENT.txt
           git rev-parse HEAD > lineage_cmh/provenance/GIT_HEAD.txt
-      - name: Run phenotype-blind lineage clustering and untouched BioProject validation
+      - name: Run corrected phenotype-blind lineage clustering and untouched BioProject validation
         shell: micromamba-shell {0}
         run: |
           set -euo pipefail
           root=$(cat /tmp/artifact_root)
-          python amr_discovery/run_lineage_stratified_cmh_gwas.py \
+          python amr_discovery/run_lineage_stratified_cmh_gwas_v2.py \
             --manifest "$root/gwas_inputs_bioproject/gwas_sample_manifest.csv" \
             --rtab "$root/gwas_inputs_bioproject/all_variants.Rtab" \
             --distance "$root/structure_bioproject/all_mash.tsv" \
@@ -77,11 +77,11 @@ jobs:
         run: |
           find lineage_cmh -type f ! -name SHA256SUMS_ALL.txt -print0 | sort -z | xargs -0 sha256sum > lineage_cmh/SHA256SUMS_ALL.txt || true
           du -ah lineage_cmh | sort -h > lineage_cmh/FILE_SIZES.txt || true
-      - name: Upload lineage-stratified evidence
+      - name: Upload corrected lineage-stratified evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: KP_COLISTIN_LINEAGE_CMH_20260819_V2_EXACT_IDS
+          name: KP_COLISTIN_LINEAGE_CMH_20260819_V3_VALIDATION_FIXED
           path: lineage_cmh
           if-no-files-found: error
           retention-days: 90
