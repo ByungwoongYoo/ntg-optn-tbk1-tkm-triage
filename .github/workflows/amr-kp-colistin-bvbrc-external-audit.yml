@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/amr-kp-colistin-bvbrc-external-audit.yml'
       - 'amr_final_extensions/bvbrc_external_cohort_audit.py'
+      - 'amr_final_extensions/bvbrc_external_cohort_audit_v2.py'
   workflow_dispatch:
 
 permissions:
@@ -60,7 +61,7 @@ jobs:
       - name: Query BV-BRC and freeze independent cohorts before candidate testing
         run: |
           set -euo pipefail
-          python amr_final_extensions/bvbrc_external_cohort_audit.py \
+          python amr_final_extensions/bvbrc_external_cohort_audit_v2.py \
             --portal-labels "$(cat /tmp/portal_labels)" \
             --portal-manifest "$(cat /tmp/portal_manifest)" \
             --per-class 250 \
