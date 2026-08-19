@@ -1,0 +1,148 @@
+name: Fast core K. pneumoniae colistin mechanism audit
+
+on:
+  pull_request:
+    branches: [amr-stage1-census-base-20260819]
+    paths:
+      - '.github/workflows/amr-kp-colistin-core-fast.yml'
+      - 'amr_discovery/audit_kp_colistin_portal.py'
+      - 'amr_discovery/summarize_kleborate_colistin.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: amr-kp-core
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            kleborate=3.2.4
+            kaptive=3.2.0
+            ncbi-datasets-cli
+            duckdb=1.3.2
+            pandas=2.3.1
+            pyarrow=21.0.0
+            requests=2.32.5
+            tabulate=0.9.0
+          cache-downloads: true
+          post-cleanup: all
+
+      - name: Verify versions and compatible imports
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p kp_core_audit/provenance
+          python - <<'PY' | tee kp_core_audit/provenance/IMPORT_CHECK.txt
+          import kaptive
+          from kaptive.database import load_database
+          print('kaptive=', kaptive.__file__)
+          print('legacy kaptive.database import OK')
+          PY
+          kleborate --version | tee kp_core_audit/provenance/KLEBORATE_VERSION.txt
+          amrfinder --version | tee kp_core_audit/provenance/AMRFINDER_VERSION.txt
+          datasets version | tee kp_core_audit/provenance/DATASETS_VERSION.txt
+          kleborate --list_modules > kp_core_audit/provenance/KLEBORATE_MODULES.txt
+          grep -q 'enterobacterales__species' kp_core_audit/provenance/KLEBORATE_MODULES.txt
+          grep -q 'klebsiella_pneumo_complex__mlst' kp_core_audit/provenance/KLEBORATE_MODULES.txt
+          grep -q 'klebsiella_pneumo_complex__amr' kp_core_audit/provenance/KLEBORATE_MODULES.txt
+          uname -a > kp_core_audit/provenance/UNAME.txt
+          micromamba list > kp_core_audit/provenance/MICROMAMBA_LIST.txt
+          git rev-parse HEAD > kp_core_audit/provenance/GIT_HEAD.txt
+
+      - name: Reconstruct the strict balanced phenotype cohort
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          python amr_discovery/audit_kp_colistin_portal.py \
+            --out kp_core_audit/portal --per-class 358 \
+            2>&1 | tee kp_core_audit/portal_console.log
+          n=$(wc -l < kp_core_audit/portal/assembly_accessions.txt)
+          echo "requested=$n" | tee kp_core_audit/provenance/REQUESTED_COUNT.txt
+          [[ "$n" -ge 700 ]]
+
+      - name: Download and verify public assemblies
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p genome_download assemblies
+          ok=0
+          for attempt in 1 2 3; do
+            rm -f genome_download/genomes.zip
+            datasets download genome accession \
+              --inputfile kp_core_audit/portal/assembly_accessions.txt \
+              --include genome \
+              --filename genome_download/genomes.zip \
+              --no-progressbar \
+              2>&1 | tee "kp_core_audit/provenance/DOWNLOAD_${attempt}.log" \
+              && unzip -tq genome_download/genomes.zip \
+              && { ok=1; break; }
+            sleep 20
+          done
+          [[ "$ok" == 1 ]]
+          sha256sum genome_download/genomes.zip > kp_core_audit/provenance/GENOME_PACKAGE_SHA256.txt
+          unzip -q genome_download/genomes.zip -d genome_download/package
+          cp genome_download/package/ncbi_dataset/data/assembly_data_report.jsonl kp_core_audit/assembly_data_report.jsonl
+          cp genome_download/package/ncbi_dataset/data/dataset_catalog.json kp_core_audit/dataset_catalog.json
+          find genome_download/package/ncbi_dataset/data -mindepth 2 -maxdepth 2 -type f -name '*.fna' -print0 | while IFS= read -r -d '' f; do
+            acc=$(basename "$(dirname "$f")")
+            ln -s "$PWD/$f" "assemblies/${acc}.fna"
+          done
+          downloaded=$(find assemblies -type l | wc -l)
+          echo "downloaded=$downloaded" | tee kp_core_audit/provenance/DOWNLOAD_COUNT.txt
+          [[ "$downloaded" -ge 680 ]]
+
+      - name: Run only species, MLST, and AMR modules
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mapfile -t genomes < <(find assemblies -type l -name '*.fna' | sort)
+          kleborate -a "${genomes[@]}" \
+            -o kp_core_audit/kleborate_results \
+            -m enterobacterales__species,klebsiella_pneumo_complex__mlst,klebsiella_pneumo_complex__amr \
+            --trim_headers \
+            2>&1 | tee kp_core_audit/kleborate_console.log
+          find kp_core_audit/kleborate_results -maxdepth 1 -type f -print -exec wc -l {} \; \
+            > kp_core_audit/provenance/KLEBORATE_OUTPUT_COUNTS.txt
+
+      - name: Summarize known mechanisms and construct residual cohort
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          python amr_discovery/summarize_kleborate_colistin.py \
+            --labels kp_core_audit/portal/target_labels.csv \
+            --kleborate-dir kp_core_audit/kleborate_results \
+            --out kp_core_audit/summary \
+            2>&1 | tee kp_core_audit/summary_console.log
+          test -s kp_core_audit/summary/residual_matched_sequence_audit_cohort.csv
+
+      - name: Remove public genome bytes and hash compact evidence
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          rm -rf genome_download assemblies
+          rm -f kp_core_audit/portal/target_audit.duckdb kp_core_audit/portal/target_all_genotypes.parquet
+          find kp_core_audit -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > kp_core_audit/SHA256SUMS.txt || true
+          du -ah kp_core_audit | sort -h | tail -150 > kp_core_audit/FILE_SIZES.txt || true
+
+      - name: Upload compact core mechanism evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: KP_COLISTIN_CORE_KLEBORATE_AUDIT_20260819
+          path: kp_core_audit
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9

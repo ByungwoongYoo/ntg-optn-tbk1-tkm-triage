@@ -1,0 +1,173 @@
+name: Balanced K. pneumoniae colistin genome and Kleborate audit
+
+on:
+  pull_request:
+    branches: [amr-stage1-census-base-20260819]
+    paths:
+      - 'amr_discovery/summarize_kleborate_colistin.py'
+      - '.github/workflows/amr-kp-colistin-kleborate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  kleborate-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: amr-kp
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            kleborate=3.2.4
+            kaptive=3.2.0
+            ncbi-datasets-cli
+            duckdb=1.3.2
+            pandas=2.3.1
+            pyarrow=21.0.0
+            requests=2.32.5
+            tabulate=0.9.0
+          cache-downloads: true
+          post-cleanup: all
+
+      - name: Verify Kleborate-Kaptive API compatibility
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import importlib.metadata as m
+          from kaptive.database import load_database
+          from kaptive.assembly import typing_pipeline
+          print('kleborate', m.version('kleborate'))
+          print('kaptive', m.version('kaptive'))
+          print('kaptive API compatibility OK')
+          PY
+          kleborate --version
+          kleborate --list_modules > /tmp/kleborate_modules.txt
+          grep -q 'klebsiella_pneumo_complex__amr' /tmp/kleborate_modules.txt
+
+      - name: Record versions and update AMRFinderPlus database
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p kp_genome_audit/provenance
+          uname -a > kp_genome_audit/provenance/UNAME.txt
+          python --version > kp_genome_audit/provenance/PYTHON_VERSION.txt
+          kleborate --version > kp_genome_audit/provenance/KLEBORATE_VERSION.txt
+          python - <<'PY' > kp_genome_audit/provenance/KAPTIVE_VERSION.txt
+          import importlib.metadata as m
+          print(m.version('kaptive'))
+          PY
+          datasets version > kp_genome_audit/provenance/DATASETS_VERSION.txt
+          amrfinder --version > kp_genome_audit/provenance/AMRFINDER_VERSION_PREUPDATE.txt
+          amrfinder -u 2>&1 | tee kp_genome_audit/provenance/AMRFINDER_UPDATE.log
+          amrfinder --version > kp_genome_audit/provenance/AMRFINDER_VERSION.txt
+          git rev-parse HEAD > kp_genome_audit/provenance/GIT_HEAD.txt
+          micromamba list > kp_genome_audit/provenance/MICROMAMBA_LIST.txt
+
+      - name: Reconstruct strict balanced portal cohort
+        shell: micromamba-shell {0}
+        env:
+          PYTHONUNBUFFERED: '1'
+        run: |
+          set -euo pipefail
+          python amr_discovery/audit_kp_colistin_portal.py \
+            --out kp_genome_audit/portal --per-class 358 \
+            2>&1 | tee kp_genome_audit/portal_console.log
+          n=$(wc -l < kp_genome_audit/portal/assembly_accessions.txt)
+          echo "requested_assemblies=$n" | tee kp_genome_audit/provenance/REQUESTED_COUNT.txt
+          [[ "$n" -ge 700 ]]
+
+      - name: Download NCBI genome assemblies with integrity checks
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p genome_download
+          ok=0
+          for attempt in 1 2 3; do
+            rm -f genome_download/genomes.zip
+            datasets download genome accession \
+              --inputfile kp_genome_audit/portal/assembly_accessions.txt \
+              --include genome \
+              --filename genome_download/genomes.zip \
+              --no-progressbar \
+              2>&1 | tee "kp_genome_audit/provenance/DATASETS_DOWNLOAD_ATTEMPT_${attempt}.log" \
+              && unzip -tq genome_download/genomes.zip \
+              && { ok=1; break; }
+            sleep 20
+          done
+          [[ "$ok" == 1 ]]
+          sha256sum genome_download/genomes.zip > kp_genome_audit/provenance/GENOME_PACKAGE_SHA256.txt
+          unzip -q genome_download/genomes.zip -d genome_download/package
+          cp genome_download/package/ncbi_dataset/data/assembly_data_report.jsonl \
+             kp_genome_audit/assembly_data_report.jsonl
+          cp genome_download/package/ncbi_dataset/data/dataset_catalog.json \
+             kp_genome_audit/dataset_catalog.json
+
+          mkdir -p assemblies
+          find genome_download/package/ncbi_dataset/data -mindepth 2 -maxdepth 2 \
+            -type f -name '*.fna' -print0 | while IFS= read -r -d '' f; do
+              acc=$(basename "$(dirname "$f")")
+              ln -s "$PWD/$f" "assemblies/${acc}.fna"
+            done
+          find assemblies -type l -printf '%f\n' | sort > kp_genome_audit/downloaded_assembly_files.txt
+          cut -d. -f1 kp_genome_audit/portal/assembly_accessions.txt | sort -u > /tmp/requested_base.txt
+          sed -E 's/\.fna$//' kp_genome_audit/downloaded_assembly_files.txt | cut -d. -f1 | sort -u > /tmp/downloaded_base.txt
+          comm -23 /tmp/requested_base.txt /tmp/downloaded_base.txt > kp_genome_audit/missing_assembly_accessions.txt
+          downloaded=$(find assemblies -type l | wc -l)
+          missing=$(wc -l < kp_genome_audit/missing_assembly_accessions.txt)
+          printf 'downloaded=%s\nmissing=%s\n' "$downloaded" "$missing" \
+            | tee kp_genome_audit/provenance/DOWNLOAD_COUNTS.txt
+          [[ "$downloaded" -ge 680 ]]
+
+      - name: Run Kleborate v3 KpSC preset on all downloaded assemblies
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mapfile -t genomes < <(find assemblies -type l -name '*.fna' | sort)
+          kleborate -a "${genomes[@]}" \
+            -o kp_genome_audit/kleborate_results \
+            -p kpsc --trim_headers \
+            2>&1 | tee kp_genome_audit/kleborate_console.log
+          find kp_genome_audit/kleborate_results -maxdepth 1 -type f -print -exec wc -l {} \; \
+            > kp_genome_audit/provenance/KLEBORATE_OUTPUT_COUNTS.txt
+
+      - name: Build mechanism and residual-cohort summary
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          python amr_discovery/summarize_kleborate_colistin.py \
+            --labels kp_genome_audit/portal/target_labels.csv \
+            --kleborate-dir kp_genome_audit/kleborate_results \
+            --out kp_genome_audit/summary \
+            2>&1 | tee kp_genome_audit/summary_console.log
+
+      - name: Remove bulky genome bytes and hash compact evidence
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          rm -rf genome_download assemblies
+          rm -f kp_genome_audit/portal/target_audit.duckdb \
+                kp_genome_audit/portal/target_all_genotypes.parquet
+          find kp_genome_audit -type f ! -name SHA256SUMS.txt -print0 \
+            | sort -z | xargs -0 sha256sum > kp_genome_audit/SHA256SUMS.txt || true
+          du -ah kp_genome_audit | sort -h | tail -100 > kp_genome_audit/FILE_SIZES.txt || true
+
+      - name: Upload immutable compact genome-audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: KP_COLISTIN_KLEBORATE_AUDIT_20260819
+          path: kp_genome_audit
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 9
