@@ -1,0 +1,208 @@
+name: Extended K. pneumoniae colistin regulatory and functional-burden analysis
+
+on:
+  pull_request:
+    branches: [amr-kp-colistin-targeted-portal-gwas-20260819]
+    paths:
+      - '.github/workflows/amr-kp-colistin-extended-regulatory-burden.yml'
+      - 'amr_final_extensions/build_extended_colistin_matrix.py'
+      - 'amr_final_extensions/run_functional_gene_burden.py'
+      - 'amr_discovery/build_colistin_variant_matrix.py'
+      - 'amr_discovery/run_structure_adjusted_score_gwas.py'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  TARGETED_RUN_ID: '32230694234'
+  TARGETED_ARTIFACT: 'KP_COLISTIN_TARGETED_GWAS_20260819_V4_BIOPROJECT_FIXED'
+
+jobs:
+  extended-regulatory-burden:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download corrected frozen cohort and structure artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.TARGETED_ARTIFACT }}
+          path: inputs/targeted
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.TARGETED_RUN_ID }}
+
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: amr-extended-colistin
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            pandas=2.3.1
+            numpy
+            scipy
+            scikit-learn
+            biopython
+            blast
+            ncbi-datasets-cli
+            tabulate=0.9.0
+          cache-downloads: true
+          post-cleanup: all
+
+      - name: Locate immutable inputs and record provenance
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          labels=$(find inputs/targeted -type f -name target_labels.csv | head -1)
+          manifest=$(find inputs/targeted -type f -path '*/gwas_inputs_bioproject/gwas_sample_manifest.csv' | head -1)
+          reference=$(find inputs/targeted -type f -name reference.gbff | head -1)
+          distance=$(find inputs/targeted -type f -path '*/structure/all_mash.tsv' | head -1)
+          test -n "$labels"; test -n "$manifest"; test -n "$reference"; test -n "$distance"
+          mkdir -p extended_analysis/provenance
+          printf '%s\n' "$labels" > /tmp/labels
+          printf '%s\n' "$manifest" > /tmp/manifest
+          printf '%s\n' "$reference" > /tmp/reference
+          printf '%s\n' "$distance" > /tmp/distance
+          printf 'source_run=%s\nsource_artifact=%s\n' "$TARGETED_RUN_ID" "$TARGETED_ARTIFACT" > extended_analysis/provenance/UPSTREAM.txt
+          sha256sum "$labels" "$manifest" "$reference" "$distance" > extended_analysis/provenance/INPUT_SHA256.txt
+          uname -a > extended_analysis/provenance/UNAME.txt
+          python --version > extended_analysis/provenance/PYTHON_VERSION.txt
+          datasets version > extended_analysis/provenance/DATASETS_VERSION.txt
+          tblastn -version > extended_analysis/provenance/BLAST_VERSION.txt
+          micromamba list > extended_analysis/provenance/MICROMAMBA_LIST.txt
+          git rev-parse HEAD > extended_analysis/provenance/GIT_HEAD.txt
+
+      - name: Download exact public assemblies
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          labels=$(cat /tmp/labels)
+          mkdir -p download assemblies
+          python - "$labels" <<'PY'
+          import sys
+          from pathlib import Path
+          import pandas as pd
+          labels=pd.read_csv(sys.argv[1],dtype={'assembly_ID':str})
+          accessions=sorted(set(labels.assembly_ID.astype(str)))
+          Path('extended_analysis/requested_accessions.txt').write_text('\n'.join(accessions)+'\n')
+          print(f'requested={len(accessions)}')
+          PY
+          ok=0
+          for attempt in 1 2 3; do
+            rm -f download/genomes.zip
+            datasets download genome accession \
+              --inputfile extended_analysis/requested_accessions.txt \
+              --include genome \
+              --filename download/genomes.zip \
+              --no-progressbar \
+              2>&1 | tee "extended_analysis/provenance/GENOME_DOWNLOAD_${attempt}.log" \
+              && unzip -tq download/genomes.zip && { ok=1; break; }
+            sleep 20
+          done
+          [[ "$ok" == 1 ]]
+          sha256sum download/genomes.zip > extended_analysis/provenance/GENOME_ZIP_SHA256.txt
+          unzip -q download/genomes.zip -d download/package
+          cp download/package/ncbi_dataset/data/assembly_data_report.jsonl extended_analysis/assembly_data_report.jsonl
+          cp download/package/ncbi_dataset/data/dataset_catalog.json extended_analysis/dataset_catalog.json
+          find download/package/ncbi_dataset/data -mindepth 2 -maxdepth 2 -type f -name '*.fna' -print0 | while IFS= read -r -d '' file; do
+            accession=$(basename "$(dirname "$file")")
+            ln -s "$PWD/$file" "assemblies/${accession}.fna"
+          done
+          downloaded=$(find assemblies -type l | wc -l)
+          printf 'downloaded=%s\n' "$downloaded" | tee extended_analysis/provenance/DOWNLOAD_COUNT.txt
+          [[ "$downloaded" -ge 680 ]]
+          rm -f download/genomes.zip
+
+      - name: Build literature-prespecified extended gene and promoter matrix
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          labels=$(cat /tmp/labels)
+          reference=$(cat /tmp/reference)
+          python amr_final_extensions/build_extended_colistin_matrix.py \
+            --labels "$labels" \
+            --assemblies-dir assemblies \
+            --reference-gbff "$reference" \
+            --out extended_analysis/extended_matrix \
+            --threads 4 \
+            2>&1 | tee extended_analysis/extended_matrix_console.log
+
+      - name: Construct exact-ID frozen BioProject inputs
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          manifest=$(cat /tmp/manifest)
+          distance=$(cat /tmp/distance)
+          mkdir -p extended_analysis/inputs
+          python - "$manifest" "$distance" <<'PY'
+          import sys
+          from pathlib import Path
+          import pandas as pd
+          manifest=pd.read_csv(sys.argv[1],dtype={'assembly_ID':str}).drop_duplicates('assembly_ID')
+          rtab=pd.read_csv('extended_analysis/extended_matrix/targeted_variants.Rtab',sep='\t',index_col=0)
+          rtab.columns=rtab.columns.astype(str)
+          distance=pd.read_csv(sys.argv[2],sep='\t',index_col=0)
+          distance.index=distance.index.astype(str); distance.columns=distance.columns.astype(str)
+          ids=[sample for sample in manifest.assembly_ID.astype(str) if sample in rtab.columns and sample in distance.index]
+          manifest=manifest.set_index('assembly_ID').loc[ids].reset_index()
+          assert set(manifest.assembly_ID)==set(ids)==set(distance.loc[ids,ids].index)
+          assert set(manifest.loc[manifest.split.eq('discovery'),'BioProject']).isdisjoint(set(manifest.loc[manifest.split.eq('validation'),'BioProject']))
+          manifest.to_csv('extended_analysis/inputs/gwas_sample_manifest.csv',index=False)
+          rtab.loc[:,ids].to_csv('extended_analysis/inputs/all_variants.Rtab',sep='\t')
+          distance.loc[ids,ids].to_csv('extended_analysis/inputs/all_mash.tsv',sep='\t')
+          Path('extended_analysis/inputs/COHORT_SUMMARY.json').write_text(manifest.groupby(['split','phenotype']).size().to_json(indent=2)+'\n')
+          print(manifest.groupby(['split','phenotype']).size())
+          PY
+
+      - name: Run individual-feature population-structure analysis
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          python amr_discovery/run_structure_adjusted_score_gwas.py \
+            --manifest extended_analysis/inputs/gwas_sample_manifest.csv \
+            --rtab extended_analysis/inputs/all_variants.Rtab \
+            --distance extended_analysis/inputs/all_mash.tsv \
+            --feature-meta extended_analysis/extended_matrix/targeted_variant_metadata.csv \
+            --pc-dims 10,20,30 \
+            --min-validation-odds-ratio 2.0 \
+            --out extended_analysis/individual_feature_gwas \
+            2>&1 | tee extended_analysis/individual_feature_console.log
+
+      - name: Run functional gene-burden discovery and untouched validation
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          python amr_final_extensions/run_functional_gene_burden.py \
+            --manifest extended_analysis/inputs/gwas_sample_manifest.csv \
+            --rtab extended_analysis/inputs/all_variants.Rtab \
+            --distance extended_analysis/inputs/all_mash.tsv \
+            --feature-meta extended_analysis/extended_matrix/targeted_variant_metadata.csv \
+            --pc-dims 10,20,30 \
+            --min-validation-odds-ratio 2.0 \
+            --out extended_analysis/functional_burden \
+            2>&1 | tee extended_analysis/functional_burden_console.log
+
+      - name: Remove public genome bytes and finalize evidence
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          rm -rf assemblies download
+          find extended_analysis -type f ! -name SHA256SUMS_ALL.txt -print0 | sort -z | xargs -0 sha256sum > extended_analysis/SHA256SUMS_ALL.txt || true
+          du -ah extended_analysis | sort -h | tail -500 > extended_analysis/FILE_SIZES.txt || true
+
+      - name: Upload extended pathway evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: KP_COLISTIN_EXTENDED_REGULATORY_BURDEN_20260819
+          path: extended_analysis
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
