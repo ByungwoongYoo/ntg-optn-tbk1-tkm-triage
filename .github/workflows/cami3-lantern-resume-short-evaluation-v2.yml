@@ -1,0 +1,269 @@
+name: CAMI III LANTERN resume Toy short benchmark evaluation v2
+
+on:
+  pull_request:
+    branches: [cami3-lantern-20260819]
+    paths:
+      - '.github/workflows/cami3-lantern-resume-short-evaluation-v2.yml'
+      - 'lantern_cami3/scripts/evaluate_gold_coverage.py'
+      - 'lantern_cami3/scripts/build_pseudo_novel_audit.py'
+      - 'lantern_cami3/scripts/summarize_benchmark.py'
+      - 'lantern_cami3/config/decision_gate_v1.json'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  PRIOR_RUN_ID: '32285680577'
+  PRIOR_ARTIFACT: 'LANTERN_CAMI3_TOY_SHORT_BENCHMARK_20260819'
+
+jobs:
+  resume-evaluation-v2:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download preserved truth-blind benchmark state
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.PRIOR_ARTIFACT }}
+          path: prior_artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.PRIOR_RUN_ID }}
+
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: lantern-resume-v2
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            minimap2=2.31
+            mash=2.3
+            quast=5.3.0
+            seqkit
+            tabulate
+          cache-downloads: true
+          post-cleanup: all
+
+      - name: Locate, freeze-audit, and record documented failed baseline
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          ROOT=$(find prior_artifact -type d -name lantern_short_benchmark | head -1)
+          test -n "$ROOT"
+          printf '%s\n' "$ROOT" > /tmp/benchmark_root
+          mkdir -p compact_resume_v2/{diagnostics,provenance,results,metaquast,logs_summary,validation,code_snapshot,configs,failure_audit}
+          git rev-parse HEAD > compact_resume_v2/provenance/RESUME_GIT_HEAD.txt
+          printf 'prior_run=%s\nprior_artifact=%s\n' "$PRIOR_RUN_ID" "$PRIOR_ARTIFACT" > compact_resume_v2/provenance/UPSTREAM.txt
+          uname -a > compact_resume_v2/provenance/UNAME.txt
+          python --version > compact_resume_v2/provenance/PYTHON_VERSION.txt
+          minimap2 --version > compact_resume_v2/provenance/MINIMAP2_VERSION.txt
+          mash --version > compact_resume_v2/provenance/MASH_VERSION.txt
+          metaquast.py --version > compact_resume_v2/provenance/METAQUAST_VERSION.txt 2>&1 || true
+          micromamba list > compact_resume_v2/provenance/MICROMAMBA_LIST.txt
+          find "$ROOT" -maxdepth 4 -type f -printf '%p\t%s\n' | sort > compact_resume_v2/diagnostics/PRESERVED_FILE_LIST.tsv
+          find "$ROOT/logs" -maxdepth 1 -type f -print0 2>/dev/null | while IFS= read -r -d '' f; do
+            n=$(basename "$f")
+            tail -n 250 "$f" > "compact_resume_v2/logs_summary/${n}.tail.txt" || true
+          done
+          test -s "$ROOT/truth/combined_truth.fasta"
+          test -s "$ROOT/truth/truth_mapping.tsv"
+          test -s "$ROOT/truth/genome_reference_manifest.tsv"
+          test -s "$ROOT/truth_blind/TRUTH_BLIND_FREEZE.json"
+          sha256sum "$ROOT/truth_blind/TRUTH_BLIND_FREEZE.json" > compact_resume_v2/provenance/TRUTH_BLIND_FREEZE_SHA256.txt
+          cp "$ROOT/truth_blind/TRUTH_BLIND_FREEZE.json" compact_resume_v2/provenance/
+          cp lantern_cami3/config/decision_gate_v1.json compact_resume_v2/configs/
+          cp lantern_cami3/config/lantern_frozen_v1.json compact_resume_v2/configs/
+          cp lantern_cami3/scripts/{evaluate_gold_coverage.py,build_pseudo_novel_audit.py,summarize_benchmark.py} compact_resume_v2/code_snapshot/
+          cp "$ROOT/failure_audit/metaspades_longitudinal.status" compact_resume_v2/failure_audit/ 2>/dev/null || true
+          cp "$ROOT/logs/metaspades_longitudinal.log" compact_resume_v2/failure_audit/ 2>/dev/null || true
+          cat > compact_resume_v2/failure_audit/METASPADES_EXCLUSION.md <<'EOF'
+          # metaSPAdes baseline exclusion
+
+          The originally frozen workflow attempted metaSPAdes 4.3.0 using two independent paired-end libraries. It terminated before assembly with exit code 67 because this metaSPAdes version accepts one paired-end library, or a paired-end-plus-long-read hybrid input, rather than two paired-end libraries. No `contigs.fasta` or `scaffolds.fasta` was produced. The failed run is retained as provenance and is not silently counted as a baseline. This continuation evaluates only assemblies that existed before gold-side evaluation. A corrected one-library metaSPAdes baseline is run separately and must not alter the frozen LANTERN v1 selection.
+          EOF
+
+      - name: Re-run six existing frozen assemblies against gold truth
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          ROOT=$(cat /tmp/benchmark_root)
+          rm -rf resumed_evaluation_v2
+          mkdir -p resumed_evaluation_v2/{custom,pseudo_novel,decision,metaquast,provenance}
+          cat > resumed_evaluation_v2/METHOD_MANIFEST.tsv <<'EOF'
+          method	role	mode	scope	ablation	eligible_primary_baseline
+          megahit_s0	baseline	short	single	none	true
+          megahit_s1	baseline	short	single	none	true
+          megahit_pair	baseline	short	longitudinal	none	true
+          lantern_full	lantern	short	longitudinal	full	false
+          lantern_no_longitudinal	ablation	short	longitudinal	no_longitudinal	false
+          lantern_no_consensus	ablation	short	longitudinal	no_consensus	false
+          EOF
+
+          declare -A FASTA
+          FASTA[megahit_s0]="$ROOT/assemblies/megahit_single0/final.contigs.fa"
+          FASTA[megahit_s1]="$ROOT/assemblies/megahit_single1/final.contigs.fa"
+          FASTA[megahit_pair]="$ROOT/assemblies/megahit_longitudinal/final.contigs.fa"
+          FASTA[lantern_full]="$ROOT/truth_blind/LANTERN_full/LANTERN_ASSEMBLY.fasta"
+          FASTA[lantern_no_longitudinal]="$ROOT/truth_blind/LANTERN_no_longitudinal/LANTERN_ASSEMBLY.fasta"
+          FASTA[lantern_no_consensus]="$ROOT/truth_blind/LANTERN_no_consensus/LANTERN_ASSEMBLY.fasta"
+
+          : > resumed_evaluation_v2/METHOD_PATHS.tsv
+          for name in megahit_s0 megahit_s1 megahit_pair lantern_full lantern_no_longitudinal lantern_no_consensus; do
+            fasta="${FASTA[$name]}"
+            test -s "$fasta"
+            out="resumed_evaluation_v2/custom/$name"
+            mkdir -p "$out"
+            minimap2 -x asm5 -c -N 100 -t 4 "$ROOT/truth/combined_truth.fasta" "$fasta" > "$out/assembly_to_truth.paf" 2> "$out/minimap2.log"
+            python lantern_cami3/scripts/evaluate_gold_coverage.py \
+              --paf "$out/assembly_to_truth.paf" \
+              --truth-mapping "$ROOT/truth/truth_mapping.tsv" \
+              --assembly-fasta "$fasta" \
+              --min-identity 0.90 --min-alignment 500 \
+              --out "$out" > "$out/evaluate_console.log"
+            printf '%s\t%s\t%s\n' "$name" "$fasta" "$out" >> resumed_evaluation_v2/METHOD_PATHS.tsv
+            sha256sum "$fasta" >> resumed_evaluation_v2/provenance/ASSEMBLY_SHA256SUMS.txt
+          done
+
+      - name: Build evaluation-only pseudo-novel tiers
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          ROOT=$(cat /tmp/benchmark_root)
+          awk -F '\t' 'NR>1 && $3>=50000 {print $2}' "$ROOT/truth/genome_reference_manifest.tsv" > resumed_evaluation_v2/pseudo_novel/reference_files.txt
+          n=$(wc -l < resumed_evaluation_v2/pseudo_novel/reference_files.txt)
+          echo "eligible_truth_references=$n" > resumed_evaluation_v2/pseudo_novel/REFERENCE_COUNT.txt
+          test "$n" -ge 2
+          mash sketch -k 21 -s 1000 -l resumed_evaluation_v2/pseudo_novel/reference_files.txt -o resumed_evaluation_v2/pseudo_novel/truth_genomes > resumed_evaluation_v2/pseudo_novel/mash_sketch.log 2>&1
+          mash dist resumed_evaluation_v2/pseudo_novel/truth_genomes.msh resumed_evaluation_v2/pseudo_novel/truth_genomes.msh > resumed_evaluation_v2/pseudo_novel/truth_genome_distances.tsv
+          python lantern_cami3/scripts/build_pseudo_novel_audit.py \
+            --manifest "$ROOT/truth/genome_reference_manifest.tsv" \
+            --mash resumed_evaluation_v2/pseudo_novel/truth_genome_distances.tsv \
+            --recovery megahit_s0=resumed_evaluation_v2/custom/megahit_s0/per_genome_recovery.tsv \
+            --recovery megahit_s1=resumed_evaluation_v2/custom/megahit_s1/per_genome_recovery.tsv \
+            --recovery megahit_pair=resumed_evaluation_v2/custom/megahit_pair/per_genome_recovery.tsv \
+            --recovery lantern_full=resumed_evaluation_v2/custom/lantern_full/per_genome_recovery.tsv \
+            --recovery lantern_no_longitudinal=resumed_evaluation_v2/custom/lantern_no_longitudinal/per_genome_recovery.tsv \
+            --recovery lantern_no_consensus=resumed_evaluation_v2/custom/lantern_no_consensus/per_genome_recovery.tsv \
+            --min-truth-bp 50000 \
+            --out resumed_evaluation_v2/pseudo_novel
+          python - <<'PY'
+          import csv
+          src='resumed_evaluation_v2/pseudo_novel/PSEUDO_NOVEL_TARGETS.tsv'
+          out='resumed_evaluation_v2/pseudo_novel/PSEUDO_NOVEL_SPLITS.tsv'
+          tiers=['exact_target_withheld','species_neighbour_withheld','genus_neighbour_withheld','deep_neighbour_withheld']
+          rows=[]
+          with open(src,newline='') as f:
+              for r in csv.DictReader(f,delimiter='\t'):
+                  for tier in tiers:
+                      if r[tier].lower()=='true': rows.append({'genome_id':r['genome_id'],'tier':tier})
+          with open(out,'w',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=['genome_id','tier'],delimiter='\t');w.writeheader();w.writerows(rows)
+          if not rows: raise SystemExit('No pseudo-novel split rows')
+          print({'pseudo_split_rows':len(rows)})
+          PY
+
+      - name: Apply the predeclared decision gate
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          python lantern_cami3/scripts/summarize_benchmark.py \
+            --method megahit_s0=resumed_evaluation_v2/custom/megahit_s0 \
+            --method megahit_s1=resumed_evaluation_v2/custom/megahit_s1 \
+            --method megahit_pair=resumed_evaluation_v2/custom/megahit_pair \
+            --method lantern_full=resumed_evaluation_v2/custom/lantern_full \
+            --method lantern_no_longitudinal=resumed_evaluation_v2/custom/lantern_no_longitudinal \
+            --method lantern_no_consensus=resumed_evaluation_v2/custom/lantern_no_consensus \
+            --manifest resumed_evaluation_v2/METHOD_MANIFEST.tsv \
+            --decision-config lantern_cami3/config/decision_gate_v1.json \
+            --full-method lantern_full \
+            --no-longitudinal-method lantern_no_longitudinal \
+            --pseudo-splits resumed_evaluation_v2/pseudo_novel/PSEUDO_NOVEL_SPLITS.tsv \
+            --seed 20260819 --bootstrap 5000 \
+            --out resumed_evaluation_v2/decision \
+            2>&1 | tee resumed_evaluation_v2/decision/DECISION_CONSOLE.log
+
+      - name: Attempt MetaQUAST sensitivity evaluation on existing assemblies
+        shell: micromamba-shell {0}
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          ROOT=$(cat /tmp/benchmark_root)
+          python - "$ROOT" <<'PY'
+          import csv,sys
+          from pathlib import Path
+          root=Path(sys.argv[1])
+          rows=list(csv.DictReader(open(root/'truth/genome_reference_manifest.tsv'),delimiter='\t'))
+          refs=[r['reference_path'] for r in rows if int(r['truth_bp'])>=50000]
+          Path('/tmp/meta_refs').write_text(','.join(refs))
+          print({'metaquast_references':len(refs)})
+          PY
+          REFS=$(cat /tmp/meta_refs)
+          metaquast.py \
+            "$ROOT/assemblies/megahit_single0/final.contigs.fa" \
+            "$ROOT/assemblies/megahit_single1/final.contigs.fa" \
+            "$ROOT/assemblies/megahit_longitudinal/final.contigs.fa" \
+            "$ROOT/truth_blind/LANTERN_full/LANTERN_ASSEMBLY.fasta" \
+            "$ROOT/truth_blind/LANTERN_no_longitudinal/LANTERN_ASSEMBLY.fasta" \
+            --labels megahit_s0,megahit_s1,megahit_pair,lantern_full,lantern_no_longitudinal \
+            -r "$REFS" --min-contig 1000 --threads 4 --max-ref-number 10000 \
+            -o resumed_evaluation_v2/metaquast \
+            > resumed_evaluation_v2/metaquast_console.log 2>&1
+
+      - name: Build compact continuation artifact and independent audit
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          ROOT=$(cat /tmp/benchmark_root)
+          cp -r resumed_evaluation_v2/decision compact_resume_v2/results/ 2>/dev/null || true
+          cp -r resumed_evaluation_v2/pseudo_novel compact_resume_v2/results/ 2>/dev/null || true
+          cp resumed_evaluation_v2/METHOD_MANIFEST.tsv resumed_evaluation_v2/METHOD_PATHS.tsv compact_resume_v2/results/ 2>/dev/null || true
+          for d in resumed_evaluation_v2/custom/*; do
+            test -d "$d" || continue
+            name=$(basename "$d")
+            mkdir -p "compact_resume_v2/results/custom/$name"
+            cp "$d"/{GOLD_COVERAGE_SUMMARY.json,per_genome_recovery.tsv,cross_binid_chimera_audit.tsv,evaluate_console.log,minimap2.log} "compact_resume_v2/results/custom/$name/" 2>/dev/null || true
+          done
+          if test -d resumed_evaluation_v2/metaquast; then
+            cp -r resumed_evaluation_v2/metaquast compact_resume_v2/metaquast/ 2>/dev/null || true
+          fi
+          cp "$ROOT/truth/TRUTH_SUMMARY.json" "$ROOT/truth/genome_reference_manifest.tsv" compact_resume_v2/validation/ 2>/dev/null || true
+          cp "$ROOT/truth_blind/LANTERN_full/LANTERN_ASSEMBLY.fasta" compact_resume_v2/results/LANTERN_TOY_SHORT_FINAL.fasta 2>/dev/null || true
+          cp "$ROOT/truth_blind/LANTERN_full/VALIDATION.json" compact_resume_v2/validation/LANTERN_FASTA_VALIDATION.json 2>/dev/null || true
+          python - <<'PY'
+          import json,hashlib
+          from pathlib import Path
+          root=Path('compact_resume_v2')
+          decision=root/'results/decision/FINAL_DECISION.json'
+          audit={'status':'INCOMPLETE'}
+          if decision.exists():
+              d=json.loads(decision.read_text())
+              audit={'status':'PASS','decision_status':d['status'],'all_gates_pass':all(d['gates'].values()),'strongest_baseline':d['strongest_baseline'],'genome_fraction_gain_percentage_points':d['genome_fraction_gain_percentage_points'],'mean_genome_recovery_gain_percentage_points':d['mean_genome_recovery_gain_percentage_points'],'longitudinal_ablation_drop_percentage_points':d['longitudinal_ablation_drop_percentage_points'],'claim_boundary':d['claim_boundary']}
+          (root/'INDEPENDENT_COMPACT_AUDIT.json').write_text(json.dumps(audit,indent=2)+'\n')
+          lines=[]
+          for p in sorted(root.rglob('*')):
+              if p.is_file() and p.name!='SHA256SUMS.txt':
+                  lines.append(f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.relative_to(root)}")
+          (root/'SHA256SUMS.txt').write_text('\n'.join(lines)+'\n')
+          print(json.dumps(audit,indent=2))
+          PY
+          du -ah compact_resume_v2 | sort -h > compact_resume_v2/FILE_SIZES.txt
+
+      - name: Upload compact resumed benchmark evidence v2
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: LANTERN_CAMI3_TOY_SHORT_RESUMED_EVALUATION_V2_20260820
+          path: compact_resume_v2
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
