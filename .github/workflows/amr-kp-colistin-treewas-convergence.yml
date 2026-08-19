@@ -1,0 +1,169 @@
+name: Final K. pneumoniae colistin phylogenetic convergence audit
+
+on:
+  pull_request:
+    branches: [amr-kp-colistin-targeted-portal-gwas-20260819]
+    paths:
+      - '.github/workflows/amr-kp-colistin-treewas-convergence.yml'
+      - 'amr_final_extensions/prepare_treewas_panels.py'
+      - 'amr_final_extensions/run_treewas_convergence.R'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  EXTENDED_RUN_ID: '32241915808'
+  EXTENDED_ARTIFACT: 'KP_COLISTIN_EXTENDED_REGULATORY_BURDEN_20260819'
+  UNITIG_RUN_ID: '32228165332'
+  UNITIG_ARTIFACT: 'KP_COLISTIN_PORTAL_UNITIG_GWAS_20260819_V5'
+  TREEWAS_COMMIT: '895dfd0c986445336043ab3f626f4e0ed7f153a8'
+
+jobs:
+  prepare-phenotype-blind-panels:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download frozen extended pathway artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.EXTENDED_ARTIFACT }}
+          path: inputs/extended
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.EXTENDED_RUN_ID }}
+
+      - name: Download authoritative portal-unitig artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.UNITIG_ARTIFACT }}
+          path: inputs/unitig
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.UNITIG_RUN_ID }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install exact panel-preparation dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pandas==2.3.1 numpy==2.2.6
+
+      - name: Prepare exact-ID phenotype-blind panels
+        run: |
+          set -euo pipefail
+          mkdir -p treewas_panels/provenance
+          printf 'extended_run=%s\nextended_artifact=%s\nunitig_run=%s\nunitig_artifact=%s\n' \
+            "$EXTENDED_RUN_ID" "$EXTENDED_ARTIFACT" "$UNITIG_RUN_ID" "$UNITIG_ARTIFACT" \
+            > treewas_panels/provenance/UPSTREAM.txt
+          git rev-parse HEAD > treewas_panels/provenance/GIT_HEAD.txt
+          python --version > treewas_panels/provenance/PYTHON_VERSION.txt
+          python -m pip freeze > treewas_panels/provenance/PIP_FREEZE.txt
+          python amr_final_extensions/prepare_treewas_panels.py \
+            --extended-root inputs/extended \
+            --unitig-root inputs/unitig \
+            --out treewas_panels/results \
+            --min-discovery-af 0.01 \
+            --max-discovery-af 0.99 \
+            2>&1 | tee treewas_panels/PANEL_PREPARATION_CONSOLE.log
+          find treewas_panels -type f ! -name SHA256SUMS_ALL.txt -print0 | sort -z | xargs -0 sha256sum > treewas_panels/SHA256SUMS_ALL.txt
+
+      - name: Upload frozen treeWAS panels
+        uses: actions/upload-artifact@v4
+        with:
+          name: KP_COLISTIN_TREEWAS_FROZEN_PANELS_20260819
+          path: treewas_panels
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
+
+  treewas-panel:
+    needs: prepare-phenotype-blind-panels
+    strategy:
+      fail-fast: false
+      matrix:
+        panel: [targeted, unitig]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download frozen panels from this workflow
+        uses: actions/download-artifact@v4
+        with:
+          name: KP_COLISTIN_TREEWAS_FROZEN_PANELS_20260819
+          path: inputs/panels
+
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: treewas
+          condarc: |
+            channels:
+              - conda-forge
+            channel_priority: strict
+          create-args: >-
+            r-base=4.4
+            r-remotes
+            r-jsonlite
+            r-ape
+            r-adegenet
+            r-ade4
+            r-beeswarm
+            r-ggplot2
+            r-hmisc
+            r-knitr
+            r-phangorn
+            r-phytools
+            r-png
+            r-pryr
+            r-rmarkdown
+            r-scales
+          cache-downloads: true
+          post-cleanup: all
+
+      - name: Install pinned treeWAS source
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          Rscript -e "remotes::install_github('caitiecollins/treeWAS@${TREEWAS_COMMIT}', dependencies=FALSE, upgrade='never')"
+          Rscript -e "library(treeWAS); cat(as.character(packageVersion('treeWAS')), '\n')"
+
+      - name: Run frozen discovery-validation phylogenetic audit
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p "treewas_${{ matrix.panel }}/provenance"
+          printf 'panel=%s\ntreewas_commit=%s\n' '${{ matrix.panel }}' "$TREEWAS_COMMIT" \
+            > "treewas_${{ matrix.panel }}/provenance/ANALYSIS.txt"
+          git rev-parse HEAD > "treewas_${{ matrix.panel }}/provenance/GIT_HEAD.txt"
+          Rscript -e 'capture.output(sessionInfo(), file=commandArgs(TRUE)[1])' \
+            "treewas_${{ matrix.panel }}/provenance/R_SESSION_BEFORE.txt"
+          Rscript amr_final_extensions/run_treewas_convergence.R \
+            "inputs/panels/results/${{ matrix.panel }}" \
+            "treewas_${{ matrix.panel }}/results" \
+            20260819 \
+            2>&1 | tee "treewas_${{ matrix.panel }}/TREEWAS_CONSOLE.log"
+
+      - name: Finalize evidence hashes
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          mkdir -p "treewas_${{ matrix.panel }}"
+          find "treewas_${{ matrix.panel }}" -type f ! -name SHA256SUMS_ALL.txt -print0 | sort -z | xargs -0 sha256sum \
+            > "treewas_${{ matrix.panel }}/SHA256SUMS_ALL.txt" || true
+          du -ah "treewas_${{ matrix.panel }}" | sort -h > "treewas_${{ matrix.panel }}/FILE_SIZES.txt" || true
+
+      - name: Upload panel-specific treeWAS evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: KP_COLISTIN_TREEWAS_${{ matrix.panel }}_20260819
+          path: treewas_${{ matrix.panel }}
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
