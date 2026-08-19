@@ -28,7 +28,8 @@ jobs:
             channel_priority: strict
           create-args: >-
             python=3.11
-            kleborate
+            kleborate=3.2.4
+            kaptive=3.2.0
             ncbi-datasets-cli
             duckdb=1.3.2
             pandas=2.3.1
@@ -38,6 +39,22 @@ jobs:
           cache-downloads: true
           post-cleanup: all
 
+      - name: Verify Kleborate-Kaptive API compatibility
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import importlib.metadata as m
+          from kaptive.database import load_database
+          from kaptive.assembly import typing_pipeline
+          print('kleborate', m.version('kleborate'))
+          print('kaptive', m.version('kaptive'))
+          print('kaptive API compatibility OK')
+          PY
+          kleborate --version
+          kleborate --list_modules > /tmp/kleborate_modules.txt
+          grep -q 'klebsiella_pneumo_complex__amr' /tmp/kleborate_modules.txt
+
       - name: Record versions and update AMRFinderPlus database
         shell: micromamba-shell {0}
         run: |
@@ -46,6 +63,10 @@ jobs:
           uname -a > kp_genome_audit/provenance/UNAME.txt
           python --version > kp_genome_audit/provenance/PYTHON_VERSION.txt
           kleborate --version > kp_genome_audit/provenance/KLEBORATE_VERSION.txt
+          python - <<'PY' > kp_genome_audit/provenance/KAPTIVE_VERSION.txt
+          import importlib.metadata as m
+          print(m.version('kaptive'))
+          PY
           datasets version > kp_genome_audit/provenance/DATASETS_VERSION.txt
           amrfinder --version > kp_genome_audit/provenance/AMRFINDER_VERSION_PREUPDATE.txt
           amrfinder -u 2>&1 | tee kp_genome_audit/provenance/AMRFINDER_UPDATE.log
@@ -117,7 +138,7 @@ jobs:
             -o kp_genome_audit/kleborate_results \
             -p kpsc --trim_headers \
             2>&1 | tee kp_genome_audit/kleborate_console.log
-          find kp_genome_audit/kleborate_results -type f -maxdepth 1 -print -exec wc -l {} \; \
+          find kp_genome_audit/kleborate_results -maxdepth 1 -type f -print -exec wc -l {} \; \
             > kp_genome_audit/provenance/KLEBORATE_OUTPUT_COUNTS.txt
 
       - name: Build mechanism and residual-cohort summary
