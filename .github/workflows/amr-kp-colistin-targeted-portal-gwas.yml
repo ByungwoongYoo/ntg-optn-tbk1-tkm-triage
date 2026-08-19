@@ -149,35 +149,53 @@ jobs:
             mash sketch -p 4 -s 10000 -l "targeted_gwas/gwas_inputs/${cohort}_refs.txt" -o "targeted_gwas/structure/${cohort}"
             mash dist "targeted_gwas/structure/${cohort}.msh" "targeted_gwas/structure/${cohort}.msh" | square_mash > "targeted_gwas/structure/${cohort}_raw.tsv"
             python - "$cohort" <<'PY'
+          import re
           import sys
           from pathlib import Path
           import pandas as pd
 
-          name=sys.argv[1]
-          raw=f'targeted_gwas/structure/{name}_raw.tsv'
-          refs_file=f'targeted_gwas/gwas_inputs/{name}_refs.txt'
-          refs=[Path(line.strip()).name.removesuffix('.fna') for line in open(refs_file) if line.strip()]
-          by_base={r.split('.')[0]: r for r in refs}
-          if len(by_base) != len(refs):
-              raise SystemExit('Assembly-version restoration is not one-to-one')
+          name = sys.argv[1]
+          raw = f'targeted_gwas/structure/{name}_raw.tsv'
+          phenotype_file = f'targeted_gwas/gwas_inputs/{name}_phenotypes.tsv'
+          rtab_file = f'targeted_gwas/gwas_inputs/{name}_variants.Rtab'
+          accession_re = re.compile(r'(GC[AF]_\d+\.\d+)')
 
-          x=pd.read_csv(raw,sep='\t',index_col=0)
-          def restore(value):
-              token=Path(str(value)).name.removesuffix('.fna')
-              return by_base.get(token, by_base.get(token.split('.')[0], token))
-          x.index=[restore(v) for v in x.index]
-          x.columns=[restore(v) for v in x.columns]
+          expected = pd.read_csv(phenotype_file, sep='\t', dtype=str)['samples'].astype(str).tolist()
+          if len(expected) != len(set(expected)):
+              raise SystemExit('Duplicate phenotype sample IDs')
+
+          def accession(value):
+              token = Path(str(value)).name
+              match = accession_re.search(token)
+              if not match:
+                  raise SystemExit(f'Could not extract assembly accession from {value!r}')
+              return match.group(1)
+
+          x = pd.read_csv(raw, sep='\t', index_col=0)
+          x.index = [accession(v) for v in x.index]
+          x.columns = [accession(v) for v in x.columns]
           if x.index.duplicated().any() or pd.Index(x.columns).duplicated().any():
-              raise SystemExit('Duplicate Mash sample IDs after version restoration')
-          missing=sorted(set(refs)-set(x.index))
-          extra=sorted(set(x.index)-set(refs))
+              raise SystemExit('Duplicate Mash sample IDs after accession extraction')
+
+          missing = sorted(set(expected) - set(x.index))
+          extra = sorted(set(x.index) - set(expected))
           if missing or extra:
-              raise SystemExit(f'Mash/sample mismatch missing={missing[:10]} extra={extra[:10]}')
-          x=x.loc[refs,refs]
-          x.to_csv(f'targeted_gwas/structure/{name}_mash.tsv',sep='\t')
-          with open(f'targeted_gwas/structure/{name}_ID_AUDIT.txt','w') as f:
-              f.write(f'n_refs={len(refs)}\n')
-              f.write('exact_id_match=true\n')
+              raise SystemExit(f'Mash/phenotype mismatch missing={missing[:10]} extra={extra[:10]}')
+
+          rtab_columns = pd.read_csv(rtab_file, sep='\t', nrows=0).columns.astype(str).tolist()[1:]
+          if set(rtab_columns) != set(expected):
+              raise SystemExit(
+                  f'Rtab/phenotype mismatch missing={sorted(set(expected)-set(rtab_columns))[:10]} '
+                  f'extra={sorted(set(rtab_columns)-set(expected))[:10]}'
+              )
+
+          x = x.loc[expected, expected]
+          x.to_csv(f'targeted_gwas/structure/{name}_mash.tsv', sep='\t')
+          with open(f'targeted_gwas/structure/{name}_ID_AUDIT.txt', 'w') as f:
+              f.write(f'n_expected={len(expected)}\n')
+              f.write(f'n_matrix={x.shape[0]}\n')
+              f.write(f'n_rtab={len(rtab_columns)}\n')
+              f.write('exact_phenotype_mash_rtab_id_match=true\n')
           PY
           done
           rm -f targeted_gwas/structure/*_raw.tsv targeted_gwas/structure/*.msh
@@ -234,7 +252,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: KP_COLISTIN_TARGETED_PORTAL_GWAS_20260819_V2
+          name: KP_COLISTIN_TARGETED_PORTAL_GWAS_20260819_V3
           path: targeted_gwas
           if-no-files-found: error
           retention-days: 90
