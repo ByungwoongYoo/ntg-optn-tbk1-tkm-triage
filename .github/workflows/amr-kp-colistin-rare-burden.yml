@@ -1,0 +1,90 @@
+name: Rare-variant K. pneumoniae colistin burden validation
+
+on:
+  pull_request:
+    branches: [amr-kp-colistin-genome-audit-20260819]
+    paths:
+      - '.github/workflows/amr-kp-colistin-rare-burden.yml'
+      - 'amr_discovery/run_rare_variant_burden_gwas.py'
+      - 'amr_discovery/run_structure_adjusted_score_gwas.py'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  UPSTREAM_RUN_ID: '32211046692'
+  UPSTREAM_ARTIFACT: 'KP_COLISTIN_TARGETED_PORTAL_GWAS_20260819_V2'
+
+jobs:
+  rare-burden:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download frozen pre-GWAS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.UPSTREAM_ARTIFACT }}
+          path: upstream
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.UPSTREAM_RUN_ID }}
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: amr-rare-burden
+          condarc: |
+            channels:
+              - conda-forge
+            channel_priority: strict
+          create-args: >-
+            python=3.11 numpy pandas=2.3.1 scipy scikit-learn tabulate=0.9.0
+          cache-downloads: true
+          post-cleanup: all
+      - name: Locate immutable inputs and record provenance
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=$(dirname "$(find upstream -type f -path '*/gwas_inputs/gwas_sample_manifest.csv' | head -1)")
+          root=$(dirname "$root")
+          test -d "$root/gwas_inputs"
+          test -d "$root/structure"
+          test -d "$root/targeted_variants"
+          mkdir -p rare_burden/provenance
+          printf '%s\n' "$root" > /tmp/artifact_root
+          printf 'source_run=%s\nsource_artifact=%s\nsource_root=%s\n' "$UPSTREAM_RUN_ID" "$UPSTREAM_ARTIFACT" "$root" > rare_burden/provenance/UPSTREAM.txt
+          sha256sum "$root/gwas_inputs/gwas_sample_manifest.csv" "$root/gwas_inputs/all_variants.Rtab" "$root/structure/all_mash.tsv" "$root/targeted_variants/targeted_variant_metadata.csv" > rare_burden/provenance/INPUT_SHA256.txt
+          python --version > rare_burden/provenance/PYTHON_VERSION.txt
+          micromamba list > rare_burden/provenance/ENVIRONMENT.txt
+          git rev-parse HEAD > rare_burden/provenance/GIT_HEAD.txt
+      - name: Run rare-variant burden discovery and untouched validation
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=$(cat /tmp/artifact_root)
+          python amr_discovery/run_rare_variant_burden_gwas.py \
+            --manifest "$root/gwas_inputs/gwas_sample_manifest.csv" \
+            --rtab "$root/gwas_inputs/all_variants.Rtab" \
+            --distance "$root/structure/all_mash.tsv" \
+            --feature-meta "$root/targeted_variants/targeted_variant_metadata.csv" \
+            --frequency-ceilings 0.05,0.10 \
+            --pc-dims 10,20,30 \
+            --min-carriers 3 \
+            --out rare_burden/results \
+            2>&1 | tee rare_burden/console.log
+      - name: Finalize hashes
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          find rare_burden -type f ! -name SHA256SUMS_ALL.txt -print0 | sort -z | xargs -0 sha256sum > rare_burden/SHA256SUMS_ALL.txt || true
+          du -ah rare_burden | sort -h > rare_burden/FILE_SIZES.txt || true
+      - name: Upload rare-burden evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: KP_COLISTIN_RARE_VARIANT_BURDEN_20260819
+          path: rare_burden
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
