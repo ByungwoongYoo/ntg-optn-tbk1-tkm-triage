@@ -69,12 +69,14 @@ jobs:
           checked=0; failed=[]
           for line in manifest.read_text().splitlines():
               if not line.strip(): continue
-              digest, rel=line.split(None,1); rel=rel.strip().lstrip('*')
+              digest, rel_raw=line.split(None,1)
+              rel_raw=rel_raw.strip().lstrip('*')
+              rel=rel_raw.removeprefix('targeted_gwas/')
               p=root/rel
               if not p.exists():
-                  failed.append((rel,'missing')); continue
+                  failed.append((rel_raw,'missing')); continue
               got=hashlib.sha256(p.read_bytes()).hexdigest(); checked+=1
-              if got!=digest: failed.append((rel,got))
+              if got!=digest: failed.append((rel_raw,got))
           (root/'repair_provenance'/'UPSTREAM_HASH_AUDIT.txt').write_text(f'checked={checked}\nfailed={len(failed)}\n'+''.join(f'{x}\t{y}\n' for x,y in failed))
           if failed: raise SystemExit(f'Upstream hash failures: {failed[:5]}')
           PY
