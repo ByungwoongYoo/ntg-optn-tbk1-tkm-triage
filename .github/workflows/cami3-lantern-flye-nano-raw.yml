@@ -1,0 +1,145 @@
+name: CAMI III Toy Flye nano-raw long-read baselines
+
+on:
+  pull_request:
+    branches: [cami3-lantern-multimodal-parallel-20260820]
+    paths:
+      - '.github/workflows/cami3-lantern-flye-nano-raw.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  READ_RUN_ID: '32285680342'
+  READ_ARTIFACT_PATTERN: 'LANTERN_CAMI3_TOY_READS_S*_V1'
+
+jobs:
+  flye-raw:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - method: flye_raw_s0
+            reads: S0_long.fastq.gz
+            scope: single
+          - method: flye_raw_s1
+            reads: S1_long.fastq.gz
+            scope: single
+          - method: flye_raw_pair
+            reads: pair_long.fastq.gz
+            scope: longitudinal
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ${{ env.READ_ARTIFACT_PATTERN }}
+          path: read_artifacts
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.READ_RUN_ID }}
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: flye-raw
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            flye=2.9.6
+            minimap2=2.31
+            seqkit
+          cache-downloads: true
+          post-cleanup: all
+
+      - name: Prepare immutable input and paired long-read file
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          M='${{ matrix.method }}'; ROOT="flye_raw_${M}"
+          mkdir -p "$ROOT"/{reads,assembly,truth_blind,truth_download,truth,evaluation,provenance,logs_summary,failure_audit}
+          for s in 0 1; do
+            d=$(dirname "$(find read_artifacts -type f -name "S${s}_long.fastq.gz" | head -1)")
+            test -d "$d"
+            ln -s "$PWD/$d/S${s}_long.fastq.gz" "$ROOT/reads/S${s}_long.fastq.gz"
+            gzip -t "$ROOT/reads/S${s}_long.fastq.gz"
+          done
+          gzip -cd "$ROOT/reads/S0_long.fastq.gz" "$ROOT/reads/S1_long.fastq.gz" | gzip -1 > "$ROOT/reads/pair_long.fastq.gz"
+          gzip -t "$ROOT/reads/pair_long.fastq.gz"
+          READ="$ROOT/reads/${{ matrix.reads }}"; test -s "$READ"; printf '%s\n' "$READ" > /tmp/flye_input
+          seqkit stats -T "$READ" > "$ROOT/provenance/READ_STATS.tsv"
+          sha256sum "$READ" > "$ROOT/provenance/READ_SHA256.txt"
+          git rev-parse HEAD > "$ROOT/provenance/GIT_HEAD.txt"
+          uname -a > "$ROOT/provenance/UNAME.txt"
+          flye --version > "$ROOT/provenance/FLYE_VERSION.txt"
+          minimap2 --version > "$ROOT/provenance/MINIMAP2_VERSION.txt"
+          micromamba list > "$ROOT/provenance/MICROMAMBA_LIST.txt"
+          printf 'mode=nano-raw\nscope=%s\ntruth_accessed=false\n' '${{ matrix.scope }}' > "$ROOT/provenance/METHOD.txt"
+
+      - name: Assemble truth-blind with Flye nano-raw meta mode
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          M='${{ matrix.method }}'; ROOT="flye_raw_${M}"; READ=$(cat /tmp/flye_input)
+          set +e
+          /usr/bin/time -v timeout --signal=TERM --kill-after=120s 300m \
+            flye --nano-raw "$READ" --meta --threads 4 --out-dir "$ROOT/assembly/out" \
+            > "$ROOT/logs_summary/FLYE.log" 2>&1
+          rc=$?
+          set -e
+          printf 'exit_code=%s\n' "$rc" > "$ROOT/failure_audit/FLYE.status"
+          if test "$rc" -ne 0 || ! test -s "$ROOT/assembly/out/assembly.fasta"; then
+            printf '{"status":"ASSEMBLER_FAILED","exit_code":%s}\n' "$rc" > "$ROOT/RESULT_STATUS.json"
+            exit 1
+          fi
+          printf '%s\n' "$ROOT/assembly/out/assembly.fasta" > /tmp/flye_fasta
+
+      - name: Freeze before gold, evaluate, and summarize
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          M='${{ matrix.method }}'; ROOT="flye_raw_${M}"; FASTA=$(cat /tmp/flye_fasta)
+          sha256sum "$FASTA" > "$ROOT/provenance/TRUTH_BLIND_ASSEMBLY_SHA256.txt"
+          python - "$M" '${{ matrix.scope }}' "$FASTA" "$ROOT" <<'PY'
+          import hashlib,json,sys,time
+          from pathlib import Path
+          m,scope,fa,root=sys.argv[1:]; p=Path(fa); r=Path(root)
+          x={'freeze_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'method':m,'mode':'long_nano_raw','scope':scope,'truth_accessed':False,'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'bytes':p.stat().st_size}
+          (r/'truth_blind/TRUTH_BLIND_FREEZE.json').write_text(json.dumps(x,indent=2)+'\n')
+          PY
+          for s in 0 1; do curl -fsSL --retry 8 --retry-all-errors "https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_${s}_gsa.tar.gz" -o "$ROOT/truth_download/sample_${s}_gsa.tar.gz"; done
+          python lantern_cami3/scripts/extract_gsa_truth.py --gsa-tar "S0=$ROOT/truth_download/sample_0_gsa.tar.gz" --gsa-tar "S1=$ROOT/truth_download/sample_1_gsa.tar.gz" --out "$ROOT/truth" > "$ROOT/logs_summary/TRUTH.log" 2>&1
+          minimap2 -x asm5 -c -N 100 -t 4 "$ROOT/truth/combined_truth.fasta" "$FASTA" > "$ROOT/evaluation/assembly_to_truth.paf" 2> "$ROOT/evaluation/minimap2.log"
+          python lantern_cami3/scripts/evaluate_gold_coverage.py --paf "$ROOT/evaluation/assembly_to_truth.paf" --truth-mapping "$ROOT/truth/truth_mapping.tsv" --assembly-fasta "$FASTA" --min-identity 0.90 --min-alignment 500 --out "$ROOT/evaluation" > "$ROOT/evaluation/console.log"
+          python - "$M" '${{ matrix.scope }}' "$ROOT" <<'PY'
+          import json,sys
+          from pathlib import Path
+          m,scope,root=sys.argv[1:]; root=Path(root); s=json.loads((root/'evaluation/GOLD_COVERAGE_SUMMARY.json').read_text())
+          out={'status':'COMPLETE','method':m,'mode':'long_nano_raw','scope':scope,'genome_fraction_percent':s['genome_fraction_percent'],'mean_genome_recovery_percent':100*s['mean_genome_recovery'],'median_genome_recovery_percent':100*s['median_genome_recovery'],'genomes_recovered_50':s['genomes_recovered_50'],'genomes_recovered_90':s['genomes_recovered_90'],'assembly_contigs_total':s['assembly_contigs_total'],'assembly_total_bp':s['assembly_total_bp'],'cross_binid_chimera_bp_fraction':s['cross_binid_chimeric_bp_fraction'],'truth_blind':True,'claim_boundary':'Public Toy long-read baseline only.'}
+          (root/'METHOD_RESULT.json').write_text(json.dumps(out,indent=2)+'\n'); print(json.dumps(out,indent=2))
+          PY
+
+      - name: Compact and upload
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          M='${{ matrix.method }}'; ROOT="flye_raw_${M}"
+          rm -rf "$ROOT/reads" "$ROOT/truth_download" "$ROOT/truth/references"
+          rm -f "$ROOT/truth/combined_truth.fasta" "$ROOT/evaluation/assembly_to_truth.paf"
+          find "$ROOT/assembly/out" -type f ! -name 'assembly.fasta' -delete 2>/dev/null || true
+          find "$ROOT" -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > "$ROOT/SHA256SUMS.txt" || true
+          du -ah "$ROOT" | sort -h > "$ROOT/FILE_SIZES.txt" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: LANTERN_CAMI3_${{ matrix.method }}_20260820
+          path: flye_raw_${{ matrix.method }}
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
