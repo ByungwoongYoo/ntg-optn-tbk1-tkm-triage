@@ -1,0 +1,177 @@
+name: Repair and resume portal-residual K. pneumoniae colistin targeted GWAS
+
+on:
+  pull_request:
+    branches: [amr-kp-colistin-genome-audit-20260819]
+    paths:
+      - '.github/workflows/amr-kp-colistin-targeted-portal-gwas-repair.yml'
+      - 'amr_discovery/evaluate_colistin_gwas.py'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  UPSTREAM_RUN_ID: '32211046692'
+  UPSTREAM_ARTIFACT: 'KP_COLISTIN_TARGETED_PORTAL_GWAS_20260819_V2'
+
+jobs:
+  repair-targeted-gwas:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download preserved failed-run evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.UPSTREAM_ARTIFACT }}
+          path: repaired
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.UPSTREAM_RUN_ID }}
+
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: amr-repair
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            pandas=2.3.1
+            scipy
+            pyseer
+            tabulate=0.9.0
+          cache-downloads: true
+          post-cleanup: all
+
+      - name: Record repair provenance and verify upstream hashes
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p repaired/repair_provenance
+          printf 'upstream_run_id=%s\nupstream_artifact=%s\n' "$UPSTREAM_RUN_ID" "$UPSTREAM_ARTIFACT" > repaired/repair_provenance/UPSTREAM.txt
+          git rev-parse HEAD > repaired/repair_provenance/REPAIR_GIT_HEAD.txt
+          python --version > repaired/repair_provenance/PYTHON_VERSION.txt
+          pyseer --version > repaired/repair_provenance/PYSEER_VERSION.txt
+          micromamba list > repaired/repair_provenance/MICROMAMBA_LIST.txt
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib
+          root=Path('repaired')
+          manifest=root/'SHA256SUMS_ALL.txt'
+          if not manifest.exists():
+              raise SystemExit('Missing upstream SHA256SUMS_ALL.txt')
+          checked=0; failed=[]
+          for line in manifest.read_text().splitlines():
+              if not line.strip(): continue
+              digest, rel=line.split(None,1); rel=rel.strip().lstrip('*')
+              p=root/rel
+              if not p.exists():
+                  failed.append((rel,'missing')); continue
+              got=hashlib.sha256(p.read_bytes()).hexdigest(); checked+=1
+              if got!=digest: failed.append((rel,got))
+          (root/'repair_provenance'/'UPSTREAM_HASH_AUDIT.txt').write_text(f'checked={checked}\nfailed={len(failed)}\n'+''.join(f'{x}\t{y}\n' for x,y in failed))
+          if failed: raise SystemExit(f'Upstream hash failures: {failed[:5]}')
+          PY
+
+      - name: Normalize Mash IDs to exact assembly accessions
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, re
+          from pathlib import Path
+          import pandas as pd
+
+          root=Path('repaired')
+          pat=re.compile(r'(GC[AF]_\d+\.\d+)')
+          audit={}
+          for cohort in ('discovery','all'):
+              phen=pd.read_csv(root/'gwas_inputs'/f'{cohort}_phenotypes.tsv',sep='\t',dtype={'samples':str})
+              expected=phen['samples'].astype(str).tolist()
+              if len(expected)!=len(set(expected)):
+                  raise SystemExit(f'Duplicate phenotype IDs in {cohort}')
+              path=root/'structure'/f'{cohort}_mash.tsv'
+              x=pd.read_csv(path,sep='\t',index_col=0)
+              def accession(value):
+                  m=pat.search(str(value))
+                  if not m: raise ValueError(f'No assembly accession in Mash ID: {value!r}')
+                  return m.group(1)
+              old_index=x.index.astype(str).tolist()
+              x.index=[accession(v) for v in x.index]
+              x.columns=[accession(v) for v in x.columns]
+              if x.index.duplicated().any() or pd.Index(x.columns).duplicated().any():
+                  raise SystemExit(f'Duplicate Mash IDs after normalization in {cohort}')
+              missing=sorted(set(expected)-set(x.index)); extra=sorted(set(x.index)-set(expected))
+              if missing or extra:
+                  raise SystemExit(f'{cohort} Mash/phenotype mismatch missing={missing[:10]} extra={extra[:10]}')
+              x=x.loc[expected,expected]
+              x.to_csv(path,sep='\t')
+              audit[cohort]={'n':len(expected),'exact_id_match':True,'old_first_five':old_index[:5],'new_first_five':x.index[:5].tolist()}
+          (root/'repair_provenance'/'MASH_ACCESSION_REPAIR_AUDIT.json').write_text(json.dumps(audit,indent=2)+'\n')
+          PY
+
+      - name: Run population-structure sensitivity models
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          rm -rf repaired/pyseer repaired/final_evaluation
+          mkdir -p repaired/pyseer
+          for dim in 10 20 30; do
+            pyseer \
+              --phenotypes repaired/gwas_inputs/discovery_phenotypes.tsv \
+              --pres repaired/gwas_inputs/discovery_variants.Rtab \
+              --distances repaired/structure/discovery_mash.tsv \
+              --max-dimensions "$dim" --min-af 0.01 --max-af 0.99 \
+              --filter-pvalue 1 --print-samples \
+              --output-patterns "repaired/pyseer/discovery_dim${dim}.patterns" \
+              > "repaired/pyseer/discovery_dim${dim}.tsv" \
+              2> "repaired/pyseer/discovery_dim${dim}.log"
+            pyseer \
+              --phenotypes repaired/gwas_inputs/all_phenotypes.tsv \
+              --pres repaired/gwas_inputs/all_variants.Rtab \
+              --distances repaired/structure/all_mash.tsv \
+              --max-dimensions "$dim" --min-af 0.01 --max-af 0.99 \
+              --filter-pvalue 1 --print-samples \
+              --output-patterns "repaired/pyseer/all_dim${dim}.patterns" \
+              > "repaired/pyseer/all_dim${dim}.tsv" \
+              2> "repaired/pyseer/all_dim${dim}.log"
+          done
+          for f in repaired/pyseer/*.tsv; do test -s "$f"; done
+
+      - name: Evaluate untouched holdout and cross-source replication
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          python amr_discovery/evaluate_colistin_gwas.py \
+            --manifest repaired/gwas_inputs/gwas_sample_manifest.csv \
+            --rtab repaired/gwas_inputs/all_variants.Rtab \
+            --feature-meta repaired/targeted_variants/targeted_variant_metadata.csv \
+            --discovery repaired/pyseer/discovery_dim10.tsv repaired/pyseer/discovery_dim20.tsv repaired/pyseer/discovery_dim30.tsv \
+            --whole repaired/pyseer/all_dim10.tsv repaired/pyseer/all_dim20.tsv repaired/pyseer/all_dim30.tsv \
+            --out repaired/final_evaluation \
+            2>&1 | tee repaired/evaluation_console.log
+
+      - name: Write repaired evidence manifest
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          rm -f repaired/SHA256SUMS_ALL_REPAIRED.txt
+          find repaired -type f ! -name SHA256SUMS_ALL_REPAIRED.txt -print0 | sort -z | xargs -0 sha256sum > repaired/SHA256SUMS_ALL_REPAIRED.txt
+          du -ah repaired | sort -h | tail -200 > repaired/FILE_SIZES_REPAIRED.txt
+
+      - name: Upload repaired targeted GWAS evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: KP_COLISTIN_TARGETED_PORTAL_GWAS_20260819_V3_REPAIRED
+          path: repaired
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
