@@ -1,0 +1,35 @@
+name: CAMI III LANTERN Toy gold metadata inspection
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cami3-lantern-gold-metadata-inspect.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stream representative gold-standard headers and mappings
+        run: |
+          set -euo pipefail
+          mkdir -p gold_meta
+          gsa='https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_0_gsa.tar.gz'
+          set +o pipefail
+          curl -fsSL --retry 5 --retry-all-errors "$gsa" | tar -xzOf - sample_0_gsa/sample0_ASV525.6_gsa.fasta.gz | gzip -dc | head -12 > gold_meta/gsa_ASV525_head.txt
+          set -o pipefail
+          curl -fsSL --retry 5 --retry-all-errors 'https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/gsa_pooled_mapping.tsv.gz' | gzip -dc | head -30 > gold_meta/pooled_mapping_head.tsv
+          cat gold_meta/gsa_ASV525_head.txt
+          cat gold_meta/pooled_mapping_head.tsv
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LANTERN_CAMI3_TOY_GOLD_METADATA_20260819
+          path: gold_meta
+          if-no-files-found: error
+          retention-days: 90
