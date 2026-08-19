@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Prepare source-held-out discovery/validation inputs for targeted and unitig GWAS.
 
-The split is deterministic and group-disjoint at BioProject level whenever metadata permit.
-No candidate feature is examined while choosing the split.
+The split is deterministic and group-disjoint at the primary BioProject level whenever
+metadata permit. No candidate feature is examined while choosing the split.
 """
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from sklearn.model_selection import GroupShuffleSplit
 
 ACC_RE = re.compile(r"GC[AF]_\d+\.\d+")
 PRJ_RE = re.compile(r"PRJ[A-Z]+\d+")
+BIOSAMPLE_RE = re.compile(r"SAM[NED][A-Z]?\d+")
 
 
 def parse_args() -> argparse.Namespace:
@@ -42,7 +43,11 @@ def recursive_values(obj: Any, key_hint: str) -> list[str]:
                 if isinstance(v, (str, int, float)):
                     vals.append(str(v))
                 elif isinstance(v, list):
-                    vals.extend(str(x) for x in v if isinstance(x, (str, int, float)))
+                    for x in v:
+                        if isinstance(x, (str, int, float)):
+                            vals.append(str(x))
+                        elif isinstance(x, dict):
+                            vals.extend(str(y) for y in x.values() if isinstance(y, (str, int, float)))
                 elif isinstance(v, dict):
                     vals.extend(str(x) for x in v.values() if isinstance(x, (str, int, float)))
             vals.extend(recursive_values(v, key_hint))
@@ -52,24 +57,63 @@ def recursive_values(obj: Any, key_hint: str) -> list[str]:
     return vals
 
 
+def _primary_bioproject(obj: dict[str, Any], all_projects: list[str]) -> str | None:
+    """Prefer NCBI's explicit assembly-level primary BioProject, then BioSample projects."""
+    info = obj.get("assemblyInfo") or {}
+    primary = info.get("bioprojectAccession")
+    if isinstance(primary, str) and PRJ_RE.fullmatch(primary):
+        return primary
+    biosample = info.get("biosample") or {}
+    for item in biosample.get("bioprojects") or []:
+        if isinstance(item, dict):
+            value = item.get("accession")
+            if isinstance(value, str) and PRJ_RE.fullmatch(value):
+                return value
+    return all_projects[0] if all_projects else None
+
+
 def parse_assembly_report(path: Path) -> pd.DataFrame:
     rows = []
     with open(path) as fh:
         for line in fh:
             if not line.strip():
                 continue
-            obj = json.loads(line); text = json.dumps(obj)
-            accs = ACC_RE.findall(text)
-            if not accs:
-                continue
-            acc = next((x for x in accs if x.startswith("GCF_")), accs[0])
+            obj = json.loads(line)
+            # The top-level accession is the assembly actually returned for the requested
+            # accession. Do not replace a requested GCA with the paired GCF accession.
+            acc = obj.get("accession") or obj.get("currentAccession")
+            if not isinstance(acc, str) or not ACC_RE.fullmatch(acc):
+                text = json.dumps(obj)
+                accs = ACC_RE.findall(text)
+                if not accs:
+                    continue
+                acc = accs[0]
+            text = json.dumps(obj)
             prjs = sorted(set(PRJ_RE.findall(text)))
-            bios = []
-            for v in recursive_values(obj, "biosample"):
-                bios.extend(re.findall(r"SAM[NED][A-Z]?\d+", v))
-            submitters = recursive_values(obj, "submitter") + recursive_values(obj, "organization")
-            rows.append({"assembly_ID": acc, "BioProject": prjs[0] if prjs else None, "BioProjects_all": ";".join(prjs), "BioSample_report": bios[0] if bios else None, "Submitter": submitters[0][:300] if submitters else None})
-    return pd.DataFrame(rows).drop_duplicates("assembly_ID") if rows else pd.DataFrame(columns=["assembly_ID", "BioProject", "BioProjects_all", "BioSample_report", "Submitter"])
+            primary_project = _primary_bioproject(obj, prjs)
+            info = obj.get("assemblyInfo") or {}
+            biosample_obj = info.get("biosample") or {}
+            biosample = biosample_obj.get("accession")
+            if not isinstance(biosample, str) or not BIOSAMPLE_RE.fullmatch(biosample):
+                bios = BIOSAMPLE_RE.findall(text)
+                biosample = bios[0] if bios else None
+            submitter = info.get("submitter")
+            if not submitter:
+                values = recursive_values(obj, "submitter") + recursive_values(obj, "organization")
+                submitter = values[0] if values else None
+            rows.append({
+                "assembly_ID": acc,
+                "BioProject": primary_project,
+                "BioProjects_all": ";".join(prjs),
+                "BioSample_report": biosample,
+                "Submitter": str(submitter)[:300] if submitter else None,
+            })
+    if not rows:
+        return pd.DataFrame(columns=["assembly_ID", "BioProject", "BioProjects_all", "BioSample_report", "Submitter"])
+    result = pd.DataFrame(rows).drop_duplicates("assembly_ID")
+    if result.assembly_ID.duplicated().any():
+        raise RuntimeError("Duplicate assembly accessions after NCBI report parsing")
+    return result
 
 
 def find_assembly_paths(meta: pd.DataFrame, directory: Path) -> dict[str, str]:
@@ -88,10 +132,14 @@ def find_assembly_paths(meta: pd.DataFrame, directory: Path) -> dict[str, str]:
 def choose_split(meta: pd.DataFrame, frac: float, seed: int, min_class: int) -> tuple[np.ndarray, np.ndarray, str]:
     y = (meta.phenotype.astype(str) == "R").astype(int).to_numpy()
     fallback = meta.get("AMR_associated_publications", pd.Series(index=meta.index, dtype=object)).fillna("").astype(str) + "|" + meta.get("ISO_country_code", pd.Series(index=meta.index, dtype=object)).fillna("UNK").astype(str) + "|" + meta.get("collection_year", pd.Series(index=meta.index, dtype=object)).fillna("UNK").astype(str)
-    groups = meta.BioProject.fillna("").astype(str); groups = groups.where(groups.str.len() > 0, fallback)
-    if groups.nunique() < 4: groups, basis = fallback, "country-year-publication fallback"
-    else: basis = "BioProject"
-    splitter = GroupShuffleSplit(n_splits=2000, test_size=frac, random_state=seed)
+    groups = meta.BioProject.fillna("").astype(str)
+    n_project_rows = int(groups.str.len().gt(0).sum())
+    groups = groups.where(groups.str.len() > 0, fallback)
+    if n_project_rows < max(100, int(0.5 * len(meta))) or groups.nunique() < 4:
+        groups, basis = fallback, "country-year-publication fallback"
+    else:
+        basis = "primary BioProject with fallback only for missing projects"
+    splitter = GroupShuffleSplit(n_splits=5000, test_size=frac, random_state=seed)
     best = None; target_n = len(meta) * frac; target_r = y.sum() * frac; target_s = (len(y) - y.sum()) * frac
     for tr, va in splitter.split(meta, y, groups):
         yr = y[va]; r = int(yr.sum()); s = int(len(yr) - r); dr = int(y[tr].sum()); ds = int(len(tr) - dr)
@@ -130,7 +178,14 @@ def main() -> None:
     write_pheno(meta, out / "all_phenotypes.tsv"); write_pheno(meta[meta.split == "discovery"], out / "discovery_phenotypes.tsv"); write_pheno(meta[meta.split == "validation"], out / "validation_phenotypes.tsv")
     for name, frame in [("all", meta), ("discovery", meta[meta.split == "discovery"]), ("validation", meta[meta.split == "validation"])]:
         (out / f"{name}_refs.txt").write_text("\n".join(frame.assembly_path.astype(str)) + "\n"); (out / f"{name}_samples.txt").write_text("\n".join(frame.assembly_ID.astype(str)) + "\n")
-    summary = {"n_all": int(len(meta)), "n_discovery": int((meta.split == "discovery").sum()), "n_validation": int((meta.split == "validation").sum()), "class_counts_all": meta.phenotype.value_counts().to_dict(), "class_counts_discovery": meta[meta.split == "discovery"].phenotype.value_counts().to_dict(), "class_counts_validation": meta[meta.split == "validation"].phenotype.value_counts().to_dict(), "n_source_groups_all": int(meta.source_group.nunique()), "n_source_groups_discovery": int(meta[meta.split == "discovery"].source_group.nunique()), "n_source_groups_validation": int(meta[meta.split == "validation"].source_group.nunique()), "group_disjoint": not bool(set(meta[meta.split == "discovery"].source_group) & set(meta[meta.split == "validation"].source_group)), "split_basis": basis, "seed": a.seed, "validation_fraction_requested": a.validation_fraction, "boundary": "The split was chosen from source-group and phenotype counts only; no genomic feature was examined."}
+    summary = {
+        "n_all": int(len(meta)), "n_discovery": int((meta.split == "discovery").sum()), "n_validation": int((meta.split == "validation").sum()),
+        "class_counts_all": meta.phenotype.value_counts().to_dict(), "class_counts_discovery": meta[meta.split == "discovery"].phenotype.value_counts().to_dict(), "class_counts_validation": meta[meta.split == "validation"].phenotype.value_counts().to_dict(),
+        "n_primary_bioproject_rows": int(meta.BioProject.notna().sum()), "primary_bioproject_coverage": float(meta.BioProject.notna().mean()), "n_primary_bioprojects": int(meta.BioProject.nunique(dropna=True)),
+        "n_source_groups_all": int(meta.source_group.nunique()), "n_source_groups_discovery": int(meta[meta.split == "discovery"].source_group.nunique()), "n_source_groups_validation": int(meta[meta.split == "validation"].source_group.nunique()),
+        "group_disjoint": not bool(set(meta[meta.split == "discovery"].source_group) & set(meta[meta.split == "validation"].source_group)), "split_basis": basis, "seed": a.seed, "validation_fraction_requested": a.validation_fraction,
+        "boundary": "The split was chosen from source-group and phenotype counts only; no genomic feature was examined."
+    }
     (out / "GWAS_INPUT_SUMMARY.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n")
     hashes = [f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.relative_to(out)}" for p in sorted(out.rglob("*")) if p.is_file() and p.name != "SHA256SUMS.txt"]
     (out / "SHA256SUMS.txt").write_text("\n".join(hashes) + "\n"); print(json.dumps(summary, indent=2, ensure_ascii=False))
