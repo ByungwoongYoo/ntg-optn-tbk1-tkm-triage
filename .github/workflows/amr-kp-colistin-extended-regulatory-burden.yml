@@ -23,6 +23,8 @@ jobs:
   extended-regulatory-burden:
     runs-on: ubuntu-24.04
     timeout-minutes: 360
+    env:
+      PYTHONPATH: ${{ github.workspace }}
     steps:
       - uses: actions/checkout@v4
 
