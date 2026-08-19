@@ -1,0 +1,218 @@
+name: K. pneumoniae colistin targeted variant GWAS and held-out replication
+
+on:
+  pull_request:
+    branches: [amr-kp-colistin-genome-audit-20260819]
+    paths:
+      - 'amr_discovery/build_colistin_variant_matrix.py'
+      - 'amr_discovery/prepare_colistin_gwas_inputs.py'
+      - 'amr_discovery/evaluate_colistin_gwas.py'
+      - '.github/workflows/amr-kp-colistin-targeted-gwas.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  targeted-gwas:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download successful upstream Kleborate audit artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: KP_COLISTIN_KLEBORATE_AUDIT_20260819
+          path: upstream
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 32204849662
+
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: amr-gwas
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            pandas=2.3.1
+            scipy
+            scikit-learn
+            biopython
+            blast
+            mash
+            pyseer
+            ncbi-datasets-cli
+            tabulate
+          cache-downloads: true
+          post-cleanup: all
+
+      - name: Record provenance and locate residual cohort
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p targeted_gwas/provenance
+          uname -a > targeted_gwas/provenance/UNAME.txt
+          python --version > targeted_gwas/provenance/PYTHON_VERSION.txt
+          datasets version > targeted_gwas/provenance/DATASETS_VERSION.txt
+          tblastn -version > targeted_gwas/provenance/BLAST_VERSION.txt
+          mash --version > targeted_gwas/provenance/MASH_VERSION.txt
+          pyseer --version > targeted_gwas/provenance/PYSEER_VERSION.txt
+          micromamba list > targeted_gwas/provenance/MICROMAMBA_LIST.txt
+          git rev-parse HEAD > targeted_gwas/provenance/GIT_HEAD.txt
+          find upstream -type f -maxdepth 5 -print | sort > targeted_gwas/provenance/UPSTREAM_FILE_LIST.txt
+          cohort=$(find upstream -type f -name 'residual_matched_sequence_audit_cohort.csv' | head -1)
+          test -n "$cohort"
+          cp "$cohort" targeted_gwas/residual_cohort.csv
+          accessions=$(find upstream -type f -name 'residual_sequence_audit_accessions.txt' | head -1)
+          if [[ -n "$accessions" ]]; then cp "$accessions" targeted_gwas/accessions.txt; else cut -d, -f1 targeted_gwas/residual_cohort.csv | tail -n +2 > targeted_gwas/accessions.txt; fi
+          sort -u targeted_gwas/accessions.txt -o targeted_gwas/accessions.txt
+          n=$(wc -l < targeted_gwas/accessions.txt)
+          echo "residual_accessions=$n" | tee targeted_gwas/provenance/COHORT_SIZE.txt
+          [[ "$n" -ge 100 ]]
+
+      - name: Download residual cohort assemblies and reference annotation
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p download assemblies reference_download
+          ok=0
+          for attempt in 1 2 3; do
+            rm -f download/genomes.zip
+            datasets download genome accession --inputfile targeted_gwas/accessions.txt --include genome --filename download/genomes.zip --no-progressbar \
+              2>&1 | tee "targeted_gwas/provenance/GENOME_DOWNLOAD_${attempt}.log" \
+              && unzip -tq download/genomes.zip && { ok=1; break; }
+            sleep 20
+          done
+          [[ "$ok" == 1 ]]
+          unzip -q download/genomes.zip -d download/package
+          cp download/package/ncbi_dataset/data/assembly_data_report.jsonl targeted_gwas/assembly_data_report.jsonl
+          cp download/package/ncbi_dataset/data/dataset_catalog.json targeted_gwas/dataset_catalog.json
+          find download/package/ncbi_dataset/data -mindepth 2 -maxdepth 2 -type f -name '*.fna' -print0 | while IFS= read -r -d '' f; do
+            acc=$(basename "$(dirname "$f")")
+            ln -s "$PWD/$f" "assemblies/${acc}.fna"
+          done
+          downloaded=$(find assemblies -type l | wc -l)
+          echo "downloaded=$downloaded" | tee targeted_gwas/provenance/DOWNLOAD_COUNT.txt
+          [[ "$downloaded" -ge 90 ]]
+          rm -f download/genomes.zip
+
+          datasets download genome accession GCF_000016305.1 --include genome,gbff --filename reference_download/reference.zip --no-progressbar
+          unzip -tq reference_download/reference.zip
+          unzip -q reference_download/reference.zip -d reference_download/package
+          refgbff=$(find reference_download/package -type f -name '*.gbff' | head -1)
+          test -n "$refgbff"
+          cp "$refgbff" targeted_gwas/reference.gbff
+          sha256sum targeted_gwas/reference.gbff > targeted_gwas/provenance/REFERENCE_GBFF_SHA256.txt
+
+      - name: Build targeted colistin-pathway variant matrix
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          python amr_discovery/build_colistin_variant_matrix.py \
+            --labels targeted_gwas/residual_cohort.csv \
+            --assemblies-dir assemblies \
+            --reference-gbff targeted_gwas/reference.gbff \
+            --out targeted_gwas/targeted_variants \
+            --threads 4 \
+            2>&1 | tee targeted_gwas/targeted_variant_console.log
+
+      - name: Prepare BioProject-held-out discovery and validation inputs
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          python amr_discovery/prepare_colistin_gwas_inputs.py \
+            --metadata targeted_gwas/targeted_variants/targeted_sample_metadata.csv \
+            --rtab targeted_gwas/targeted_variants/targeted_variants.Rtab \
+            --assembly-report targeted_gwas/assembly_data_report.jsonl \
+            --assemblies-dir assemblies \
+            --out targeted_gwas/gwas_inputs \
+            --validation-fraction 0.30 \
+            --seed 20260819 \
+            2>&1 | tee targeted_gwas/gwas_input_console.log
+
+      - name: Build normalized Mash distance matrices
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p targeted_gwas/structure
+          for cohort in discovery all; do
+            mash sketch -p 4 -s 10000 -l "targeted_gwas/gwas_inputs/${cohort}_refs.txt" -o "targeted_gwas/structure/${cohort}"
+            mash dist "targeted_gwas/structure/${cohort}.msh" "targeted_gwas/structure/${cohort}.msh" | square_mash > "targeted_gwas/structure/${cohort}_raw.tsv"
+            python - "$cohort" <<'PY'
+import sys
+from pathlib import Path
+import pandas as pd
+name=sys.argv[1]
+p=f'targeted_gwas/structure/{name}_raw.tsv'
+x=pd.read_csv(p,sep='\t',index_col=0)
+clean=lambda s: Path(str(s)).name.removesuffix('.fna')
+x.index=[clean(v) for v in x.index]
+x.columns=[clean(v) for v in x.columns]
+x=x.loc[x.index,x.index]
+x.to_csv(f'targeted_gwas/structure/{name}_mash.tsv',sep='\t')
+PY
+          done
+          rm -f targeted_gwas/structure/*_raw.tsv targeted_gwas/structure/*.msh
+
+      - name: Run pyseer population-structure sensitivity models
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p targeted_gwas/pyseer
+          for dim in 10 20 30; do
+            pyseer \
+              --phenotypes targeted_gwas/gwas_inputs/discovery_phenotypes.tsv \
+              --pres targeted_gwas/gwas_inputs/discovery_variants.Rtab \
+              --distances targeted_gwas/structure/discovery_mash.tsv \
+              --max-dimensions "$dim" --min-af 0.01 --max-af 0.99 \
+              --filter-pvalue 1 --print-samples \
+              --output-patterns "targeted_gwas/pyseer/discovery_dim${dim}.patterns" \
+              > "targeted_gwas/pyseer/discovery_dim${dim}.tsv" \
+              2> "targeted_gwas/pyseer/discovery_dim${dim}.log"
+            pyseer \
+              --phenotypes targeted_gwas/gwas_inputs/all_phenotypes.tsv \
+              --pres targeted_gwas/gwas_inputs/all_variants.Rtab \
+              --distances targeted_gwas/structure/all_mash.tsv \
+              --max-dimensions "$dim" --min-af 0.01 --max-af 0.99 \
+              --filter-pvalue 1 --print-samples \
+              --output-patterns "targeted_gwas/pyseer/all_dim${dim}.patterns" \
+              > "targeted_gwas/pyseer/all_dim${dim}.tsv" \
+              2> "targeted_gwas/pyseer/all_dim${dim}.log"
+          done
+
+      - name: Evaluate held-out and cross-source replication
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          python amr_discovery/evaluate_colistin_gwas.py \
+            --manifest targeted_gwas/gwas_inputs/gwas_sample_manifest.csv \
+            --rtab targeted_gwas/gwas_inputs/all_variants.Rtab \
+            --feature-meta targeted_gwas/targeted_variants/targeted_variant_metadata.csv \
+            --discovery targeted_gwas/pyseer/discovery_dim10.tsv targeted_gwas/pyseer/discovery_dim20.tsv targeted_gwas/pyseer/discovery_dim30.tsv \
+            --whole targeted_gwas/pyseer/all_dim10.tsv targeted_gwas/pyseer/all_dim20.tsv targeted_gwas/pyseer/all_dim30.tsv \
+            --out targeted_gwas/final_evaluation \
+            2>&1 | tee targeted_gwas/evaluation_console.log
+
+      - name: Remove public genome bytes and finalize evidence hashes
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          rm -rf assemblies download reference_download
+          find targeted_gwas -type f ! -name SHA256SUMS_ALL.txt -print0 | sort -z | xargs -0 sha256sum > targeted_gwas/SHA256SUMS_ALL.txt || true
+          du -ah targeted_gwas | sort -h | tail -100 > targeted_gwas/FILE_SIZES.txt || true
+
+      - name: Upload targeted GWAS evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: KP_COLISTIN_TARGETED_GWAS_20260819
+          path: targeted_gwas
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
