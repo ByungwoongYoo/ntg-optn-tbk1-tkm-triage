@@ -133,27 +133,70 @@ jobs:
             2>&1 | tee portal_unitig/discovery_unitigs/unitig_caller.log
           test -s portal_unitig/discovery_unitigs/discovery.pyseer
           wc -l < portal_unitig/discovery_unitigs/discovery.pyseer > portal_unitig/discovery_unitigs/N_UNITIG_TESTS.txt
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          import pandas as pd
+          expected=set(pd.read_csv('portal_unitig/discovery_phenotypes.tsv',sep='\t',dtype=str).samples.astype(str))
+          pat=re.compile(r'\b(GC[AF]_\d+\.\d+):1\b')
+          observed=set()
+          with open('portal_unitig/discovery_unitigs/discovery.pyseer') as fh:
+              for line in fh:
+                  observed.update(pat.findall(line))
+          missing=sorted(expected-observed)
+          extra=sorted(observed-expected)
+          if missing or extra:
+              raise SystemExit(f'Unitig/phenotype sample mismatch missing={missing[:10]} extra={extra[:10]}')
+          Path('portal_unitig/discovery_unitigs/SAMPLE_ID_AUDIT.txt').write_text(
+              f'n_expected={len(expected)}\nn_observed={len(observed)}\nexact_id_match=true\n'
+          )
+          PY
 
       - name: Build exact-ID Mash matrix helper
         shell: micromamba-shell {0}
         run: |
           cat > /tmp/normalize_mash.py <<'PY'
           import re, sys
-          from pathlib import Path
           import pandas as pd
           raw,refs_file,out=sys.argv[1:]
-          pat=re.compile(r'(GC[AF]_\d+\.\d+)')
-          def acc(v):
-              m=pat.search(str(v))
-              if not m: raise SystemExit(f'No assembly accession in {v!r}')
-              return m.group(1)
-          refs=[acc(x.strip()) for x in open(refs_file) if x.strip()]
-          if len(refs)!=len(set(refs)): raise SystemExit('nonunique assembly accessions')
+          pat=re.compile(r'(GC[AF]_\d+(?:\.\d+)?)')
+          exact=[]
+          for line in open(refs_file):
+              if not line.strip():
+                  continue
+              m=pat.search(line)
+              if not m:
+                  raise SystemExit(f'No assembly accession in reference line {line!r}')
+              token=m.group(1)
+              if '.' not in token:
+                  raise SystemExit(f'Reference accession lacks version: {token}')
+              exact.append(token)
+          if len(exact)!=len(set(exact)):
+              raise SystemExit('Nonunique reference assembly accessions')
+          exact_set=set(exact)
+          by_base={x.split('.')[0]:x for x in exact}
+          if len(by_base)!=len(exact):
+              raise SystemExit('Assembly base accessions are not one-to-one')
+          def canonical(value):
+              m=pat.search(str(value))
+              if not m:
+                  raise SystemExit(f'No assembly accession in {value!r}')
+              token=m.group(1)
+              if token in exact_set:
+                  return token
+              base=token.split('.')[0]
+              if base in by_base:
+                  return by_base[base]
+              raise SystemExit(f'Unexpected assembly ID {value!r}')
           x=pd.read_csv(raw,sep='\t',index_col=0)
-          x.index=[acc(v) for v in x.index]; x.columns=[acc(v) for v in x.columns]
-          if x.index.duplicated().any() or pd.Index(x.columns).duplicated().any(): raise SystemExit('duplicate Mash accessions')
-          if set(x.index)!=set(refs): raise SystemExit(f'ID mismatch missing={set(refs)-set(x.index)} extra={set(x.index)-set(refs)}')
-          x.loc[refs,refs].to_csv(out,sep='\t')
+          x.index=[canonical(v) for v in x.index]
+          x.columns=[canonical(v) for v in x.columns]
+          if x.index.duplicated().any() or pd.Index(x.columns).duplicated().any():
+              raise SystemExit('Duplicate Mash accessions after canonicalization')
+          missing=sorted(exact_set-set(x.index)); extra=sorted(set(x.index)-exact_set)
+          if missing or extra:
+              raise SystemExit(f'ID mismatch missing={missing[:10]} extra={extra[:10]}')
+          x.loc[exact,exact].to_csv(out,sep='\t')
           PY
 
       - name: Discovery structure and pyseer sensitivity models
@@ -231,7 +274,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: KP_COLISTIN_PORTAL_UNITIG_GWAS_20260819
+          name: KP_COLISTIN_PORTAL_UNITIG_GWAS_20260819_V5
           path: portal_unitig
           if-no-files-found: error
           retention-days: 90
