@@ -29,7 +29,7 @@ jobs:
             2>&1 | tee prefix_audit/SHORT_CONSOLE.log
           python lantern_cami3/scripts/audit_prefix_sampling.py \
             --url https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy-long/sample_0_reads.tar.gz \
-            --head-molecules 40000 --out prefix_audit/LONG_PREFIX_AUDIT.json \
+            --head-molecules 80000 --out prefix_audit/LONG_PREFIX_AUDIT.json \
             2>&1 | tee prefix_audit/LONG_CONSOLE.log
           python - <<'PY'
           import json
@@ -45,7 +45,8 @@ jobs:
             'long_taxon_coverage':l['head_taxon_coverage']>=0.70,
           }
           out={'prefix_allowed_for_heldout':all(gates.values()),'gates':gates,
-               'short_head_molecules':500000,'long_head_molecules':40000,
+               'short_head_molecules':500000,'long_head_molecules':80000,
+               'change_from_first_audit':'Long prefix increased from 40,000 to 80,000 because the 40,000-read development prefix recovered 65.54% of full-mapping taxa, below the frozen 70% gate, despite low JSD and TVD.',
                'fallback':'Use full-stream deterministic hash sampling if any representativeness gate fails.',
                'boundary':'Sampling strategy is chosen only from sample0 development metadata and is frozen before sample2/3 mapping or gold truth access.'}
           Path('prefix_audit/PREFIX_DECISION.json').write_text(json.dumps(out,indent=2)+'\n')
@@ -57,7 +58,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: LANTERN_CAMI3_V2_PREFIX_AUDIT_20260820
+          name: LANTERN_CAMI3_V2_PREFIX_AUDIT_80000_20260820
           path: prefix_audit
           if-no-files-found: error
           retention-days: 90
