@@ -1,0 +1,398 @@
+name: CAMI III LANTERN Toy long-read and hybrid benchmark
+
+on:
+  push:
+    branches: [cami3-lantern-long-hybrid-20260820]
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  READ_RUN_ID: '32285680342'
+  S0_ARTIFACT: 'LANTERN_CAMI3_TOY_READS_S0_V1'
+  S1_ARTIFACT: 'LANTERN_CAMI3_TOY_READS_S1_V1'
+
+jobs:
+  long-hybrid-benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download frozen short-and-long Toy reads for samples 0 and 1
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.S0_ARTIFACT }}
+          path: frozen_reads/S0
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.READ_RUN_ID }}
+
+      - name: Download frozen short-and-long Toy reads for sample 1
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.S1_ARTIFACT }}
+          path: frozen_reads/S1
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.READ_RUN_ID }}
+
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: lantern-long-hybrid
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            flye
+            megahit=1.2.9
+            spades
+            minimap2
+            samtools
+            mash
+            seqkit
+          cache-downloads: true
+          post-cleanup: all
+
+      - name: Locate, validate, and freeze read inputs
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          ROOT=long_hybrid_benchmark
+          mkdir -p "$ROOT"/{reads,assemblies,logs,provenance,truth_blind,evaluation,pseudo_novel,decision,failure_audit,submission}
+
+          find_one() {
+            local root="$1" pattern="$2"
+            local value
+            value=$(find "$root" -type f -name "$pattern" | head -1)
+            test -n "$value"
+            printf '%s' "$value"
+          }
+          S0_R1=$(find_one frozen_reads/S0 'S0_R1.fastq.gz')
+          S0_R2=$(find_one frozen_reads/S0 'S0_R2.fastq.gz')
+          S0_LR=$(find_one frozen_reads/S0 'S0_long.fastq.gz')
+          S1_R1=$(find_one frozen_reads/S1 'S1_R1.fastq.gz')
+          S1_R2=$(find_one frozen_reads/S1 'S1_R2.fastq.gz')
+          S1_LR=$(find_one frozen_reads/S1 'S1_long.fastq.gz')
+          printf '%s\n' "$S0_R1" > /tmp/s0_r1
+          printf '%s\n' "$S0_R2" > /tmp/s0_r2
+          printf '%s\n' "$S0_LR" > /tmp/s0_lr
+          printf '%s\n' "$S1_R1" > /tmp/s1_r1
+          printf '%s\n' "$S1_R2" > /tmp/s1_r2
+          printf '%s\n' "$S1_LR" > /tmp/s1_lr
+
+          gzip -t "$S0_R1" "$S0_R2" "$S0_LR" "$S1_R1" "$S1_R2" "$S1_LR"
+          seqkit stats -T "$S0_R1" "$S0_R2" "$S0_LR" "$S1_R1" "$S1_R2" "$S1_LR" > "$ROOT/provenance/READ_STATS.tsv"
+          sha256sum "$S0_R1" "$S0_R2" "$S0_LR" "$S1_R1" "$S1_R2" "$S1_LR" > "$ROOT/provenance/READ_SHA256.txt"
+          cat "$S0_LR" "$S1_LR" > "$ROOT/reads/pair_long.fastq.gz"
+          gzip -t "$ROOT/reads/pair_long.fastq.gz"
+          sha256sum "$ROOT/reads/pair_long.fastq.gz" > "$ROOT/provenance/PAIR_LONG_SHA256.txt"
+
+          uname -a > "$ROOT/provenance/UNAME.txt"
+          python --version > "$ROOT/provenance/PYTHON_VERSION.txt"
+          flye --version > "$ROOT/provenance/FLYE_VERSION.txt" 2>&1 || true
+          megahit --version > "$ROOT/provenance/MEGAHIT_VERSION.txt" 2>&1 || true
+          metaspades.py --version > "$ROOT/provenance/METASPADES_VERSION.txt" 2>&1 || true
+          minimap2 --version > "$ROOT/provenance/MINIMAP2_VERSION.txt"
+          samtools --version > "$ROOT/provenance/SAMTOOLS_VERSION.txt"
+          mash --version > "$ROOT/provenance/MASH_VERSION.txt"
+          seqkit version > "$ROOT/provenance/SEQKIT_VERSION.txt" 2>&1 || true
+          micromamba list > "$ROOT/provenance/MICROMAMBA_LIST.txt"
+          git rev-parse HEAD > "$ROOT/provenance/GIT_HEAD.txt"
+          cp lantern_cami3/config/lantern_frozen_v1.json lantern_cami3/config/decision_gate_v1.json "$ROOT/provenance/"
+          printf 'read_run=%s\ns0_artifact=%s\ns1_artifact=%s\ntruth_accessed=false\n' "$READ_RUN_ID" "$S0_ARTIFACT" "$S1_ARTIFACT" > "$ROOT/provenance/FROZEN_INPUTS.txt"
+          df -h > "$ROOT/provenance/DISK_BEFORE.txt"
+
+      - name: Run strong short, long, and hybrid baselines
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          ROOT=long_hybrid_benchmark
+          S0_R1=$(cat /tmp/s0_r1); S0_R2=$(cat /tmp/s0_r2); S0_LR=$(cat /tmp/s0_lr)
+          S1_R1=$(cat /tmp/s1_r1); S1_R2=$(cat /tmp/s1_r2); S1_LR=$(cat /tmp/s1_lr)
+          THREADS=4
+
+          run_assembler() {
+            local name="$1"; shift
+            local log="$ROOT/logs/${name}.log" status="$ROOT/failure_audit/${name}.status"
+            set +e
+            /usr/bin/time -v timeout --signal=TERM --kill-after=120s 150m "$@" > "$log" 2>&1
+            local rc=$?
+            set -e
+            printf 'name=%s\nexit_code=%s\ncommand=' "$name" "$rc" > "$status"
+            printf '%q ' "$@" >> "$status"; printf '\n' >> "$status"
+          }
+
+          run_assembler megahit_pair_8pct \
+            megahit -1 "$S0_R1,$S1_R1" -2 "$S0_R2,$S1_R2" \
+            -o "$ROOT/assemblies/megahit_pair_8pct" --min-contig-len 1000 -t "$THREADS" --memory 0.8
+
+          run_assembler metaflye_s0_hq \
+            flye --nano-hq "$S0_LR" --meta --threads "$THREADS" \
+            --out-dir "$ROOT/assemblies/metaflye_s0_hq"
+          run_assembler metaflye_s1_hq \
+            flye --nano-hq "$S1_LR" --meta --threads "$THREADS" \
+            --out-dir "$ROOT/assemblies/metaflye_s1_hq"
+          run_assembler metaflye_pair_hq \
+            flye --nano-hq "$ROOT/reads/pair_long.fastq.gz" --meta --threads "$THREADS" \
+            --out-dir "$ROOT/assemblies/metaflye_pair_hq"
+          run_assembler metaflye_pair_raw \
+            flye --nano-raw "$ROOT/reads/pair_long.fastq.gz" --meta --threads "$THREADS" \
+            --out-dir "$ROOT/assemblies/metaflye_pair_raw"
+
+          run_assembler metaspades_hybrid_pair \
+            metaspades.py --only-assembler -t "$THREADS" -m 12 \
+            --pe1-1 "$S0_R1" --pe1-2 "$S0_R2" \
+            --pe2-1 "$S1_R1" --pe2-2 "$S1_R2" \
+            --nanopore "$ROOT/reads/pair_long.fastq.gz" \
+            -o "$ROOT/assemblies/metaspades_hybrid_pair"
+
+      - name: Build truth-blind evidence ensemble and LANTERN ablations
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          ROOT=long_hybrid_benchmark
+          S0_R1=$(cat /tmp/s0_r1); S0_R2=$(cat /tmp/s0_r2); S0_LR=$(cat /tmp/s0_lr)
+          S1_R1=$(cat /tmp/s1_r1); S1_R2=$(cat /tmp/s1_r2); S1_LR=$(cat /tmp/s1_lr)
+          CONFIG=lantern_cami3/config/lantern_frozen_v1.json
+          SCRIPTS=lantern_cami3/scripts
+          export PYTHONPATH="$PWD/$SCRIPTS"
+
+          cat > "$ROOT/assemblies/source_manifest.tsv" <<'EOF'
+          source_id	assembler	scope	mode
+          EOF
+          ASSEMBLY_ARGS=()
+          add_assembly() {
+            local id="$1" assembler="$2" scope="$3" mode="$4" path="$5"
+            if [[ -s "$path" ]]; then
+              printf '%s\t%s\t%s\t%s\n' "$id" "$assembler" "$scope" "$mode" >> "$ROOT/assemblies/source_manifest.tsv"
+              ASSEMBLY_ARGS+=(--assembly "$id=$path")
+              sha256sum "$path" >> "$ROOT/provenance/BASELINE_FASTA_SHA256.txt"
+            fi
+          }
+          add_assembly megahit_pair8 megahit longitudinal short "$ROOT/assemblies/megahit_pair_8pct/final.contigs.fa"
+          add_assembly flye_s0_hq metaflye single long "$ROOT/assemblies/metaflye_s0_hq/assembly.fasta"
+          add_assembly flye_s1_hq metaflye single long "$ROOT/assemblies/metaflye_s1_hq/assembly.fasta"
+          add_assembly flye_pair_hq metaflye longitudinal long "$ROOT/assemblies/metaflye_pair_hq/assembly.fasta"
+          add_assembly flye_pair_raw metaflye longitudinal long "$ROOT/assemblies/metaflye_pair_raw/assembly.fasta"
+          add_assembly metaspades_hybrid metaspades longitudinal hybrid "$ROOT/assemblies/metaspades_hybrid_pair/contigs.fasta"
+          test "${#ASSEMBLY_ARGS[@]}" -ge 8
+
+          mkdir -p "$ROOT/truth_blind"/{prepared,clusters,evidence}
+          python "$SCRIPTS/prepare_candidates.py" "${ASSEMBLY_ARGS[@]}" \
+            --source-manifest "$ROOT/assemblies/source_manifest.tsv" --min-length 1000 \
+            --out "$ROOT/truth_blind/prepared" > "$ROOT/logs/PREPARE_CANDIDATES.log" 2>&1
+          minimap2 -I 256M -x asm5 -c -N 100 -t 4 \
+            "$ROOT/truth_blind/prepared/combined_candidates.fasta" \
+            "$ROOT/truth_blind/prepared/combined_candidates.fasta" \
+            > "$ROOT/truth_blind/all_vs_all.paf" 2> "$ROOT/logs/ALL_VS_ALL_MINIMAP2.log"
+          python "$SCRIPTS/cluster_candidates.py" \
+            --fasta "$ROOT/truth_blind/prepared/combined_candidates.fasta" \
+            --metadata "$ROOT/truth_blind/prepared/candidates.tsv" \
+            --paf "$ROOT/truth_blind/all_vs_all.paf" \
+            --min-identity 0.97 --min-shorter-coverage 0.85 \
+            --out "$ROOT/truth_blind/clusters" > "$ROOT/logs/CLUSTER.log" 2>&1
+
+          for sample in S0 S1; do
+            if [[ "$sample" == S0 ]]; then R1="$S0_R1"; R2="$S0_R2"; LR="$S0_LR"; else R1="$S1_R1"; R2="$S1_R2"; LR="$S1_LR"; fi
+            minimap2 -t 4 -ax sr "$ROOT/truth_blind/clusters/cluster_representatives.fasta" "$R1" "$R2" \
+              2> "$ROOT/logs/MAP_${sample}_SHORT.log" | samtools sort -@ 2 -o "$ROOT/truth_blind/evidence/${sample}_short.bam" -
+            samtools index "$ROOT/truth_blind/evidence/${sample}_short.bam"
+            samtools coverage "$ROOT/truth_blind/evidence/${sample}_short.bam" > "$ROOT/truth_blind/evidence/${sample}_short_coverage.tsv"
+
+            minimap2 -t 4 -ax map-ont "$ROOT/truth_blind/clusters/cluster_representatives.fasta" "$LR" \
+              2> "$ROOT/logs/MAP_${sample}_LONG_SAM.log" | samtools sort -@ 2 -o "$ROOT/truth_blind/evidence/${sample}_long.bam" -
+            samtools index "$ROOT/truth_blind/evidence/${sample}_long.bam"
+            samtools coverage "$ROOT/truth_blind/evidence/${sample}_long.bam" > "$ROOT/truth_blind/evidence/${sample}_long_coverage.tsv"
+            minimap2 -t 4 -x map-ont -c "$ROOT/truth_blind/clusters/cluster_representatives.fasta" "$LR" \
+              > "$ROOT/truth_blind/evidence/${sample}_long.paf" 2> "$ROOT/logs/MAP_${sample}_LONG_PAF.log"
+          done
+
+          python "$SCRIPTS/merge_mapping_evidence.py" \
+            --short-coverage "S0=$ROOT/truth_blind/evidence/S0_short_coverage.tsv" \
+            --short-coverage "S1=$ROOT/truth_blind/evidence/S1_short_coverage.tsv" \
+            --long-coverage "S0=$ROOT/truth_blind/evidence/S0_long_coverage.tsv" \
+            --long-coverage "S1=$ROOT/truth_blind/evidence/S1_long_coverage.tsv" \
+            --long-paf "S0=$ROOT/truth_blind/evidence/S0_long.paf" \
+            --long-paf "S1=$ROOT/truth_blind/evidence/S1_long.paf" \
+            --out "$ROOT/truth_blind/evidence/merged" > "$ROOT/logs/MERGE_EVIDENCE.log" 2>&1
+
+          for ablation in full no_longitudinal no_long no_consensus; do
+            python "$SCRIPTS/lantern_select.py" \
+              --fasta "$ROOT/truth_blind/clusters/cluster_representatives.fasta" \
+              --metadata "$ROOT/truth_blind/clusters/representative_metadata.tsv" \
+              --evidence "$ROOT/truth_blind/evidence/merged/mapping_evidence.tsv" \
+              --config "$CONFIG" --ablation "$ablation" \
+              --out "$ROOT/truth_blind/LANTERN_${ablation}" > "$ROOT/logs/LANTERN_${ablation}.log" 2>&1
+            python "$SCRIPTS/verify_cami_assembly.py" \
+              "$ROOT/truth_blind/LANTERN_${ablation}/LANTERN_ASSEMBLY.fasta" \
+              --out "$ROOT/truth_blind/LANTERN_${ablation}/VALIDATION.json"
+          done
+
+          python "$SCRIPTS/conservative_scaffold.py" \
+            --fasta "$ROOT/truth_blind/LANTERN_full/LANTERN_ASSEMBLY.fasta" \
+            --paf "$ROOT/truth_blind/evidence/S0_long.paf" \
+            --paf "$ROOT/truth_blind/evidence/S1_long.paf" \
+            --config "$CONFIG" --out "$ROOT/truth_blind/LANTERN_scaffolded" \
+            > "$ROOT/logs/LANTERN_SCAFFOLD.log" 2>&1
+          python "$SCRIPTS/verify_cami_assembly.py" \
+            "$ROOT/truth_blind/LANTERN_scaffolded/LANTERN_SCAFFOLDED.fasta" \
+            --out "$ROOT/truth_blind/LANTERN_scaffolded/VALIDATION.json"
+
+          python - "$ROOT" "$CONFIG" <<'PY'
+          import hashlib,json,sys,time
+          from pathlib import Path
+          root=Path(sys.argv[1]); cfg=Path(sys.argv[2]); files=[]
+          for base in [root/'assemblies',root/'truth_blind',cfg,Path('lantern_cami3/config/decision_gate_v1.json')]:
+              paths=[base] if base.is_file() else sorted(base.rglob('*'))
+              for p in paths:
+                  if p.is_file() and p.suffix not in {'.bam','.bai'} and p.name!='all_vs_all.paf':
+                      files.append({'path':str(p),'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()})
+          out={'freeze_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'git_head':(root/'provenance/GIT_HEAD.txt').read_text().strip(),'truth_accessed':False,'n_files':len(files),'files':files,'boundary':'Short, long, hybrid assembly, evidence integration, LANTERN ablations, and conservative scaffolding were frozen before Toy gold-standard access.'}
+          (root/'truth_blind/TRUTH_BLIND_FREEZE_LONG_HYBRID.json').write_text(json.dumps(out,indent=2)+'\n')
+          PY
+          sha256sum "$ROOT/truth_blind/TRUTH_BLIND_FREEZE_LONG_HYBRID.json" > "$ROOT/provenance/TRUTH_BLIND_FREEZE_SHA256.txt"
+
+      - name: Download Toy gold standards after method freeze
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          ROOT=long_hybrid_benchmark
+          mkdir -p "$ROOT/truth_download" "$ROOT/truth"
+          GSA0='https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_0_gsa.tar.gz'
+          GSA1='https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_1_gsa.tar.gz'
+          curl -fsSL --retry 8 --retry-all-errors "$GSA0" -o "$ROOT/truth_download/sample0_gsa.tar.gz"
+          curl -fsSL --retry 8 --retry-all-errors "$GSA1" -o "$ROOT/truth_download/sample1_gsa.tar.gz"
+          sha256sum "$ROOT/truth_download"/*.tar.gz > "$ROOT/provenance/GSA_INPUT_SHA256.txt"
+          PYTHONPATH="$PWD/lantern_cami3/scripts" python lantern_cami3/scripts/extract_gsa_truth.py \
+            --gsa-tar "S0=$ROOT/truth_download/sample0_gsa.tar.gz" \
+            --gsa-tar "S1=$ROOT/truth_download/sample1_gsa.tar.gz" \
+            --out "$ROOT/truth" > "$ROOT/logs/EXTRACT_TRUTH.log" 2>&1
+          test -s "$ROOT/truth/combined_truth.fasta"
+          test -s "$ROOT/truth/truth_mapping.tsv"
+
+      - name: Evaluate baselines, LANTERN ablations, and scaffolding with bounded memory
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          ROOT=long_hybrid_benchmark
+          SCRIPTS=lantern_cami3/scripts
+          export PYTHONPATH="$PWD/$SCRIPTS"
+          methods=(
+            "megahit_pair8=$ROOT/assemblies/megahit_pair_8pct/final.contigs.fa"
+            "flye_s0_hq=$ROOT/assemblies/metaflye_s0_hq/assembly.fasta"
+            "flye_s1_hq=$ROOT/assemblies/metaflye_s1_hq/assembly.fasta"
+            "flye_pair_hq=$ROOT/assemblies/metaflye_pair_hq/assembly.fasta"
+            "flye_pair_raw=$ROOT/assemblies/metaflye_pair_raw/assembly.fasta"
+            "metaspades_hybrid=$ROOT/assemblies/metaspades_hybrid_pair/contigs.fasta"
+            "LANTERN_full=$ROOT/truth_blind/LANTERN_full/LANTERN_ASSEMBLY.fasta"
+            "LANTERN_no_longitudinal=$ROOT/truth_blind/LANTERN_no_longitudinal/LANTERN_ASSEMBLY.fasta"
+            "LANTERN_no_long=$ROOT/truth_blind/LANTERN_no_long/LANTERN_ASSEMBLY.fasta"
+            "LANTERN_no_consensus=$ROOT/truth_blind/LANTERN_no_consensus/LANTERN_ASSEMBLY.fasta"
+            "LANTERN_scaffolded=$ROOT/truth_blind/LANTERN_scaffolded/LANTERN_SCAFFOLDED.fasta"
+          )
+          : > "$ROOT/failure_audit/EVALUATION_STATUS.tsv"
+          for spec in "${methods[@]}"; do
+            name=${spec%%=*}; fasta=${spec#*=}; dir="$ROOT/evaluation/$name"; mkdir -p "$dir"
+            if [[ ! -s "$fasta" ]]; then printf '%s\tMISSING_FASTA\n' "$name" >> "$ROOT/failure_audit/EVALUATION_STATUS.tsv"; continue; fi
+            sha256sum "$fasta" > "$dir/ASSEMBLY_SHA256.txt"
+            rc=0
+            set +e
+            /usr/bin/time -v minimap2 -I 128M -x asm5 -c -N 100 -t 4 \
+              "$ROOT/truth/combined_truth.fasta" "$fasta" \
+              > "$dir/assembly_to_truth.paf" 2> "$dir/minimap2.log"
+            rc=$?
+            set -e
+            if [[ "$rc" -ne 0 || ! -s "$dir/assembly_to_truth.paf" ]]; then printf '%s\tMINIMAP2_FAILED\t%s\n' "$name" "$rc" >> "$ROOT/failure_audit/EVALUATION_STATUS.tsv"; continue; fi
+            set +e
+            python "$SCRIPTS/evaluate_gold_coverage.py" \
+              --paf "$dir/assembly_to_truth.paf" --truth-mapping "$ROOT/truth/truth_mapping.tsv" \
+              --assembly-fasta "$fasta" --min-identity 0.90 --min-alignment 500 --out "$dir" \
+              > "$dir/evaluate_console.log" 2> "$dir/evaluate_error.log"
+            rc=$?
+            set -e
+            if [[ "$rc" -ne 0 || ! -s "$dir/GOLD_COVERAGE_SUMMARY.json" ]]; then printf '%s\tEVALUATOR_FAILED\t%s\n' "$name" "$rc" >> "$ROOT/failure_audit/EVALUATION_STATUS.tsv"; continue; fi
+            printf '%s\tPASS\n' "$name" >> "$ROOT/failure_audit/EVALUATION_STATUS.tsv"
+            rm -f "$dir/assembly_to_truth.paf"
+          done
+          n_pass=$(awk -F '\t' '$2=="PASS"{n++} END{print n+0}' "$ROOT/failure_audit/EVALUATION_STATUS.tsv")
+          test "$n_pass" -ge 5
+
+      - name: Pseudo-novel audit and frozen decision
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          ROOT=long_hybrid_benchmark
+          SCRIPTS=lantern_cami3/scripts
+          export PYTHONPATH="$PWD/$SCRIPTS"
+          metric_args=(); recovery_args=(); baseline_args=()
+          for dir in "$ROOT"/evaluation/*; do
+            [[ -d "$dir" && -s "$dir/GOLD_COVERAGE_SUMMARY.json" ]] || continue
+            name=$(basename "$dir")
+            metric_args+=(--metric "$name=$dir/GOLD_COVERAGE_SUMMARY.json")
+            recovery_args+=(--recovery "$name=$dir/per_genome_recovery.tsv")
+            [[ "$name" != LANTERN_* ]] && baseline_args+=(--baseline "$name")
+          done
+          test "${#metric_args[@]}" -ge 10
+          test "${#baseline_args[@]}" -ge 2
+
+          awk -F '\t' 'NR>1 && $3>=50000 {print $2}' "$ROOT/truth/genome_reference_manifest.tsv" > "$ROOT/truth/mash_reference_files.txt"
+          test $(wc -l < "$ROOT/truth/mash_reference_files.txt") -ge 2
+          mash sketch -k 21 -s 1000 -l "$ROOT/truth/mash_reference_files.txt" -o "$ROOT/truth/truth_genomes" > "$ROOT/logs/MASH_SKETCH.log" 2>&1
+          mash dist "$ROOT/truth/truth_genomes.msh" "$ROOT/truth/truth_genomes.msh" > "$ROOT/truth/truth_genome_distances.tsv"
+          python "$SCRIPTS/build_pseudo_novel_audit.py" \
+            --manifest "$ROOT/truth/genome_reference_manifest.tsv" \
+            --mash "$ROOT/truth/truth_genome_distances.tsv" \
+            "${recovery_args[@]}" --min-truth-bp 50000 --out "$ROOT/pseudo_novel" \
+            > "$ROOT/logs/PSEUDO_NOVEL.log" 2>&1
+          python "$SCRIPTS/summarize_benchmark.py" \
+            "${metric_args[@]}" "${baseline_args[@]}" \
+            --lantern LANTERN_full --no-longitudinal LANTERN_no_longitudinal \
+            --pseudo-summary "$ROOT/pseudo_novel/PSEUDO_NOVEL_RECOVERY_SUMMARY.tsv" \
+            --decision-config lantern_cami3/config/decision_gate_v1.json \
+            --out "$ROOT/decision" > "$ROOT/logs/FINAL_DECISION.log" 2>&1
+          test -s "$ROOT/decision/FINAL_DECISION.md"
+          cat "$ROOT/decision/FINAL_DECISION.md"
+
+      - name: Compact reproducibility audit and upload preparation
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          ROOT=long_hybrid_benchmark
+          rm -rf frozen_reads "$ROOT/reads" "$ROOT/truth_download" "$ROOT/truth/references"
+          rm -f "$ROOT/truth/combined_truth.fasta" "$ROOT/truth/truth_genomes.msh"
+          find "$ROOT/truth_blind/evidence" -type f \( -name '*.bam' -o -name '*.bai' -o -name '*.paf' \) -delete 2>/dev/null || true
+          rm -f "$ROOT/truth_blind/all_vs_all.paf"
+          find "$ROOT/assemblies" -type f \( -name '*.fastg' -o -name '*.gfa' -o -name '*.bam' \) -delete 2>/dev/null || true
+          df -h > "$ROOT/provenance/DISK_AFTER.txt" || true
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          root=Path('long_hybrid_benchmark')
+          summaries=[]
+          for p in sorted((root/'evaluation').glob('*/GOLD_COVERAGE_SUMMARY.json')):
+              x=json.loads(p.read_text()); x['method']=p.parent.name; summaries.append(x)
+          audit={'n_methods':len(summaries),'methods':[x['method'] for x in summaries],'decision_present':(root/'decision/FINAL_DECISION.md').is_file(),'truth_blind_freeze_present':(root/'truth_blind/TRUTH_BLIND_FREEZE_LONG_HYBRID.json').is_file(),'gold_summaries':summaries,'boundary':'Public CAMI Toy benchmark only; not an active CAMI III challenge result.'}
+          (root/'INDEPENDENT_AUDIT.json').write_text(json.dumps(audit,indent=2,sort_keys=True)+'\n')
+          lines=[]
+          for p in sorted(root.rglob('*')):
+              if p.is_file() and p.name!='SHA256SUMS_ALL.txt': lines.append(f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.relative_to(root)}')
+          (root/'SHA256SUMS_ALL.txt').write_text('\n'.join(lines)+'\n')
+          PY
+          find "$ROOT" -type f -printf '%P\t%s\n' | sort > "$ROOT/CONTENTS.tsv" || true
+          du -ah "$ROOT" | sort -h > "$ROOT/FILE_SIZES.txt" || true
+
+      - name: Upload compact long-read and hybrid benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: LANTERN_CAMI3_TOY_LONG_HYBRID_BENCHMARK_20260820
+          path: long_hybrid_benchmark
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
