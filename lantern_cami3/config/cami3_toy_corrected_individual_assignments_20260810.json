@@ -1,0 +1,19 @@
+{
+  "source": "https://cami-challenge.org/datasets/toy-human-gut/",
+  "correction_date": "2026-08-10",
+  "retrieved_date": "2026-08-20",
+  "individuals": [
+    {"individual": 1, "samples": [0, 1], "role": "public development pair"},
+    {"individual": 2, "samples": [2, 7], "role": "held-out validation"},
+    {"individual": 3, "samples": [3, 5], "role": "held-out validation"},
+    {"individual": 4, "samples": [4, 8], "role": "held-out validation"},
+    {"individual": 5, "samples": [6, 19], "role": "held-out validation"},
+    {"individual": 6, "samples": [9, 12], "role": "held-out validation"},
+    {"individual": 7, "samples": [10, 15], "role": "held-out validation"},
+    {"individual": 8, "samples": [11, 13], "role": "held-out validation"},
+    {"individual": 9, "samples": [14, 16], "role": "held-out validation"},
+    {"individual": 10, "samples": [17, 18], "role": "held-out validation"}
+  ],
+  "supersedes_incorrect_assumption": "Sequential pairs beyond samples 0 and 1 are not longitudinal pairs. Results from 2-3, 4-5, 6-7, or 8-9 are retained only as non-longitudinal/adversarial controls and are excluded from longitudinal validation.",
+  "claim_boundary": "This file transcribes the correction displayed by the official CAMI III Toy dataset page."
+}
