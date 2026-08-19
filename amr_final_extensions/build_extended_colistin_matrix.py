@@ -9,6 +9,15 @@ association-screen features; inclusion here is not evidence that a gene is causa
 """
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+# Running a file by path puts only this subdirectory on sys.path. Add the repository
+# root explicitly so the sibling amr_discovery namespace is importable on Actions.
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from amr_discovery import build_colistin_variant_matrix as base
 
 # Literature-prespecified additions. Aliases are intentionally conservative and are
