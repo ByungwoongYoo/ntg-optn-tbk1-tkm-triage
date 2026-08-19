@@ -1,0 +1,204 @@
+name: CAMI III LANTERN synthetic pseudo-novel stress suite
+
+on:
+  pull_request:
+    branches: [cami3-lantern-v3-metaspades-development-20260820]
+    paths:
+      - '.github/workflows/cami3-lantern-pseudonovel-stress.yml'
+      - 'lantern_cami3/scripts/generate_pseudonovel_benchmark.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stress:
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: [20260820, 20260821, 20260822, 20260823, 20260824]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: lantern-pseudonovel
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            megahit=1.2.9
+            spades=4.3.0
+            minimap2=2.31
+            samtools
+            seqkit
+            tabulate
+          cache-downloads: true
+          post-cleanup: all
+
+      - name: Generate one deterministic reference-withheld benchmark
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          SEED='${{ matrix.seed }}'; ROOT="pseudonovel_${SEED}"
+          mkdir -p "$ROOT"/{benchmark,assemblies,truth_blind,evaluation,validation,provenance,logs_summary,failure_audit}
+          python lantern_cami3/scripts/generate_pseudonovel_benchmark.py --seed "$SEED" --out "$ROOT/benchmark" > "$ROOT/logs_summary/GENERATOR.log"
+          gzip -t "$ROOT/benchmark/T0_R1.fastq.gz" "$ROOT/benchmark/T0_R2.fastq.gz" "$ROOT/benchmark/T1_R1.fastq.gz" "$ROOT/benchmark/T1_R2.fastq.gz"
+          sha256sum "$ROOT/benchmark"/* > "$ROOT/provenance/BENCHMARK_SHA256SUMS.txt"
+          cp lantern_cami3/config/lantern_metaspades_backbone_rescue_v3_frozen_20260820.json "$ROOT/provenance/"
+          cp lantern_cami3/config/decision_gate_v1.json "$ROOT/provenance/"
+          sha256sum lantern_cami3/config/lantern_metaspades_backbone_rescue_v3_frozen_20260820.json lantern_cami3/config/decision_gate_v1.json > "$ROOT/provenance/CONFIG_SHA256SUMS.txt"
+          git rev-parse HEAD > "$ROOT/provenance/GIT_HEAD.txt"
+          uname -a > "$ROOT/provenance/UNAME.txt"
+          python --version > "$ROOT/provenance/PYTHON_VERSION.txt"
+          megahit --version > "$ROOT/provenance/MEGAHIT_VERSION.txt" 2>&1
+          metaspades.py --version > "$ROOT/provenance/METASPADES_VERSION.txt" 2>&1
+          minimap2 --version > "$ROOT/provenance/MINIMAP2_VERSION.txt"
+          samtools --version > "$ROOT/provenance/SAMTOOLS_VERSION.txt"
+          micromamba list > "$ROOT/provenance/MICROMAMBA_LIST.txt"
+          printf 'seed=%s\nreference_withheld=true\ntarget_truth_prohibited_until_freeze=true\n' "$SEED" > "$ROOT/provenance/BOUNDARY.txt"
+
+      - name: Assemble single-timepoint and pooled baselines without reading truth
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          SEED='${{ matrix.seed }}'; ROOT="pseudonovel_${SEED}"
+          gzip -cd "$ROOT/benchmark/T0_R1.fastq.gz" "$ROOT/benchmark/T1_R1.fastq.gz" | gzip -1 > "$ROOT/benchmark/pair_R1.fastq.gz"
+          gzip -cd "$ROOT/benchmark/T0_R2.fastq.gz" "$ROOT/benchmark/T1_R2.fastq.gz" | gzip -1 > "$ROOT/benchmark/pair_R2.fastq.gz"
+          megahit -1 "$ROOT/benchmark/T0_R1.fastq.gz" -2 "$ROOT/benchmark/T0_R2.fastq.gz" -o "$ROOT/assemblies/megahit_T0" --min-contig-len 500 -t 4 --memory 0.8 > "$ROOT/logs_summary/MEGAHIT_T0.log" 2>&1
+          megahit -1 "$ROOT/benchmark/T1_R1.fastq.gz" -2 "$ROOT/benchmark/T1_R2.fastq.gz" -o "$ROOT/assemblies/megahit_T1" --min-contig-len 500 -t 4 --memory 0.8 > "$ROOT/logs_summary/MEGAHIT_T1.log" 2>&1
+          megahit -1 "$ROOT/benchmark/pair_R1.fastq.gz" -2 "$ROOT/benchmark/pair_R2.fastq.gz" -o "$ROOT/assemblies/megahit_pair" --min-contig-len 500 -t 4 --memory 0.8 > "$ROOT/logs_summary/MEGAHIT_PAIR.log" 2>&1
+          metaspades.py --only-assembler -t 4 -m 12 -1 "$ROOT/benchmark/pair_R1.fastq.gz" -2 "$ROOT/benchmark/pair_R2.fastq.gz" -o "$ROOT/assemblies/metaspades_pair" > "$ROOT/logs_summary/METASPADES_PAIR.log" 2>&1
+          for f in "$ROOT/assemblies/megahit_T0/final.contigs.fa" "$ROOT/assemblies/megahit_T1/final.contigs.fa" "$ROOT/assemblies/megahit_pair/final.contigs.fa" "$ROOT/assemblies/metaspades_pair/contigs.fasta"; do test -s "$f"; done
+
+      - name: Construct frozen v3 and longitudinal ablation without truth
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          SEED='${{ matrix.seed }}'; ROOT="pseudonovel_${SEED}"
+          mkdir -p "$ROOT/truth_blind"/{prepared,clusters,evidence/merged,v1_full,v1_no_longitudinal,v3_full,v3_no_longitudinal}
+          cat > "$ROOT/truth_blind/source_manifest.tsv" <<'EOF'
+          source_id	assembler	scope	mode
+          megahit_T0	megahit	single	short
+          megahit_T1	megahit	single	short
+          megahit_pair	megahit	longitudinal	short
+          EOF
+          python lantern_cami3/scripts/prepare_candidates.py --assembly "megahit_T0=$ROOT/assemblies/megahit_T0/final.contigs.fa" --assembly "megahit_T1=$ROOT/assemblies/megahit_T1/final.contigs.fa" --assembly "megahit_pair=$ROOT/assemblies/megahit_pair/final.contigs.fa" --source-manifest "$ROOT/truth_blind/source_manifest.tsv" --min-length 500 --out "$ROOT/truth_blind/prepared" > "$ROOT/logs_summary/PREPARE.log" 2>&1
+          minimap2 -x asm5 -c -N 100 -t 4 "$ROOT/truth_blind/prepared/combined_candidates.fasta" "$ROOT/truth_blind/prepared/combined_candidates.fasta" > "$ROOT/truth_blind/all_vs_all.paf" 2> "$ROOT/logs_summary/ALL_VS_ALL.log"
+          python lantern_cami3/scripts/cluster_candidates.py --fasta "$ROOT/truth_blind/prepared/combined_candidates.fasta" --metadata "$ROOT/truth_blind/prepared/candidates.tsv" --paf "$ROOT/truth_blind/all_vs_all.paf" --min-identity 0.97 --min-shorter-coverage 0.85 --out "$ROOT/truth_blind/clusters" > "$ROOT/logs_summary/CLUSTER.log" 2>&1
+          for tp in T0 T1; do
+            minimap2 -t 4 -ax sr "$ROOT/truth_blind/clusters/cluster_representatives.fasta" "$ROOT/benchmark/${tp}_R1.fastq.gz" "$ROOT/benchmark/${tp}_R2.fastq.gz" 2> "$ROOT/logs_summary/MAP_${tp}.log" | samtools sort -@ 2 -o "$ROOT/truth_blind/evidence/${tp}.bam" -
+            samtools index "$ROOT/truth_blind/evidence/${tp}.bam"; samtools coverage "$ROOT/truth_blind/evidence/${tp}.bam" > "$ROOT/truth_blind/evidence/${tp}_coverage.tsv"
+          done
+          python lantern_cami3/scripts/merge_mapping_evidence.py --short-coverage "T0=$ROOT/truth_blind/evidence/T0_coverage.tsv" --short-coverage "T1=$ROOT/truth_blind/evidence/T1_coverage.tsv" --out "$ROOT/truth_blind/evidence/merged" > "$ROOT/logs_summary/MERGE.log" 2>&1
+          for ab in full no_longitudinal; do python lantern_cami3/scripts/lantern_select.py --fasta "$ROOT/truth_blind/clusters/cluster_representatives.fasta" --metadata "$ROOT/truth_blind/clusters/representative_metadata.tsv" --evidence "$ROOT/truth_blind/evidence/merged/mapping_evidence.tsv" --config lantern_cami3/config/lantern_frozen_v1.json --ablation "$ab" --out "$ROOT/truth_blind/v1_${ab}" > "$ROOT/logs_summary/V1_${ab}.log" 2>&1; done
+          minimap2 -x asm5 -c -N 100 -t 4 "$ROOT/assemblies/metaspades_pair/contigs.fasta" "$ROOT/truth_blind/clusters/cluster_representatives.fasta" > "$ROOT/truth_blind/candidate_to_backbone.paf" 2> "$ROOT/logs_summary/CANDIDATE_TO_BACKBONE.log"
+          for ab in full no_longitudinal; do
+            python lantern_cami3/scripts/lantern_backbone_rescue.py --backbone "$ROOT/assemblies/metaspades_pair/contigs.fasta" --candidate-fasta "$ROOT/truth_blind/clusters/cluster_representatives.fasta" --selection "$ROOT/truth_blind/v1_${ab}/LANTERN_SELECTION.tsv" --metadata "$ROOT/truth_blind/clusters/representative_metadata.tsv" --candidate-to-backbone-paf "$ROOT/truth_blind/candidate_to_backbone.paf" --config lantern_cami3/config/lantern_metaspades_backbone_rescue_v3_frozen_20260820.json --out "$ROOT/truth_blind/v3_${ab}" > "$ROOT/logs_summary/V3_${ab}.log" 2>&1
+            python lantern_cami3/scripts/verify_cami_assembly.py "$ROOT/truth_blind/v3_${ab}/LANTERN_BACKBONE_RESCUE.fasta" --out "$ROOT/validation/V3_${ab}.json"
+          done
+          python - "$ROOT" <<'PY'
+          import hashlib,json,sys,time
+          from pathlib import Path
+          root=Path(sys.argv[1]); paths=[root/'assemblies/megahit_T0/final.contigs.fa',root/'assemblies/megahit_T1/final.contigs.fa',root/'assemblies/megahit_pair/final.contigs.fa',root/'assemblies/metaspades_pair/contigs.fasta',root/'truth_blind/v3_full/LANTERN_BACKBONE_RESCUE.fasta',root/'truth_blind/v3_no_longitudinal/LANTERN_BACKBONE_RESCUE.fasta']
+          files=[{'path':str(p),'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'bytes':p.stat().st_size} for p in paths]
+          (root/'provenance/TRUTH_BLIND_FREEZE.json').write_text(json.dumps({'freeze_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'target_truth_used_by_pipeline':False,'files':files},indent=2)+'\n')
+          PY
+
+      - name: Evaluate frozen outputs against withheld target truth
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          SEED='${{ matrix.seed }}'; ROOT="pseudonovel_${SEED}"
+          cat > "$ROOT/evaluation/METHOD_PATHS.tsv" <<EOF
+          method	fasta
+          megahit_T0	$ROOT/assemblies/megahit_T0/final.contigs.fa
+          megahit_T1	$ROOT/assemblies/megahit_T1/final.contigs.fa
+          megahit_pair	$ROOT/assemblies/megahit_pair/final.contigs.fa
+          metaspades_pair	$ROOT/assemblies/metaspades_pair/contigs.fasta
+          lantern_v3	$ROOT/truth_blind/v3_full/LANTERN_BACKBONE_RESCUE.fasta
+          lantern_v3_no_longitudinal	$ROOT/truth_blind/v3_no_longitudinal/LANTERN_BACKBONE_RESCUE.fasta
+          EOF
+          while IFS=$'\t' read -r method fasta; do
+            test "$method" = method && continue; mkdir -p "$ROOT/evaluation/$method"
+            minimap2 -x asm5 -c -N 100 -t 4 "$ROOT/benchmark/withheld_target_truth.fasta" "$fasta" > "$ROOT/evaluation/$method/map.paf" 2> "$ROOT/evaluation/$method/minimap2.log"
+            python lantern_cami3/scripts/evaluate_gold_coverage.py --paf "$ROOT/evaluation/$method/map.paf" --truth-mapping "$ROOT/benchmark/truth_mapping.tsv" --assembly-fasta "$fasta" --min-identity 0.90 --min-alignment 500 --out "$ROOT/evaluation/$method" > "$ROOT/evaluation/$method/console.log"
+          done < "$ROOT/evaluation/METHOD_PATHS.tsv"
+          python - "$SEED" "$ROOT" <<'PY'
+          import csv,json,sys
+          from pathlib import Path
+          seed,root=sys.argv[1:]; root=Path(root); methods={}
+          for d in (root/'evaluation').iterdir():
+              p=d/'GOLD_COVERAGE_SUMMARY.json'
+              if p.is_file(): methods[d.name]=json.loads(p.read_text())
+          baselines=['megahit_T0','megahit_T1','megahit_pair','metaspades_pair']; strongest=max(baselines,key=lambda m:(methods[m]['genome_fraction_percent'],methods[m]['mean_genome_recovery']))
+          base=methods[strongest]; full=methods['lantern_v3']; abl=methods['lantern_v3_no_longitudinal']
+          manifest={r['genome_id']:r for r in csv.DictReader(open(root/'benchmark/PSEUDONOVEL_MANIFEST.csv'))}
+          def recovery(method): return {r['genome_id']:float(r['recovery']) for r in csv.DictReader(open(root/f'evaluation/{method}/per_genome_recovery.tsv'),delimiter='\t')}
+          rb,rf=recovery(strongest),recovery('lantern_v3'); low=[g for g,r in manifest.items() if r['low_abundance'].lower()=='true']
+          low_base=100*sum(rb.get(g,0) for g in low)/len(low); low_full=100*sum(rf.get(g,0) for g in low)/len(low)
+          rel=(full['cross_binid_chimeric_bp_fraction']/base['cross_binid_chimeric_bp_fraction']-1) if base['cross_binid_chimeric_bp_fraction'] else (0 if full['cross_binid_chimeric_bp_fraction']==0 else None)
+          out={'status':'COMPLETE','seed':int(seed),'strongest_baseline':strongest,'baseline_genome_fraction_percent':base['genome_fraction_percent'],'lantern_v3_genome_fraction_percent':full['genome_fraction_percent'],'genome_fraction_gain_percentage_points':full['genome_fraction_percent']-base['genome_fraction_percent'],'mean_recovery_gain_percentage_points':100*(full['mean_genome_recovery']-base['mean_genome_recovery']),'low_abundance_baseline_recovery_percent':low_base,'low_abundance_lantern_recovery_percent':low_full,'low_abundance_gain_percentage_points':low_full-low_base,'longitudinal_ablation_drop_percentage_points':full['genome_fraction_percent']-abl['genome_fraction_percent'],'relative_chimera_change':rel,'claim_boundary':'Synthetic reference-withheld sequence stress test only; not biological novelty or hidden CAMI performance.'}
+          (root/'STRESS_RESULT.json').write_text(json.dumps(out,indent=2)+'\n'); print(json.dumps(out,indent=2))
+          PY
+
+      - name: Compact and upload seed evidence
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          SEED='${{ matrix.seed }}'; ROOT="pseudonovel_${SEED}"
+          rm -f "$ROOT/benchmark"/*.fastq.gz "$ROOT/truth_blind"/*.paf "$ROOT/truth_blind/evidence"/*.bam "$ROOT/truth_blind/evidence"/*.bai
+          find "$ROOT/evaluation" -type f -name map.paf -delete 2>/dev/null || true
+          find "$ROOT/assemblies" -type f ! -name '*.fa' ! -name '*.fasta' -delete 2>/dev/null || true
+          find "$ROOT" -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > "$ROOT/SHA256SUMS.txt" || true
+          du -ah "$ROOT" | sort -h > "$ROOT/FILE_SIZES.txt" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: LANTERN_CAMI3_PSEUDONOVEL_${{ matrix.seed }}_20260820
+          path: pseudonovel_${{ matrix.seed }}
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
+
+  aggregate:
+    needs: stress
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: LANTERN_CAMI3_PSEUDONOVEL_*_20260820
+          path: seed_artifacts
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Aggregate fixed five-seed stress test
+        run: |
+          set -euo pipefail
+          mkdir -p aggregate
+          python - <<'PY'
+          import csv,json,statistics
+          from pathlib import Path
+          rows=[json.loads(p.read_text()) for p in sorted(Path('seed_artifacts').rglob('STRESS_RESULT.json'))]
+          fields=sorted({k for r in rows for k in r});
+          with open('aggregate/PSEUDONOVEL_STRESS_RESULTS.csv','w',newline='') as f: w=csv.DictWriter(f,fieldnames=fields);w.writeheader();w.writerows(rows)
+          if rows:
+              gf=[r['genome_fraction_gain_percentage_points'] for r in rows]; mr=[r['mean_recovery_gain_percentage_points'] for r in rows]; low=[r['low_abundance_gain_percentage_points'] for r in rows]; ab=[r['longitudinal_ablation_drop_percentage_points'] for r in rows]; rel=[r['relative_chimera_change'] for r in rows if r['relative_chimera_change'] is not None]
+              passes={'all_five_seeds_complete':len(rows)==5,'genome_fraction_gain':statistics.mean(gf)>=0.5,'mean_recovery_gain':statistics.mean(mr)>=1.0,'low_abundance_gain':statistics.mean(low)>=2.0,'longitudinal_ablation':statistics.mean(ab)>=0.5,'majority_positive':sum(x>0 for x in gf)>=3,'chimera_tradeoff':bool(rel) and max(rel)<=0.10}
+              out={'verdict':'PASS' if all(passes.values()) else 'FAIL','n_complete':len(rows),'mean_genome_fraction_gain_percentage_points':statistics.mean(gf),'mean_mean_recovery_gain_percentage_points':statistics.mean(mr),'mean_low_abundance_gain_percentage_points':statistics.mean(low),'mean_longitudinal_ablation_drop_percentage_points':statistics.mean(ab),'positive_seeds':sum(x>0 for x in gf),'maximum_relative_chimera_change':max(rel) if rel else None,'passes':passes,'boundary':'Synthetic reference-withheld sequence stress suite; not biological novelty evidence.'}
+          else: out={'verdict':'FAIL','n_complete':0,'reason':'No completed stress seed'}
+          Path('aggregate/PSEUDONOVEL_STRESS_DECISION.json').write_text(json.dumps(out,indent=2)+'\n'); print(json.dumps(out,indent=2))
+          PY
+          find aggregate -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > aggregate/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LANTERN_CAMI3_PSEUDONOVEL_AGGREGATE_20260820
+          path: aggregate
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
