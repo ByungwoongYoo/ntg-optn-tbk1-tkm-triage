@@ -48,6 +48,8 @@ def make_read_archives(work):
     sj=json.loads((out/'sample0_short_downsample.json').read_text());lj=json.loads((out/'sample0_long_downsample.json').read_text())
     assert sj['members'][0]['kept_records']==100 and sj['members'][1]['kept_records']==100
     assert lj['members'][0]['kept_records']==50 and sj['pair_integrity']
+    assert (out/'sample0_R1.fastq.gz').is_file() and (out/'sample0_R2.fastq.gz').is_file()
+    assert (out/'sample0_long.fastq.gz').is_file()
 
 def make_assemblies(work):
     a=dna(2400,1);b=dna(2200,2);c=dna(1800,3);d=dna(1700,4);e=dna(2100,5);noise=dna(900,6)
@@ -140,7 +142,7 @@ def gold_test(work,assembly):
     paf=work/'gold.paf'
     with open(paf,'w') as f:
         for i,(q,s) in enumerate(chosen,1):f.write(f'{q}\t{len(s)}\t0\t{len(s)}\t+\tg{i}|00001\t{len(s)}\t0\t{len(s)}\t{len(s)}\t{len(s)}\t60\n')
-    out=work/'gold_eval';run(sys.executable,SCRIPTS/'evaluate_gold_coverage.py','--paf',paf,'--truth-mapping',mapping,'--min-alignment','500','--out',out)
+    out=work/'gold_eval';run(sys.executable,SCRIPTS/'evaluate_gold_coverage.py','--paf',paf,'--truth-mapping',mapping,'--assembly-fasta',assembly,'--min-alignment','500','--out',out)
     summary=json.loads((out/'GOLD_COVERAGE_SUMMARY.json').read_text());assert summary['genomes_recovered_90']==2
     report=work/'report.tsv';report.write_text('Assembly\tmethod\nGenome fraction (%)\t12.5\nDuplication ratio\t1.02\n# misassemblies\t2\nN50\t2000\n')
     run(sys.executable,SCRIPTS/'parse_metaquast.py','--report',report,'--method','fixture','--out',work/'parsed.json')
