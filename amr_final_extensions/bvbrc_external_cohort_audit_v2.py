@@ -11,11 +11,19 @@ then runs the frozen audit unchanged.
 from __future__ import annotations
 
 import hashlib
-import json
 import re
+import sys
 import time
+from pathlib import Path
 
 import requests
+
+# When invoked as `python amr_final_extensions/<file>.py`, Python places only the
+# script directory on sys.path. Add the repository root explicitly so the sibling
+# package can be imported reproducibly on GitHub Actions and local clean rooms.
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from amr_final_extensions import bvbrc_external_cohort_audit as base
 
@@ -135,7 +143,7 @@ def request_rql(
     while len(records) < requested_total:
         remaining = requested_total - len(records)
         page_size = min(api_cap, remaining)
-        payload, meta, raw = _request_page(
+        payload, meta, _raw = _request_page(
             collection,
             expression,
             fields,
