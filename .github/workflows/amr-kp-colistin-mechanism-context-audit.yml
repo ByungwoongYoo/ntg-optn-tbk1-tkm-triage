@@ -1,0 +1,220 @@
+name: Audit colistin candidate mechanism sequence context and literature
+
+on:
+  pull_request:
+    branches: [amr-kp-colistin-genome-audit-20260819]
+    paths:
+      - '.github/workflows/amr-kp-colistin-mechanism-context-audit.yml'
+      - 'amr_discovery/verify_candidate_sequences.py'
+      - 'amr_discovery/search_candidate_literature.py'
+      - 'amr_discovery/summarize_mechanism_context_audit.py'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  mechanism-context:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: amr-mechanism-context
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11 pandas=2.3.1 numpy biopython blast ncbi-datasets-cli
+            ncbi-amrfinderplus prokka kleborate=3.2.4 kaptive<3 tabulate=0.9.0
+          cache-downloads: true
+          post-cleanup: all
+      - name: Download latest promoted-candidate support audit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p context_inputs/support mechanism_context/provenance
+          python - <<'PY'
+          import json,os,urllib.request,zipfile
+          from pathlib import Path
+          repo=os.environ['REPOSITORY'];token=os.environ['GH_TOKEN'];headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json','User-Agent':'AMR-mechanism-context-audit'}
+          def get(url):
+              req=urllib.request.Request(url,headers=headers)
+              with urllib.request.urlopen(req,timeout=60) as r:return json.load(r)
+          def dl(url,path):
+              req=urllib.request.Request(url,headers=headers)
+              with urllib.request.urlopen(req,timeout=180) as r:path.write_bytes(r.read())
+          runs=get(f'https://api.github.com/repos/{repo}/actions/runs?branch=amr-kp-colistin-targeted-portal-gwas-20260819&per_page=100').get('workflow_runs',[])
+          selected=None
+          for run in sorted(runs,key=lambda r:r.get('created_at',''),reverse=True):
+              if run.get('status')!='completed':continue
+              arts=get(f'https://api.github.com/repos/{repo}/actions/runs/{run["id"]}/artifacts').get('artifacts',[])
+              art=next((a for a in arts if a['name'].startswith('KP_COLISTIN_PROMOTED_CANDIDATE_SUPPORT_AUDIT_') and not a.get('expired')),None)
+              if art:selected=(run,art);break
+          if selected is None:raise SystemExit('No promoted candidate support artifact')
+          run,art=selected;z=Path('context_inputs/support/support.zip');dl(art['archive_download_url'],z);ex=Path('context_inputs/support/extracted');ex.mkdir(parents=True,exist_ok=True)
+          with zipfile.ZipFile(z) as f:f.extractall(ex)
+          z.unlink();Path('mechanism_context/provenance/SUPPORT_ARTIFACT.json').write_text(json.dumps({'run_id':run['id'],'head_sha':run.get('head_sha'),'artifact_id':art['id'],'artifact_name':art['name'],'digest':art.get('digest')},indent=2)+'\n')
+          PY
+          classification=$(find context_inputs/support -type f -name CANDIDATE_CLASSIFICATION.csv | head -1)
+          support=$(find context_inputs/support -type f -name CANDIDATE_SUPPORT_MANIFEST.csv | head -1)
+          representatives=$(find context_inputs/support -type f -name REPRESENTATIVE_CONTEXT_ACCESSIONS.csv | head -1)
+          test -n "$classification"; test -n "$support"
+          printf '%s\n' "$classification" > /tmp/classification
+          printf '%s\n' "$support" > /tmp/support
+          printf '%s\n' "$representatives" > /tmp/representatives
+          unitigs=$(find context_inputs/support -type f -name PROMOTED_UNITIGS.fasta | head -1 || true)
+          printf '%s\n' "$unitigs" > /tmp/unitigs
+          python - <<'PY'
+          import pandas as pd
+          p=open('/tmp/classification').read().strip();x=pd.read_csv(p) if p else pd.DataFrame()
+          open('/tmp/n_candidates','w').write(str(len(x)))
+          PY
+      - name: Emit empty audit when no promoted candidate exists
+        if: ${{ always() }}
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          n=$(cat /tmp/n_candidates)
+          if [[ "$n" != 0 ]]; then exit 0; fi
+          mkdir -p mechanism_context/results
+          cat > mechanism_context/results/MECHANISM_CONTEXT_AUDIT_SUMMARY.json <<'EOF'
+          {
+            "status": "NO_CROSS_METHOD_PROMOTED_CANDIDATE_TO_AUDIT",
+            "n_candidates": 0,
+            "n_advance_to_independent_validation": 0,
+            "claim_boundary": "No genomic marker advances from this dataset at the current evidence threshold."
+          }
+          EOF
+          touch mechanism_context/NO_CANDIDATE
+      - name: Download representative assemblies and pinned reference
+        if: ${{ hashFiles('mechanism_context/NO_CANDIDATE') == '' }}
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          representatives=$(cat /tmp/representatives)
+          test -n "$representatives"
+          cut -d, -f1 "$representatives" | tail -n +2 | sed '/^$/d' | sort -u > mechanism_context/representative_accessions.txt
+          # Fall back to the explicit accession file if CSV ordering differs.
+          if ! grep -q '^GC[AF]_' mechanism_context/representative_accessions.txt; then
+            explicit=$(find context_inputs/support -type f -name REPRESENTATIVE_ACCESSIONS.txt | head -1)
+            test -n "$explicit"; cp "$explicit" mechanism_context/representative_accessions.txt
+          fi
+          mkdir -p context_download assemblies reference_download
+          datasets download genome accession --inputfile mechanism_context/representative_accessions.txt --include genome --filename context_download/genomes.zip --no-progressbar
+          unzip -tq context_download/genomes.zip
+          sha256sum context_download/genomes.zip > mechanism_context/provenance/GENOME_ZIP_SHA256.txt
+          unzip -q context_download/genomes.zip -d context_download/package
+          find context_download/package/ncbi_dataset/data -mindepth 2 -maxdepth 2 -type f -name '*.fna' -print0 | while IFS= read -r -d '' f; do
+            acc=$(basename "$(dirname "$f")"); ln -s "$PWD/$f" "assemblies/${acc}.fna"
+          done
+          datasets download genome accession GCF_000016305.1 --include genome,gbff --filename reference_download/reference.zip --no-progressbar
+          unzip -tq reference_download/reference.zip
+          unzip -q reference_download/reference.zip -d reference_download/package
+          ref=$(find reference_download/package -type f -name '*.gbff' | head -1); test -n "$ref"; cp "$ref" mechanism_context/reference.gbff
+          sha256sum mechanism_context/reference.gbff > mechanism_context/provenance/REFERENCE_SHA256.txt
+          rm -f context_download/genomes.zip reference_download/reference.zip
+      - name: Independently recall targeted variants and unitig contexts
+        if: ${{ hashFiles('mechanism_context/NO_CANDIDATE') == '' }}
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          classification=$(cat /tmp/classification);support=$(cat /tmp/support);representatives=$(cat /tmp/representatives);unitigs=$(cat /tmp/unitigs)
+          args=(--classification "$classification" --support "$support" --representatives "$representatives" --assemblies-dir assemblies --reference-gbff mechanism_context/reference.gbff --out mechanism_context/sequence_verification)
+          [[ -n "$unitigs" ]] && args+=(--unitigs "$unitigs")
+          python amr_discovery/verify_candidate_sequences.py "${args[@]}" 2>&1 | tee mechanism_context/sequence_verification_console.log
+      - name: Run AMRFinderPlus on representative complete assemblies
+        if: ${{ hashFiles('mechanism_context/NO_CANDIDATE') == '' }}
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p mechanism_context/amrfinder/per_assembly
+          (amrfinder -u || true) > mechanism_context/amrfinder/update.log 2>&1
+          first=1
+          for f in assemblies/*.fna; do
+            acc=$(basename "$f" .fna)
+            out="mechanism_context/amrfinder/per_assembly/${acc}.tsv"
+            if amrfinder -n "$f" -O Klebsiella_pneumoniae --plus --threads 4 -o "$out" > "${out}.stdout" 2> "${out}.stderr"; then :; else
+              amrfinder -n "$f" --plus --threads 4 -o "$out" > "${out}.stdout" 2> "${out}.stderr" || true
+            fi
+            if [[ -s "$out" ]]; then
+              python - "$acc" "$out" "$first" <<'PY'
+          import sys,pandas as pd
+          acc,path,first=sys.argv[1],sys.argv[2],int(sys.argv[3]);x=pd.read_csv(path,sep='\t',dtype=str);x.insert(0,'assembly_ID',acc);x.to_csv('mechanism_context/amrfinder/AMRFINDER_COMBINED.tsv',sep='\t',index=False,mode='w' if first else 'a',header=bool(first))
+          PY
+              first=0
+            fi
+          done
+          [[ -f mechanism_context/amrfinder/AMRFINDER_COMBINED.tsv ]] || printf 'assembly_ID\n' > mechanism_context/amrfinder/AMRFINDER_COMBINED.tsv
+      - name: Run fresh compatible Kleborate audit
+        if: ${{ hashFiles('mechanism_context/NO_CANDIDATE') == '' }}
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p mechanism_context/kleborate
+          kleborate --version > mechanism_context/kleborate/VERSION.txt 2>&1 || true
+          kleborate --help > mechanism_context/kleborate/HELP.txt 2>&1 || true
+          set +e
+          kleborate -a assemblies/*.fna --preset kpsc -o mechanism_context/kleborate/KLEBORATE.tsv > mechanism_context/kleborate/stdout.log 2> mechanism_context/kleborate/stderr.log
+          rc=$?
+          if [[ "$rc" -ne 0 ]]; then
+            kleborate --input assemblies/*.fna --preset kpsc --output mechanism_context/kleborate/KLEBORATE.tsv >> mechanism_context/kleborate/stdout.log 2>> mechanism_context/kleborate/stderr.log
+            rc=$?
+          fi
+          set -e
+          echo "$rc" > mechanism_context/kleborate/RETURN_CODE.txt
+          [[ -f mechanism_context/kleborate/KLEBORATE.tsv ]] || printf 'assembly_ID\n' > mechanism_context/kleborate/KLEBORATE.tsv
+      - name: Annotate recovered unitig contexts with AMRFinderPlus and Prokka
+        if: ${{ hashFiles('mechanism_context/sequence_verification/UNITIG_FLANKING_CONTEXTS.fasta') != '' }}
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p mechanism_context/context_annotation
+          amrfinder -n mechanism_context/sequence_verification/UNITIG_FLANKING_CONTEXTS.fasta --plus --threads 4 -o mechanism_context/context_annotation/CONTEXT_AMRFINDER.tsv > mechanism_context/context_annotation/amrfinder.stdout 2> mechanism_context/context_annotation/amrfinder.stderr || true
+          prokka --outdir mechanism_context/context_annotation/prokka --prefix unitig_contexts --kingdom Bacteria --genus Klebsiella --species pneumoniae --cpus 4 --force mechanism_context/sequence_verification/UNITIG_FLANKING_CONTEXTS.fasta > mechanism_context/context_annotation/prokka.stdout 2> mechanism_context/context_annotation/prokka.stderr || true
+          [[ -f mechanism_context/context_annotation/CONTEXT_AMRFINDER.tsv ]] || printf 'assembly_ID\n' > mechanism_context/context_annotation/CONTEXT_AMRFINDER.tsv
+      - name: Search Europe PMC and PubMed with timestamped queries
+        if: ${{ hashFiles('mechanism_context/NO_CANDIDATE') == '' }}
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          classification=$(cat /tmp/classification)
+          python amr_discovery/search_candidate_literature.py --classification "$classification" --out mechanism_context/literature 2>&1 | tee mechanism_context/literature_console.log
+      - name: Integrate mechanism, sequence-context and literature gates
+        if: ${{ hashFiles('mechanism_context/NO_CANDIDATE') == '' }}
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          classification=$(cat /tmp/classification);support=$(cat /tmp/support)
+          python amr_discovery/summarize_mechanism_context_audit.py \
+            --classification "$classification" --support "$support" \
+            --sequence-dir mechanism_context/sequence_verification \
+            --amrfinder mechanism_context/amrfinder/AMRFINDER_COMBINED.tsv \
+            --kleborate mechanism_context/kleborate/KLEBORATE.tsv \
+            --literature mechanism_context/literature/CANDIDATE_LITERATURE_SEARCH_SUMMARY.csv \
+            --context-amrfinder mechanism_context/context_annotation/CONTEXT_AMRFINDER.tsv \
+            --out mechanism_context/results \
+            2>&1 | tee mechanism_context/integration_console.log
+      - name: Remove public genome bytes and finalize hashes
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          rm -rf assemblies context_download reference_download
+          find mechanism_context -type f ! -name SHA256SUMS_ALL.txt -print0 | sort -z | xargs -0 sha256sum > mechanism_context/SHA256SUMS_ALL.txt || true
+          du -ah mechanism_context | sort -h | tail -400 > mechanism_context/FILE_SIZES.txt || true
+      - name: Upload mechanism and context evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: KP_COLISTIN_MECHANISM_CONTEXT_AUDIT_20260819
+          path: mechanism_context
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
