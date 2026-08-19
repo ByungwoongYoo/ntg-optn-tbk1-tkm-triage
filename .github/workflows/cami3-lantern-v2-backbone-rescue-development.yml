@@ -1,0 +1,216 @@
+name: CAMI III LANTERN v2 backbone-rescue development on public Toy pair
+
+on:
+  pull_request:
+    branches: [cami3-lantern-20260819]
+    paths:
+      - '.github/workflows/cami3-lantern-v2-backbone-rescue-development.yml'
+      - 'lantern_cami3/scripts/lantern_backbone_rescue.py'
+      - 'lantern_cami3/scripts/develop_backbone_rescue_v2.py'
+      - 'lantern_cami3/scripts/evaluate_gold_coverage.py'
+      - 'lantern_cami3/scripts/verify_cami_assembly.py'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  TRAINING_RUN_ID: '32285680577'
+  TRAINING_ARTIFACT: 'LANTERN_CAMI3_TOY_SHORT_BENCHMARK_20260819'
+
+jobs:
+  develop-v2:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download preserved pair-0/1 development artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.TRAINING_ARTIFACT }}
+          path: training_artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.TRAINING_RUN_ID }}
+
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: lantern-v2-development
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            minimap2=2.31
+            tabulate
+          cache-downloads: true
+          post-cleanup: all
+
+      - name: Locate development inputs and patch the executed grid script for constant-time backbone hash lookup
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          ROOT=$(find training_artifact -type d -name lantern_short_benchmark | head -1)
+          test -n "$ROOT"
+          printf '%s\n' "$ROOT" > /tmp/training_root
+          mkdir -p v2_development/{alignments,development,best_assembly,validation,provenance,code_snapshot,configs,logs_summary,failure_audit}
+          test -s "$ROOT/assemblies/megahit_longitudinal/final.contigs.fa"
+          test -s "$ROOT/truth_blind/clusters/cluster_representatives.fasta"
+          test -s "$ROOT/truth_blind/clusters/representative_metadata.tsv"
+          test -s "$ROOT/truth_blind/LANTERN_full/LANTERN_SELECTION.tsv"
+          test -s "$ROOT/truth/combined_truth.fasta"
+          test -s "$ROOT/truth/truth_mapping.tsv"
+          test -s "$ROOT/truth_blind/TRUTH_BLIND_FREEZE.json"
+          cp lantern_cami3/scripts/develop_backbone_rescue_v2.py /tmp/develop_backbone_rescue_v2.py
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/develop_backbone_rescue_v2.py')
+          s=p.read_text()
+          anchor='    selection = load_tsv(args.selection, "contig_id")\n'
+          if anchor not in s: raise SystemExit('development-script patch anchor missing')
+          s=s.replace(anchor, anchor+'    backbone_hashes = {hashlib.sha256(seq.encode("ascii")).hexdigest() for seq in backbone.values()}\n',1)
+          old='''            if keep and hashlib.sha256(seq.encode("ascii")).hexdigest() not in {\n                hashlib.sha256(value.encode("ascii")).hexdigest() for value in backbone.values()\n            }:\n'''
+          new='''            if keep and hashlib.sha256(seq.encode("ascii")).hexdigest() not in backbone_hashes:\n'''
+          if old not in s: raise SystemExit('development-script expensive-hash block missing')
+          s=s.replace(old,new,1)
+          p.write_text(s)
+          PY
+          python -m py_compile /tmp/develop_backbone_rescue_v2.py lantern_cami3/scripts/lantern_backbone_rescue.py
+          cp /tmp/develop_backbone_rescue_v2.py v2_development/code_snapshot/develop_backbone_rescue_v2_EXECUTED.py
+          cp lantern_cami3/scripts/{lantern_backbone_rescue.py,evaluate_gold_coverage.py,verify_cami_assembly.py,fasta_utils.py} v2_development/code_snapshot/
+          git rev-parse HEAD > v2_development/provenance/GIT_HEAD.txt
+          printf 'training_run=%s\ntraining_artifact=%s\npublic_training_pair=0,1\n' "$TRAINING_RUN_ID" "$TRAINING_ARTIFACT" > v2_development/provenance/UPSTREAM.txt
+          sha256sum "$ROOT/truth_blind/TRUTH_BLIND_FREEZE.json" > v2_development/provenance/V1_TRUTH_BLIND_FREEZE_SHA256.txt
+          cp "$ROOT/truth_blind/TRUTH_BLIND_FREEZE.json" v2_development/provenance/
+          uname -a > v2_development/provenance/UNAME.txt
+          python --version > v2_development/provenance/PYTHON_VERSION.txt
+          minimap2 --version > v2_development/provenance/MINIMAP2_VERSION.txt
+          micromamba list > v2_development/provenance/MICROMAMBA_LIST.txt
+          sha256sum v2_development/code_snapshot/* > v2_development/provenance/EXECUTED_CODE_SHA256SUMS.txt
+          cat > v2_development/provenance/DEVELOPMENT_BOUNDARY.md <<'EOF'
+          # Development boundary
+
+          Pair 0/1 public Toy gold truth is used only to choose one LANTERN v2 backbone-rescue configuration. The resulting configuration has no external-validation status. It must be committed unchanged and tested on different Toy individuals before any performance claim, and hidden challenge data must not be used for retuning.
+          EOF
+
+      - name: Align immutable backbone and candidate pool once
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          ROOT=$(cat /tmp/training_root)
+          BACKBONE="$ROOT/assemblies/megahit_longitudinal/final.contigs.fa"
+          CANDIDATES="$ROOT/truth_blind/clusters/cluster_representatives.fasta"
+          TRUTH="$ROOT/truth/combined_truth.fasta"
+          minimap2 -x asm5 -c -N 100 -t 4 "$BACKBONE" "$CANDIDATES" \
+            > v2_development/alignments/candidate_to_backbone.paf \
+            2> v2_development/alignments/candidate_to_backbone.log
+          minimap2 -x asm5 -c -N 100 -t 4 "$TRUTH" "$BACKBONE" \
+            > v2_development/alignments/backbone_to_truth.paf \
+            2> v2_development/alignments/backbone_to_truth.log
+          minimap2 -x asm5 -c -N 100 -t 4 "$TRUTH" "$CANDIDATES" \
+            > v2_development/alignments/candidate_to_truth.paf \
+            2> v2_development/alignments/candidate_to_truth.log
+          sha256sum v2_development/alignments/*.paf > v2_development/provenance/ALIGNMENT_SHA256SUMS.txt
+
+      - name: Select one training configuration across the fixed grid
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          ROOT=$(cat /tmp/training_root)
+          export PYTHONPATH="$PWD/lantern_cami3/scripts"
+          python /tmp/develop_backbone_rescue_v2.py \
+            --backbone-fasta "$ROOT/assemblies/megahit_longitudinal/final.contigs.fa" \
+            --candidate-fasta "$ROOT/truth_blind/clusters/cluster_representatives.fasta" \
+            --selection "$ROOT/truth_blind/LANTERN_full/LANTERN_SELECTION.tsv" \
+            --metadata "$ROOT/truth_blind/clusters/representative_metadata.tsv" \
+            --candidate-to-backbone-paf v2_development/alignments/candidate_to_backbone.paf \
+            --backbone-to-truth-paf v2_development/alignments/backbone_to_truth.paf \
+            --candidate-to-truth-paf v2_development/alignments/candidate_to_truth.paf \
+            --truth-mapping "$ROOT/truth/truth_mapping.tsv" \
+            --seed 20260820 --bootstrap 5000 \
+            --out v2_development/development \
+            2>&1 | tee v2_development/logs_summary/DEVELOPMENT_CONSOLE.log
+          cp v2_development/development/LANTERN_BACKBONE_RESCUE_V2_CONFIG.json v2_development/configs/
+
+      - name: Reconstruct and freeze the chosen training assembly
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          ROOT=$(cat /tmp/training_root)
+          export PYTHONPATH="$PWD/lantern_cami3/scripts"
+          python lantern_cami3/scripts/lantern_backbone_rescue.py \
+            --backbone "$ROOT/assemblies/megahit_longitudinal/final.contigs.fa" \
+            --candidate-fasta "$ROOT/truth_blind/clusters/cluster_representatives.fasta" \
+            --selection "$ROOT/truth_blind/LANTERN_full/LANTERN_SELECTION.tsv" \
+            --metadata "$ROOT/truth_blind/clusters/representative_metadata.tsv" \
+            --candidate-to-backbone-paf v2_development/alignments/candidate_to_backbone.paf \
+            --config v2_development/configs/LANTERN_BACKBONE_RESCUE_V2_CONFIG.json \
+            --out v2_development/best_assembly \
+            2>&1 | tee v2_development/logs_summary/CONSTRUCT_BEST.log
+          python lantern_cami3/scripts/verify_cami_assembly.py \
+            v2_development/best_assembly/LANTERN_BACKBONE_RESCUE.fasta \
+            --out v2_development/validation/LANTERN_V2_FASTA_VALIDATION.json
+          sha256sum v2_development/configs/LANTERN_BACKBONE_RESCUE_V2_CONFIG.json \
+                    v2_development/best_assembly/LANTERN_BACKBONE_RESCUE.fasta \
+            > v2_development/provenance/V2_TRAINING_FREEZE_SHA256SUMS.txt
+          python - <<'PY'
+          import hashlib,json,time
+          from pathlib import Path
+          cfg=Path('v2_development/configs/LANTERN_BACKBONE_RESCUE_V2_CONFIG.json')
+          fa=Path('v2_development/best_assembly/LANTERN_BACKBONE_RESCUE.fasta')
+          obj={'freeze_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'config_sha256':hashlib.sha256(cfg.read_bytes()).hexdigest(),'training_assembly_sha256':hashlib.sha256(fa.read_bytes()).hexdigest(),'training_pair':'0,1','external_validation_required':True,'boundary':'Training-selected v2 config; no held-out performance established.'}
+          Path('v2_development/provenance/V2_TRAINING_FREEZE.json').write_text(json.dumps(obj,indent=2)+'\n')
+          print(json.dumps(obj,indent=2))
+          PY
+
+      - name: Independently re-align the chosen assembly and reconcile grid metrics
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          ROOT=$(cat /tmp/training_root)
+          minimap2 -x asm5 -c -N 100 -t 4 "$ROOT/truth/combined_truth.fasta" \
+            v2_development/best_assembly/LANTERN_BACKBONE_RESCUE.fasta \
+            > v2_development/validation/final_to_truth.paf \
+            2> v2_development/validation/final_to_truth.log
+          export PYTHONPATH="$PWD/lantern_cami3/scripts"
+          python lantern_cami3/scripts/evaluate_gold_coverage.py \
+            --paf v2_development/validation/final_to_truth.paf \
+            --truth-mapping "$ROOT/truth/truth_mapping.tsv" \
+            --assembly-fasta v2_development/best_assembly/LANTERN_BACKBONE_RESCUE.fasta \
+            --min-identity 0.90 --min-alignment 500 \
+            --out v2_development/validation/exact_final \
+            > v2_development/logs_summary/EXACT_FINAL_EVALUATION.log
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          dev=json.loads(Path('v2_development/development/V2_DEVELOPMENT_DECISION.json').read_text())
+          exact=json.loads(Path('v2_development/validation/exact_final/GOLD_COVERAGE_SUMMARY.json').read_text())
+          selected=dev['best_training_result']
+          audit={'status':'PASS','selected_config_id':selected['config_id'],'analytic_genome_fraction_percent':selected['genome_fraction_percent'],'exact_genome_fraction_percent':exact['genome_fraction_percent'],'absolute_difference':abs(selected['genome_fraction_percent']-exact['genome_fraction_percent']),'analytic_mean_recovery_percent':selected['mean_genome_recovery_percent'],'exact_mean_recovery_percent':100*exact['mean_genome_recovery'],'external_validation_required':True}
+          if audit['absolute_difference']>1e-8: audit['status']='FAIL'
+          Path('v2_development/validation/ANALYTIC_EXACT_RECONCILIATION.json').write_text(json.dumps(audit,indent=2)+'\n')
+          print(json.dumps(audit,indent=2))
+          if audit['status']!='PASS': raise SystemExit('Analytic/exact v2 metric mismatch')
+          PY
+
+      - name: Remove large reusable alignments and finalize compact development evidence
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          rm -rf v2_development/alignments
+          find v2_development -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > v2_development/SHA256SUMS.txt || true
+          du -ah v2_development | sort -h > v2_development/FILE_SIZES.txt || true
+
+      - name: Upload v2 training-development evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: LANTERN_CAMI3_V2_BACKBONE_RESCUE_DEVELOPMENT_20260820
+          path: v2_development
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
