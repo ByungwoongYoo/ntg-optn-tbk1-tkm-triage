@@ -1,0 +1,160 @@
+name: CAMI III LANTERN corrected metaSPAdes Toy-pair baseline
+
+on:
+  pull_request:
+    branches: [cami3-lantern-20260819]
+    paths:
+      - '.github/workflows/cami3-lantern-corrected-metaspades-baseline.yml'
+      - 'lantern_cami3/scripts/evaluate_gold_coverage.py'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  PRIOR_RUN_ID: '32285680577'
+  PRIOR_ARTIFACT: 'LANTERN_CAMI3_TOY_SHORT_BENCHMARK_20260819'
+
+jobs:
+  corrected-metaspades:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download preserved Toy pair state
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.PRIOR_ARTIFACT }}
+          path: prior_artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.PRIOR_RUN_ID }}
+
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: corrected-metaspades
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            spades=4.3.0
+            minimap2=2.31
+            quast=5.3.0
+            seqkit
+          cache-downloads: true
+          post-cleanup: all
+
+      - name: Build one paired-end library without touching gold truth
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          ROOT=$(find prior_artifact -type d -name lantern_short_benchmark | head -1)
+          test -n "$ROOT"
+          printf '%s\n' "$ROOT" > /tmp/benchmark_root
+          mkdir -p corrected_metaspades/{reads,assembly,provenance,failure_audit,evaluation,metaquast,validation}
+          for f in \
+            "$ROOT/reads/sample0_R1.fastq.gz" "$ROOT/reads/sample0_R2.fastq.gz" \
+            "$ROOT/reads/sample1_R1.fastq.gz" "$ROOT/reads/sample1_R2.fastq.gz"; do
+            test -s "$f"
+          done
+          gzip -cd "$ROOT/reads/sample0_R1.fastq.gz" "$ROOT/reads/sample1_R1.fastq.gz" | gzip -1 > corrected_metaspades/reads/pair_R1.fastq.gz
+          gzip -cd "$ROOT/reads/sample0_R2.fastq.gz" "$ROOT/reads/sample1_R2.fastq.gz" | gzip -1 > corrected_metaspades/reads/pair_R2.fastq.gz
+          gzip -t corrected_metaspades/reads/pair_R1.fastq.gz corrected_metaspades/reads/pair_R2.fastq.gz
+          seqkit stats -T corrected_metaspades/reads/pair_R1.fastq.gz corrected_metaspades/reads/pair_R2.fastq.gz > corrected_metaspades/provenance/READ_STATS.tsv
+          sha256sum corrected_metaspades/reads/*.fastq.gz > corrected_metaspades/provenance/READ_SHA256SUMS.txt
+          git rev-parse HEAD > corrected_metaspades/provenance/GIT_HEAD.txt
+          uname -a > corrected_metaspades/provenance/UNAME.txt
+          python --version > corrected_metaspades/provenance/PYTHON_VERSION.txt
+          metaspades.py --version > corrected_metaspades/provenance/METASPADES_VERSION.txt 2>&1
+          minimap2 --version > corrected_metaspades/provenance/MINIMAP2_VERSION.txt
+          micromamba list > corrected_metaspades/provenance/MICROMAMBA_LIST.txt
+          cat > corrected_metaspades/provenance/CLAIM_BOUNDARY.txt <<'EOF'
+          The corrected metaSPAdes baseline concatenates the two timepoint read pairs into one paired-end library because metaSPAdes 4.3.0 rejected two paired-end libraries. Assembly is completed and hashed before any gold-standard sequence is queried. This is an external comparator only; its output is not fed into the already frozen LANTERN v1 selection.
+          EOF
+
+      - name: Run corrected metaSPAdes baseline
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          /usr/bin/time -v timeout --signal=TERM --kill-after=120s 240m \
+            metaspades.py --only-assembler -t 4 -m 12 \
+            -1 corrected_metaspades/reads/pair_R1.fastq.gz \
+            -2 corrected_metaspades/reads/pair_R2.fastq.gz \
+            -o corrected_metaspades/assembly/run \
+            > corrected_metaspades/assembly/metaspades.log 2>&1
+          test -s corrected_metaspades/assembly/run/contigs.fasta
+          cp corrected_metaspades/assembly/run/contigs.fasta corrected_metaspades/assembly/METASPADES_PAIR.fasta
+          sha256sum corrected_metaspades/assembly/METASPADES_PAIR.fasta > corrected_metaspades/provenance/TRUTH_BLIND_ASSEMBLY_SHA256.txt
+          python - <<'PY'
+          import hashlib,json,time
+          from pathlib import Path
+          p=Path('corrected_metaspades/assembly/METASPADES_PAIR.fasta')
+          freeze={'freeze_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'assembly':str(p),'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'truth_accessed':False,'boundary':'Corrected metaSPAdes assembly was frozen before gold-side evaluation and was never used to tune LANTERN v1.'}
+          Path('corrected_metaspades/provenance/TRUTH_BLIND_BASELINE_FREEZE.json').write_text(json.dumps(freeze,indent=2)+'\n')
+          print(json.dumps(freeze,indent=2))
+          PY
+
+      - name: Evaluate corrected baseline after freeze
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          ROOT=$(cat /tmp/benchmark_root)
+          test -s "$ROOT/truth/combined_truth.fasta"
+          minimap2 -x asm5 -c -N 100 -t 4 \
+            "$ROOT/truth/combined_truth.fasta" \
+            corrected_metaspades/assembly/METASPADES_PAIR.fasta \
+            > corrected_metaspades/evaluation/assembly_to_truth.paf \
+            2> corrected_metaspades/evaluation/minimap2.log
+          python lantern_cami3/scripts/evaluate_gold_coverage.py \
+            --paf corrected_metaspades/evaluation/assembly_to_truth.paf \
+            --truth-mapping "$ROOT/truth/truth_mapping.tsv" \
+            --assembly-fasta corrected_metaspades/assembly/METASPADES_PAIR.fasta \
+            --min-identity 0.90 --min-alignment 500 \
+            --out corrected_metaspades/evaluation \
+            > corrected_metaspades/evaluation/evaluate_console.log
+          cp "$ROOT/truth/TRUTH_SUMMARY.json" corrected_metaspades/validation/
+          cp "$ROOT/truth/genome_reference_manifest.tsv" corrected_metaspades/validation/
+
+      - name: Attempt MetaQUAST sensitivity evaluation
+        shell: micromamba-shell {0}
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          ROOT=$(cat /tmp/benchmark_root)
+          python - "$ROOT" <<'PY'
+          import csv,sys
+          from pathlib import Path
+          root=Path(sys.argv[1])
+          rows=list(csv.DictReader(open(root/'truth/genome_reference_manifest.tsv'),delimiter='\t'))
+          refs=[r['reference_path'] for r in rows if int(r['truth_bp'])>=50000]
+          Path('/tmp/meta_refs').write_text(','.join(refs))
+          print({'metaquast_references':len(refs)})
+          PY
+          metaquast.py corrected_metaspades/assembly/METASPADES_PAIR.fasta \
+            --labels metaspades_pair_corrected \
+            -r "$(cat /tmp/meta_refs)" --min-contig 1000 --threads 4 --max-ref-number 10000 \
+            -o corrected_metaspades/metaquast \
+            > corrected_metaspades/metaquast_console.log 2>&1
+
+      - name: Remove retrievable reads and large working files; hash compact evidence
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          rm -rf corrected_metaspades/reads corrected_metaspades/assembly/run
+          find corrected_metaspades -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > corrected_metaspades/SHA256SUMS.txt || true
+          du -ah corrected_metaspades | sort -h > corrected_metaspades/FILE_SIZES.txt || true
+
+      - name: Upload corrected baseline evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: LANTERN_CAMI3_CORRECTED_METASPADES_BASELINE_20260820
+          path: corrected_metaspades
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
