@@ -1,0 +1,71 @@
+name: CAMI III LANTERN Toy short-read benchmark
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cami3-lantern-toy-short-benchmark.yml'
+      - 'lantern_cami3/scripts/**'
+      - 'lantern_cami3/config/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: lantern-short
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            megahit=1.2.9
+            spades
+            minimap2
+            samtools
+            mash
+            seqkit
+          cache-downloads: true
+          post-cleanup: all
+      - name: Execute public Toy longitudinal short-read benchmark
+        shell: micromamba-shell {0}
+        env:
+          LANTERN_SHORT_FRACTION: '0.03'
+          LANTERN_SEED: '20260819'
+          LANTERN_THREADS: '4'
+          LANTERN_MEMORY_GB: '12'
+        run: |
+          set -euo pipefail
+          # Temporary one-line correction to a header-skipping awk rule; the patched
+          # executable is preserved and hashed in the artifact for exact provenance.
+          cp lantern_cami3/scripts/run_toy_short_benchmark.sh /tmp/run_toy_short_benchmark.sh
+          sed -i "s/NR==1 || \$3>=50000/NR>1 \&\& \$3>=50000/" /tmp/run_toy_short_benchmark.sh
+          cp /tmp/run_toy_short_benchmark.sh lantern_short_benchmark_EXECUTED_SCRIPT.sh
+          bash /tmp/run_toy_short_benchmark.sh lantern_short_benchmark
+      - name: Preserve workflow-level provenance
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          mkdir -p lantern_short_benchmark/provenance
+          git rev-parse HEAD > lantern_short_benchmark/provenance/WORKFLOW_GIT_HEAD.txt
+          sha256sum lantern_short_benchmark_EXECUTED_SCRIPT.sh > lantern_short_benchmark/provenance/EXECUTED_SCRIPT_SHA256.txt || true
+          find lantern_short_benchmark -type f ! -name SHA256SUMS_ALL.txt -print0 | sort -z | xargs -0 sha256sum > lantern_short_benchmark/SHA256SUMS_ALL.txt || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: LANTERN_CAMI3_TOY_SHORT_BENCHMARK_20260819
+          path: |
+            lantern_short_benchmark
+            lantern_short_benchmark_EXECUTED_SCRIPT.sh
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
