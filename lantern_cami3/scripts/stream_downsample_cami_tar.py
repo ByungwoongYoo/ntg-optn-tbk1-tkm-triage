@@ -4,6 +4,10 @@
 CAMI III Toy short-read archives contain one interleaved FASTQ.GZ member; long-read
 archives contain one FASTQ.GZ member. This script also supports archives with separate
 R1/R2 members. The outer tar is never materialized.
+
+Short- and long-read calls may intentionally share an output directory. Cleanup is
+therefore mode-scoped: a long-read call must never delete an already generated R1/R2
+pair, and a short-read call must never delete an already generated long-read file.
 """
 from __future__ import annotations
 import argparse,gzip,hashlib,io,json,re,subprocess,sys,tarfile
@@ -91,11 +95,20 @@ def process_separate(raw:BinaryIO,name:str,r:str,args,out:Path)->MemberStats:
             if keep(hv,args.fraction):dst.writelines(rec);update(st,hv)
     return st
 
+def cleanup_mode_outputs(out:Path,sample_id:str,mode:str)->None:
+    targets=(
+        [out/f'{sample_id}_R1.fastq.gz',out/f'{sample_id}_R2.fastq.gz']
+        if mode=='short'
+        else [out/f'{sample_id}_long.fastq.gz']
+    )
+    for path in targets:
+        if path.exists():path.unlink()
+
 def main():
     a=parse_args()
     if not 0<a.fraction<=1:raise SystemExit('fraction must be (0,1]')
     out=Path(a.out_dir);out.mkdir(parents=True,exist_ok=True)
-    for p in out.glob(f'{a.sample_id}_*.fastq.gz'):p.unlink()
+    cleanup_mode_outputs(out,a.sample_id,a.mode)
     fh,proc=source(a);stats=[];fastq_members=[]
     try:
         with tarfile.open(fileobj=fh,mode='r|gz') as tf:
