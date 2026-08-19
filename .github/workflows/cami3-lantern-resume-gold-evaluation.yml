@@ -1,0 +1,249 @@
+name: CAMI III LANTERN resume frozen Toy gold evaluation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cami3-lantern-resume-gold-evaluation.yml'
+      - 'lantern_cami3/scripts/evaluate_gold_coverage.py'
+      - 'lantern_cami3/scripts/build_pseudo_novel_audit.py'
+      - 'lantern_cami3/scripts/summarize_benchmark.py'
+      - 'lantern_cami3/config/decision_gate_v1.json'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  UPSTREAM_RUN_ID: '32285680577'
+  UPSTREAM_ARTIFACT: 'LANTERN_CAMI3_TOY_SHORT_BENCHMARK_20260819'
+
+jobs:
+  resume-gold-evaluation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download frozen truth-blind benchmark artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.UPSTREAM_ARTIFACT }}
+          path: resume_input
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.UPSTREAM_RUN_ID }}
+
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: lantern-resume
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            minimap2
+            mash
+          cache-downloads: true
+          post-cleanup: all
+
+      - name: Locate and verify immutable upstream inputs
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=$(find resume_input -type d -name lantern_short_benchmark | head -1)
+          test -n "$root"
+          test -s "$root/truth_blind/TRUTH_BLIND_FREEZE.json"
+          test -s "$root/truth/combined_truth.fasta"
+          test -s "$root/truth/truth_mapping.tsv"
+          test -s "$root/truth/genome_reference_manifest.tsv"
+          mkdir -p resume_eval/{evaluation,pseudo_novel,decision,logs,provenance,failure_audit}
+          printf '%s\n' "$root" > /tmp/lantern_root
+          printf 'upstream_run=%s\nupstream_artifact=%s\nupstream_root=%s\n' \
+            "$UPSTREAM_RUN_ID" "$UPSTREAM_ARTIFACT" "$root" \
+            > resume_eval/provenance/UPSTREAM.txt
+          sha256sum "$root/truth_blind/TRUTH_BLIND_FREEZE.json" \
+            "$root/truth/combined_truth.fasta" \
+            "$root/truth/truth_mapping.tsv" \
+            "$root/truth/genome_reference_manifest.tsv" \
+            > resume_eval/provenance/INPUT_SHA256.txt
+          cp "$root/truth/TRUTH_SUMMARY.json" resume_eval/provenance/
+          cp "$root/provenance/lantern_frozen_v1.json" resume_eval/provenance/
+          cp "$root/provenance/decision_gate_v1.json" resume_eval/provenance/
+          git rev-parse HEAD > resume_eval/provenance/RESUME_GIT_HEAD.txt
+          uname -a > resume_eval/provenance/UNAME.txt
+          python --version > resume_eval/provenance/PYTHON_VERSION.txt
+          minimap2 --version > resume_eval/provenance/MINIMAP2_VERSION.txt
+          mash --version > resume_eval/provenance/MASH_VERSION.txt
+          micromamba list > resume_eval/provenance/MICROMAMBA_LIST.txt
+
+      - name: Run memory-bounded gold-standard recovery evaluation
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=$(cat /tmp/lantern_root)
+          methods=(
+            "megahit_s0=$root/assemblies/megahit_single0/final.contigs.fa"
+            "megahit_s1=$root/assemblies/megahit_single1/final.contigs.fa"
+            "megahit_pair=$root/assemblies/megahit_longitudinal/final.contigs.fa"
+            "metaspades_pair=$root/assemblies/metaspades_longitudinal/contigs.fasta"
+            "LANTERN_full=$root/truth_blind/LANTERN_full/LANTERN_ASSEMBLY.fasta"
+            "LANTERN_no_longitudinal=$root/truth_blind/LANTERN_no_longitudinal/LANTERN_ASSEMBLY.fasta"
+            "LANTERN_no_consensus=$root/truth_blind/LANTERN_no_consensus/LANTERN_ASSEMBLY.fasta"
+          )
+          : > resume_eval/provenance/EVALUATED_METHODS.tsv
+          : > resume_eval/failure_audit/EVALUATION_STATUS.tsv
+          for spec in "${methods[@]}"; do
+            name=${spec%%=*}
+            fasta=${spec#*=}
+            if [[ ! -s "$fasta" ]]; then
+              printf '%s\tMISSING_FASTA\t%s\n' "$name" "$fasta" >> resume_eval/failure_audit/EVALUATION_STATUS.tsv
+              continue
+            fi
+            dir="resume_eval/evaluation/$name"
+            mkdir -p "$dir"
+            sha256sum "$fasta" > "$dir/ASSEMBLY_SHA256.txt"
+            printf '%s\t%s\n' "$name" "$fasta" >> resume_eval/provenance/EVALUATED_METHODS.tsv
+
+            rc=0
+            set +e
+            /usr/bin/time -v minimap2 -I 128M -x asm5 -c -N 100 -t 4 \
+              "$root/truth/combined_truth.fasta" "$fasta" \
+              > "$dir/assembly_to_truth.paf" 2> "$dir/minimap2_128M.log"
+            rc=$?
+            set -e
+            if [[ "$rc" -ne 0 ]]; then
+              mv "$dir/assembly_to_truth.paf" "$dir/assembly_to_truth_128M_failed.paf" || true
+              set +e
+              /usr/bin/time -v minimap2 -I 64M -x asm5 -c -N 100 -t 4 \
+                "$root/truth/combined_truth.fasta" "$fasta" \
+                > "$dir/assembly_to_truth.paf" 2> "$dir/minimap2_64M.log"
+              rc=$?
+              set -e
+            fi
+            if [[ "$rc" -ne 0 || ! -s "$dir/assembly_to_truth.paf" ]]; then
+              printf '%s\tMINIMAP2_FAILED\t%s\n' "$name" "$rc" >> resume_eval/failure_audit/EVALUATION_STATUS.tsv
+              continue
+            fi
+
+            set +e
+            python lantern_cami3/scripts/evaluate_gold_coverage.py \
+              --paf "$dir/assembly_to_truth.paf" \
+              --truth-mapping "$root/truth/truth_mapping.tsv" \
+              --assembly-fasta "$fasta" \
+              --min-identity 0.90 \
+              --min-alignment 500 \
+              --out "$dir" \
+              > "$dir/evaluate_console.log" 2> "$dir/evaluate_error.log"
+            rc=$?
+            set -e
+            if [[ "$rc" -ne 0 || ! -s "$dir/GOLD_COVERAGE_SUMMARY.json" ]]; then
+              printf '%s\tEVALUATOR_FAILED\t%s\n' "$name" "$rc" >> resume_eval/failure_audit/EVALUATION_STATUS.tsv
+              continue
+            fi
+            printf '%s\tPASS\t0\n' "$name" >> resume_eval/failure_audit/EVALUATION_STATUS.tsv
+            rm -f "$dir/assembly_to_truth.paf"
+          done
+
+          n_pass=$(awk -F '\t' '$2=="PASS"{n++} END{print n+0}' resume_eval/failure_audit/EVALUATION_STATUS.tsv)
+          test "$n_pass" -ge 4
+
+      - name: Run pseudo-novel and frozen decision gates
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=$(cat /tmp/lantern_root)
+          metric_args=()
+          recovery_args=()
+          baseline_args=()
+          for dir in resume_eval/evaluation/*; do
+            [[ -d "$dir" && -s "$dir/GOLD_COVERAGE_SUMMARY.json" ]] || continue
+            name=$(basename "$dir")
+            metric_args+=(--metric "$name=$dir/GOLD_COVERAGE_SUMMARY.json")
+            recovery_args+=(--recovery "$name=$dir/per_genome_recovery.tsv")
+            [[ "$name" != LANTERN_* ]] && baseline_args+=(--baseline "$name")
+          done
+          test "${#metric_args[@]}" -ge 8
+          test "${#baseline_args[@]}" -ge 2
+          test -s resume_eval/evaluation/LANTERN_full/GOLD_COVERAGE_SUMMARY.json
+          test -s resume_eval/evaluation/LANTERN_no_longitudinal/GOLD_COVERAGE_SUMMARY.json
+
+          awk -F '\t' -v root="$root" 'NR>1 && $3>=50000 {p=$2; sub(/^lantern_short_benchmark/, root, p); print p}' \
+            "$root/truth/genome_reference_manifest.tsv" \
+            > resume_eval/pseudo_novel/mash_reference_files.txt
+          n_refs=$(wc -l < resume_eval/pseudo_novel/mash_reference_files.txt)
+          echo "$n_refs" > resume_eval/pseudo_novel/N_MASH_REFERENCES.txt
+          test "$n_refs" -ge 2
+
+          mash sketch -k 21 -s 1000 \
+            -l resume_eval/pseudo_novel/mash_reference_files.txt \
+            -o resume_eval/pseudo_novel/truth_genomes \
+            > resume_eval/logs/MASH_SKETCH.log 2>&1
+          mash dist resume_eval/pseudo_novel/truth_genomes.msh \
+            resume_eval/pseudo_novel/truth_genomes.msh \
+            > resume_eval/pseudo_novel/truth_genome_distances.tsv
+
+          python lantern_cami3/scripts/build_pseudo_novel_audit.py \
+            --manifest "$root/truth/genome_reference_manifest.tsv" \
+            --mash resume_eval/pseudo_novel/truth_genome_distances.tsv \
+            "${recovery_args[@]}" \
+            --min-truth-bp 50000 \
+            --out resume_eval/pseudo_novel \
+            > resume_eval/logs/PSEUDO_NOVEL.log 2>&1
+
+          python lantern_cami3/scripts/summarize_benchmark.py \
+            "${metric_args[@]}" \
+            "${baseline_args[@]}" \
+            --lantern LANTERN_full \
+            --no-longitudinal LANTERN_no_longitudinal \
+            --pseudo-summary resume_eval/pseudo_novel/PSEUDO_NOVEL_RECOVERY_SUMMARY.tsv \
+            --decision-config lantern_cami3/config/decision_gate_v1.json \
+            --out resume_eval/decision \
+            > resume_eval/logs/FINAL_DECISION.log 2>&1
+          test -s resume_eval/decision/FINAL_DECISION.md
+          cat resume_eval/decision/FINAL_DECISION.md
+          rm -f resume_eval/pseudo_novel/truth_genomes.msh
+
+      - name: Independent compact evidence audit
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          root=Path('resume_eval')
+          summaries=[]
+          for p in sorted((root/'evaluation').glob('*/GOLD_COVERAGE_SUMMARY.json')):
+              x=json.loads(p.read_text())
+              x['method']=p.parent.name
+              summaries.append(x)
+          audit={
+              'n_evaluated_methods':len(summaries),
+              'methods':[x['method'] for x in summaries],
+              'truth_blind_freeze_present':(root/'provenance/INPUT_SHA256.txt').is_file(),
+              'decision_present':(root/'decision/FINAL_DECISION.md').is_file(),
+              'gold_summaries':summaries,
+              'boundary':'This is a public Toy gold-standard evaluation of a frozen truth-blind method, not a CAMI III active-challenge result.'
+          }
+          (root/'INDEPENDENT_AUDIT.json').write_text(json.dumps(audit,indent=2,sort_keys=True)+'\n')
+          lines=[]
+          for p in sorted(root.rglob('*')):
+              if p.is_file() and p.name!='SHA256SUMS_ALL.txt':
+                  lines.append(f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.relative_to(root)}')
+          (root/'SHA256SUMS_ALL.txt').write_text('\n'.join(lines)+'\n')
+          PY
+          find resume_eval -type f -printf '%P\t%s\n' | sort > resume_eval/CONTENTS.tsv
+          du -ah resume_eval | sort -h > resume_eval/FILE_SIZES.txt
+
+      - name: Upload compact resumed gold evaluation
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: LANTERN_CAMI3_RESUMED_GOLD_EVALUATION_20260820
+          path: resume_eval
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
