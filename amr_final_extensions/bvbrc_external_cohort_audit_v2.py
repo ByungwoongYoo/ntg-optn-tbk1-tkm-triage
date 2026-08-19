@@ -1,26 +1,27 @@
 #!/usr/bin/env python3
-"""Compatibility wrapper for the candidate-blind BV-BRC cohort audit.
+"""Compatibility and evidence-boundary wrapper for the BV-BRC cohort audit.
 
-BV-BRC collections do not share a universal `id` sort field. The genome_amr
-collection supports `id`, whereas the genome collection must be sorted by
-`genome_id`. In addition, the public API caps a response at about 25,000 rows even
-when a larger RQL limit is requested. This wrapper applies collection-specific sorting,
-paginates deterministically, records every page, de-duplicates exact record IDs, and
-then runs the frozen audit unchanged.
+BV-BRC collections do not share a universal sort field and the public API caps a
+response at about 25,000 rows. This wrapper applies collection-specific sorting,
+paginates deterministically, records every page, and de-duplicates stable record IDs.
+
+Crucially, after the base audit finishes, this wrapper separately freezes a balanced
+BioProject-disjoint cohort restricted to records whose BV-BRC evidence field is
+`Laboratory Method`. Records labelled `Computational Method` are retained only in the
+availability audit and are never promoted as independent phenotype validation data.
 """
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import sys
 import time
 from pathlib import Path
 
+import pandas as pd
 import requests
 
-# When invoked as `python amr_final_extensions/<file>.py`, Python places only the
-# script directory on sys.path. Add the repository root explicitly so the sibling
-# package can be imported reproducibly on GitHub Actions and local clean rooms.
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -166,32 +167,20 @@ def request_rql(
         if known_total is not None and cursor >= known_total:
             break
 
-    # Stable de-duplication is a safety guard for API pagination boundary behavior.
-    if records and "id" in records[0]:
-        seen: set[str] = set()
-        deduped: list[dict] = []
-        for record in records:
-            key = str(record.get("id", ""))
-            if key and key in seen:
-                continue
-            if key:
-                seen.add(key)
-            deduped.append(record)
-        records = deduped
-    elif records and "genome_id" in records[0]:
-        seen = set()
-        deduped = []
-        for record in records:
-            key = str(record.get("genome_id", ""))
-            if key and key in seen:
-                continue
-            if key:
-                seen.add(key)
-            deduped.append(record)
-        records = deduped
+    dedup_key = "id" if records and "id" in records[0] else "genome_id"
+    seen: set[str] = set()
+    deduped: list[dict] = []
+    for record in records:
+        key = str(record.get(dedup_key, ""))
+        if key and key in seen:
+            continue
+        if key:
+            seen.add(key)
+        deduped.append(record)
+    records = deduped
 
     combined_hash = hashlib.sha256("\n".join(page_hash_material).encode()).hexdigest()
-    meta = {
+    return records, {
         "method": "PAGINATED_GET_POST_FALLBACK",
         "collection": collection,
         "expression": expression,
@@ -206,10 +195,69 @@ def request_rql(
         "sha256": combined_hash,
         "pages": pages,
     }
-    return records, meta
+
+
+def freeze_laboratory_only() -> None:
+    args = base.parse_args()
+    out = Path(args.out)
+    strict_path = out / "BVBRC_BIOPROJECT_DISJOINT.csv"
+    if not strict_path.exists():
+        raise FileNotFoundError(strict_path)
+    strict = pd.read_csv(strict_path, dtype=str).fillna("")
+    laboratory = strict[strict["evidence"].astype(str).eq("Laboratory Method")].copy()
+    laboratory.to_csv(out / "BVBRC_BIOPROJECT_DISJOINT_LABORATORY_METHOD.csv", index=False)
+    counts = laboratory["phenotype"].value_counts().to_dict()
+    balanced_n = min(int(args.per_class), int(counts.get("R", 0)), int(counts.get("S", 0)))
+    frozen = base.select_diverse_balanced(laboratory, balanced_n, args.seed)
+    frozen.to_csv(out / "BVBRC_EXTERNAL_LABORATORY_METHOD_FROZEN_COHORT.csv", index=False)
+    (out / "BVBRC_EXTERNAL_LABORATORY_METHOD_GENOME_IDS.txt").write_text(
+        "\n".join(frozen.get("genome_id", pd.Series(dtype=str)).astype(str))
+        + ("\n" if len(frozen) else "")
+    )
+
+    summary_path = out / "BVBRC_EXTERNAL_COHORT_SUMMARY.json"
+    summary = json.loads(summary_path.read_text())
+    frozen_counts = frozen["phenotype"].value_counts().to_dict()
+    summary.update({
+        "bioproject_disjoint_laboratory_method": int(len(laboratory)),
+        "bioproject_disjoint_laboratory_method_counts": counts,
+        "laboratory_method_balanced_n_per_class": int(balanced_n),
+        "laboratory_method_frozen": int(len(frozen)),
+        "laboratory_method_frozen_counts": frozen_counts,
+        "laboratory_method_external_validation_feasible": bool(
+            frozen_counts.get("R", 0) >= 50 and frozen_counts.get("S", 0) >= 50
+        ),
+        "computational_method_excluded_from_external_validation": True,
+        "external_validation_boundary": (
+            "Only records explicitly labelled Laboratory Method are eligible for independent "
+            "phenotype validation. Computational Method records are excluded from candidate testing."
+        ),
+    })
+    summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n")
+
+    report_path = out / "BVBRC_EXTERNAL_COHORT_REPORT.md"
+    with report_path.open("a", encoding="utf-8") as handle:
+        handle.write("\n## Laboratory-evidence gate\n\n")
+        handle.write(f"- BioProject-disjoint laboratory-method genomes: **{len(laboratory):,}** {counts}\n")
+        handle.write(f"- Candidate-blind balanced frozen laboratory cohort: **{len(frozen):,}** {frozen_counts}\n")
+        handle.write(f"- At least 50 per class: **{summary['laboratory_method_external_validation_feasible']}**\n\n")
+        handle.write("Records labelled Computational Method are retained in the availability audit but excluded from external phenotype validation.\n")
+
+    hashes = []
+    for path in sorted(out.rglob("*")):
+        if path.is_file() and path.name != "SHA256SUMS.txt":
+            hashes.append(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.relative_to(out)}")
+    (out / "SHA256SUMS.txt").write_text("\n".join(hashes) + "\n")
+    print(json.dumps({
+        "laboratory_method_records": len(laboratory),
+        "laboratory_method_counts": counts,
+        "frozen_records": len(frozen),
+        "frozen_counts": frozen_counts,
+    }, indent=2))
 
 
 base.request_rql = request_rql
 
 if __name__ == "__main__":
     base.main()
+    freeze_laboratory_only()
