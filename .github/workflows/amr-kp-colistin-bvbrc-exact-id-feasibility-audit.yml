@@ -1,0 +1,100 @@
+name: Exact-ID and feasibility audit of BV-BRC frozen-candidate validation
+
+on:
+  pull_request:
+    branches: [amr-kp-colistin-targeted-portal-gwas-20260819]
+    paths:
+      - '.github/workflows/amr-kp-colistin-bvbrc-exact-id-feasibility-audit.yml'
+      - 'amr_final_extensions/evaluate_bvbrc_external_candidates_v2.py'
+      - 'amr_final_extensions/evaluate_bvbrc_external_candidates.py'
+      - 'amr_discovery/run_structure_adjusted_score_gwas.py'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  UPSTREAM_RUN_ID: '32250044181'
+  UPSTREAM_ARTIFACT: 'KP_COLISTIN_BVBRC_LAB_EXTERNAL_VALIDATION_20260819'
+  FINAL_RUN_ID: '32248872658'
+  FINAL_ARTIFACT: 'KP_COLISTIN_ARTIFACT_FINAL_GATES_20260819'
+
+jobs:
+  exact-id-feasibility-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download completed BV-BRC matrix artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.UPSTREAM_ARTIFACT }}
+          path: inputs/upstream
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.UPSTREAM_RUN_ID }}
+
+      - name: Download immutable frozen candidate panel
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.FINAL_ARTIFACT }}
+          path: inputs/final
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.FINAL_RUN_ID }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install pinned analysis dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pandas==2.3.1 numpy==2.2.6 scipy scikit-learn
+
+      - name: Re-evaluate all QC-passed genomes with exact IDs and audit gate feasibility
+        run: |
+          set -euo pipefail
+          cohort=$(find inputs/upstream -type f -name BVBRC_QC_PASSED_COHORT.csv | head -1)
+          targeted=$(find inputs/upstream -type f -path '*/targeted/targeted_variants.Rtab' | head -1)
+          unitigs=$(find inputs/upstream -type f -path '*/unitigs/BVBRC_FROZEN_UNITIGS.Rtab' | head -1)
+          distance=$(find inputs/upstream -type f -path '*/structure/all_mash.tsv' | head -1)
+          panel=$(find inputs/final -type f -name FROZEN_CANDIDATE_PANEL.csv | head -1)
+          test -n "$cohort"; test -n "$targeted"; test -n "$unitigs"; test -n "$distance"; test -n "$panel"
+          mkdir -p audit/provenance audit/results
+          printf 'upstream_run=%s\nupstream_artifact=%s\nfinal_run=%s\nfinal_artifact=%s\n' \
+            "$UPSTREAM_RUN_ID" "$UPSTREAM_ARTIFACT" "$FINAL_RUN_ID" "$FINAL_ARTIFACT" \
+            > audit/provenance/UPSTREAM.txt
+          sha256sum "$cohort" "$targeted" "$unitigs" "$distance" "$panel" \
+            > audit/provenance/INPUT_SHA256.txt
+          git rev-parse HEAD > audit/provenance/GIT_HEAD.txt
+          python --version > audit/provenance/PYTHON_VERSION.txt
+          python -m pip freeze > audit/provenance/PIP_FREEZE.txt
+          python amr_final_extensions/evaluate_bvbrc_external_candidates_v2.py \
+            --cohort "$cohort" \
+            --candidate-panel "$panel" \
+            --targeted-rtab "$targeted" \
+            --unitig-rtab "$unitigs" \
+            --distance "$distance" \
+            --pc-dims 10,20,30 \
+            --min-carriers 5 \
+            --min-odds-ratio 2.0 \
+            --min-groups 3 \
+            --out audit/results \
+            2>&1 | tee audit/EXACT_ID_FEASIBILITY_CONSOLE.log
+          find audit -type f ! -name SHA256SUMS_ALL.txt -print0 | sort -z | xargs -0 sha256sum \
+            > audit/SHA256SUMS_ALL.txt
+          du -ah audit | sort -h > audit/FILE_SIZES.txt
+
+      - name: Upload exact-ID feasibility evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: KP_COLISTIN_BVBRC_EXACT_ID_FEASIBILITY_AUDIT_20260819
+          path: audit
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
