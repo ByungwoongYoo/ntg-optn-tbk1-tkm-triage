@@ -1,0 +1,372 @@
+name: CAMI III LANTERN v2 frozen holdout validation
+
+on:
+  pull_request:
+    branches: [cami3-lantern-v2-development-20260820]
+    paths:
+      - '.github/workflows/cami3-lantern-v2-holdout-validation.yml'
+      - 'lantern_cami3/scripts/**'
+      - 'lantern_cami3/config/lantern_backbone_rescue_v2_frozen_20260820.json'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  holdout-pair:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pair_id: pair_2_3
+            sample_a: 2
+            sample_b: 3
+          - pair_id: pair_4_5
+            sample_a: 4
+            sample_b: 5
+          - pair_id: pair_6_7
+            sample_a: 6
+            sample_b: 7
+          - pair_id: pair_8_9
+            sample_a: 8
+            sample_b: 9
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: lantern-v2-holdout
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            megahit=1.2.9
+            minimap2=2.31
+            samtools
+            seqkit
+            tabulate
+            pandas
+            numpy
+          cache-downloads: true
+          post-cleanup: all
+
+      - name: Record frozen configuration before any held-out reads
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          PAIR='${{ matrix.pair_id }}'; A='${{ matrix.sample_a }}'; B='${{ matrix.sample_b }}'
+          ROOT="v2_holdout_${PAIR}"
+          mkdir -p "$ROOT"/{reads,assemblies,truth_blind,truth_download,truth,evaluation,logs_summary,provenance,validation,failure_audit}
+          cp lantern_cami3/config/lantern_backbone_rescue_v2_frozen_20260820.json "$ROOT/provenance/"
+          sha256sum lantern_cami3/config/lantern_backbone_rescue_v2_frozen_20260820.json > "$ROOT/provenance/V2_CONFIG_SHA256.txt"
+          git rev-parse HEAD > "$ROOT/provenance/GIT_HEAD.txt"
+          printf 'pair=%s\nsample_a=%s\nsample_b=%s\nshort_fraction=0.01\nseed=20260819\nheldout_truth_accessed=false\n' "$PAIR" "$A" "$B" > "$ROOT/provenance/FROZEN_INPUTS.txt"
+          uname -a > "$ROOT/provenance/UNAME.txt"
+          python --version > "$ROOT/provenance/PYTHON_VERSION.txt"
+          megahit --version > "$ROOT/provenance/MEGAHIT_VERSION.txt" 2>&1
+          minimap2 --version > "$ROOT/provenance/MINIMAP2_VERSION.txt"
+          samtools --version > "$ROOT/provenance/SAMTOOLS_VERSION.txt"
+          micromamba list > "$ROOT/provenance/MICROMAMBA_LIST.txt"
+
+      - name: Stream deterministic one-percent short-read stress inputs
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          PAIR='${{ matrix.pair_id }}'; A='${{ matrix.sample_a }}'; B='${{ matrix.sample_b }}'; ROOT="v2_holdout_${PAIR}"
+          for s in "$A" "$B"; do
+            url="https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_${s}_reads.tar.gz"
+            python lantern_cami3/scripts/stream_downsample_cami_tar.py \
+              --url "$url" --sample-id "S${s}" --mode short --fraction 0.01 --seed 20260819 \
+              --min-kept 20000 --out-dir "$ROOT/reads" 2>&1 | tee "$ROOT/logs_summary/DOWNSAMPLE_S${s}.log"
+            gzip -t "$ROOT/reads/S${s}_R1.fastq.gz" "$ROOT/reads/S${s}_R2.fastq.gz"
+          done
+          gzip -cd "$ROOT/reads/S${A}_R1.fastq.gz" "$ROOT/reads/S${B}_R1.fastq.gz" | gzip -1 > "$ROOT/reads/pair_R1.fastq.gz"
+          gzip -cd "$ROOT/reads/S${A}_R2.fastq.gz" "$ROOT/reads/S${B}_R2.fastq.gz" | gzip -1 > "$ROOT/reads/pair_R2.fastq.gz"
+          gzip -t "$ROOT/reads/pair_R1.fastq.gz" "$ROOT/reads/pair_R2.fastq.gz"
+          seqkit stats -T "$ROOT"/reads/*.fastq.gz > "$ROOT/provenance/READ_STATS.tsv"
+          sha256sum "$ROOT"/reads/*.fastq.gz > "$ROOT/provenance/READ_SHA256SUMS.txt"
+
+      - name: Run truth-blind single and participant-pair MEGAHIT baselines
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          PAIR='${{ matrix.pair_id }}'; A='${{ matrix.sample_a }}'; B='${{ matrix.sample_b }}'; ROOT="v2_holdout_${PAIR}"
+          megahit -1 "$ROOT/reads/S${A}_R1.fastq.gz" -2 "$ROOT/reads/S${A}_R2.fastq.gz" \
+            -o "$ROOT/assemblies/megahit_A" --min-contig-len 1000 -t 4 --memory 0.8 > "$ROOT/logs_summary/MEGAHIT_A.log" 2>&1
+          megahit -1 "$ROOT/reads/S${B}_R1.fastq.gz" -2 "$ROOT/reads/S${B}_R2.fastq.gz" \
+            -o "$ROOT/assemblies/megahit_B" --min-contig-len 1000 -t 4 --memory 0.8 > "$ROOT/logs_summary/MEGAHIT_B.log" 2>&1
+          megahit -1 "$ROOT/reads/pair_R1.fastq.gz" -2 "$ROOT/reads/pair_R2.fastq.gz" \
+            -o "$ROOT/assemblies/megahit_pair" --min-contig-len 1000 -t 4 --memory 0.8 > "$ROOT/logs_summary/MEGAHIT_PAIR.log" 2>&1
+          for x in megahit_A megahit_B megahit_pair; do test -s "$ROOT/assemblies/$x/final.contigs.fa"; done
+          sha256sum "$ROOT/assemblies"/*/final.contigs.fa > "$ROOT/provenance/BASELINE_FASTA_SHA256.txt"
+
+      - name: Build v1 evidence layer and frozen v2 backbone-rescue assembly before truth access
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          PAIR='${{ matrix.pair_id }}'; A='${{ matrix.sample_a }}'; B='${{ matrix.sample_b }}'; ROOT="v2_holdout_${PAIR}"
+          mkdir -p "$ROOT/truth_blind"/{prepared,clusters,evidence/merged,v1_full,v1_no_longitudinal,v2}
+          cat > "$ROOT/truth_blind/source_manifest.tsv" <<'EOF'
+          source_id	assembler	scope	mode
+          megahit_A	megahit	single	short
+          megahit_B	megahit	single	short
+          megahit_pair	megahit	longitudinal	short
+          EOF
+          python lantern_cami3/scripts/prepare_candidates.py \
+            --assembly "megahit_A=$ROOT/assemblies/megahit_A/final.contigs.fa" \
+            --assembly "megahit_B=$ROOT/assemblies/megahit_B/final.contigs.fa" \
+            --assembly "megahit_pair=$ROOT/assemblies/megahit_pair/final.contigs.fa" \
+            --source-manifest "$ROOT/truth_blind/source_manifest.tsv" --min-length 1000 \
+            --out "$ROOT/truth_blind/prepared" > "$ROOT/logs_summary/PREPARE.log" 2>&1
+          minimap2 -x asm5 -c -N 100 -t 4 "$ROOT/truth_blind/prepared/combined_candidates.fasta" \
+            "$ROOT/truth_blind/prepared/combined_candidates.fasta" > "$ROOT/truth_blind/all_vs_all.paf" 2> "$ROOT/logs_summary/ALL_VS_ALL.log"
+          python lantern_cami3/scripts/cluster_candidates.py \
+            --fasta "$ROOT/truth_blind/prepared/combined_candidates.fasta" \
+            --metadata "$ROOT/truth_blind/prepared/candidates.tsv" \
+            --paf "$ROOT/truth_blind/all_vs_all.paf" --min-identity 0.97 --min-shorter-coverage 0.85 \
+            --out "$ROOT/truth_blind/clusters" > "$ROOT/logs_summary/CLUSTER.log" 2>&1
+          for s in "$A" "$B"; do
+            minimap2 -t 4 -ax sr "$ROOT/truth_blind/clusters/cluster_representatives.fasta" \
+              "$ROOT/reads/S${s}_R1.fastq.gz" "$ROOT/reads/S${s}_R2.fastq.gz" \
+              2> "$ROOT/logs_summary/MAP_S${s}.log" | samtools sort -@ 2 -o "$ROOT/truth_blind/evidence/S${s}.bam" -
+            samtools index "$ROOT/truth_blind/evidence/S${s}.bam"
+            samtools coverage "$ROOT/truth_blind/evidence/S${s}.bam" > "$ROOT/truth_blind/evidence/S${s}_coverage.tsv"
+          done
+          python lantern_cami3/scripts/merge_mapping_evidence.py \
+            --short-coverage "S${A}=$ROOT/truth_blind/evidence/S${A}_coverage.tsv" \
+            --short-coverage "S${B}=$ROOT/truth_blind/evidence/S${B}_coverage.tsv" \
+            --out "$ROOT/truth_blind/evidence/merged" > "$ROOT/logs_summary/MERGE_EVIDENCE.log" 2>&1
+          python lantern_cami3/scripts/lantern_select.py \
+            --fasta "$ROOT/truth_blind/clusters/cluster_representatives.fasta" \
+            --metadata "$ROOT/truth_blind/clusters/representative_metadata.tsv" \
+            --evidence "$ROOT/truth_blind/evidence/merged/mapping_evidence.tsv" \
+            --config lantern_cami3/config/lantern_frozen_v1.json --ablation full \
+            --out "$ROOT/truth_blind/v1_full" > "$ROOT/logs_summary/V1_FULL.log" 2>&1
+          python lantern_cami3/scripts/lantern_select.py \
+            --fasta "$ROOT/truth_blind/clusters/cluster_representatives.fasta" \
+            --metadata "$ROOT/truth_blind/clusters/representative_metadata.tsv" \
+            --evidence "$ROOT/truth_blind/evidence/merged/mapping_evidence.tsv" \
+            --config lantern_cami3/config/lantern_frozen_v1.json --ablation no_longitudinal \
+            --out "$ROOT/truth_blind/v1_no_longitudinal" > "$ROOT/logs_summary/V1_NO_LONGITUDINAL.log" 2>&1
+          minimap2 -x asm5 -c -N 100 -t 4 "$ROOT/assemblies/megahit_pair/final.contigs.fa" \
+            "$ROOT/truth_blind/clusters/cluster_representatives.fasta" \
+            > "$ROOT/truth_blind/candidate_to_backbone.paf" 2> "$ROOT/logs_summary/CANDIDATE_TO_BACKBONE.log"
+          python lantern_cami3/scripts/lantern_backbone_rescue.py \
+            --backbone "$ROOT/assemblies/megahit_pair/final.contigs.fa" \
+            --candidate-fasta "$ROOT/truth_blind/clusters/cluster_representatives.fasta" \
+            --selection "$ROOT/truth_blind/v1_full/LANTERN_SELECTION.tsv" \
+            --metadata "$ROOT/truth_blind/clusters/representative_metadata.tsv" \
+            --candidate-to-backbone-paf "$ROOT/truth_blind/candidate_to_backbone.paf" \
+            --config lantern_cami3/config/lantern_backbone_rescue_v2_frozen_20260820.json \
+            --out "$ROOT/truth_blind/v2" > "$ROOT/logs_summary/V2_CONSTRUCT.log" 2>&1
+          python lantern_cami3/scripts/verify_cami_assembly.py "$ROOT/truth_blind/v2/LANTERN_BACKBONE_RESCUE.fasta" \
+            --out "$ROOT/validation/V2_FASTA_VALIDATION.json"
+          python - "$ROOT" <<'PY'
+          import hashlib,json,sys,time
+          from pathlib import Path
+          root=Path(sys.argv[1]); files=[]
+          keep=[
+            root/'assemblies/megahit_A/final.contigs.fa',
+            root/'assemblies/megahit_B/final.contigs.fa',
+            root/'assemblies/megahit_pair/final.contigs.fa',
+            root/'truth_blind/clusters/cluster_representatives.fasta',
+            root/'truth_blind/clusters/representative_metadata.tsv',
+            root/'truth_blind/evidence/merged/mapping_evidence.tsv',
+            root/'truth_blind/v1_full/LANTERN_SELECTION.tsv',
+            root/'truth_blind/v1_full/LANTERN_ASSEMBLY.fasta',
+            root/'truth_blind/v1_no_longitudinal/LANTERN_ASSEMBLY.fasta',
+            root/'truth_blind/v2/LANTERN_BACKBONE_RESCUE.fasta',
+            root/'truth_blind/v2/LANTERN_BACKBONE_RESCUE_SUMMARY.json',
+            Path('lantern_cami3/config/lantern_backbone_rescue_v2_frozen_20260820.json'),
+          ]
+          for p in keep:
+              if not p.is_file(): raise SystemExit(f'missing freeze file: {p}')
+              files.append({'path':str(p),'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()})
+          obj={
+            'freeze_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),
+            'heldout_truth_accessed':False,
+            'config_committed_before_holdout_run':True,
+            'files':files,
+            'boundary':'V2 configuration was committed and every baseline, v1 evidence table, and v2 assembly was frozen before held-out gold-standard archives were downloaded.'
+          }
+          (root/'provenance/HOLDOUT_TRUTH_BLIND_FREEZE.json').write_text(json.dumps(obj,indent=2)+'\n')
+          print(json.dumps(obj,indent=2))
+          PY
+
+      - name: Download held-out pair gold standards only after v2 freeze and evaluate
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          PAIR='${{ matrix.pair_id }}'; A='${{ matrix.sample_a }}'; B='${{ matrix.sample_b }}'; ROOT="v2_holdout_${PAIR}"
+          for s in "$A" "$B"; do
+            curl -fsSL --retry 8 --retry-all-errors \
+              "https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_${s}_gsa.tar.gz" \
+              -o "$ROOT/truth_download/sample_${s}_gsa.tar.gz"
+          done
+          sha256sum "$ROOT/truth_download"/*.tar.gz > "$ROOT/provenance/GSA_SHA256SUMS.txt"
+          python lantern_cami3/scripts/extract_gsa_truth.py \
+            --gsa-tar "S${A}=$ROOT/truth_download/sample_${A}_gsa.tar.gz" \
+            --gsa-tar "S${B}=$ROOT/truth_download/sample_${B}_gsa.tar.gz" \
+            --out "$ROOT/truth" > "$ROOT/logs_summary/EXTRACT_TRUTH.log" 2>&1
+          cat > "$ROOT/evaluation/METHOD_PATHS.tsv" <<EOF
+          method	fasta
+          megahit_A	$ROOT/assemblies/megahit_A/final.contigs.fa
+          megahit_B	$ROOT/assemblies/megahit_B/final.contigs.fa
+          megahit_pair	$ROOT/assemblies/megahit_pair/final.contigs.fa
+          lantern_v1	$ROOT/truth_blind/v1_full/LANTERN_ASSEMBLY.fasta
+          lantern_v1_no_longitudinal	$ROOT/truth_blind/v1_no_longitudinal/LANTERN_ASSEMBLY.fasta
+          lantern_v2	$ROOT/truth_blind/v2/LANTERN_BACKBONE_RESCUE.fasta
+          EOF
+          while IFS=$'\t' read -r method fasta; do
+            test "$method" = method && continue
+            out="$ROOT/evaluation/$method"; mkdir -p "$out"
+            minimap2 -x asm5 -c -N 100 -t 4 "$ROOT/truth/combined_truth.fasta" "$fasta" \
+              > "$out/assembly_to_truth.paf" 2> "$out/minimap2.log"
+            python lantern_cami3/scripts/evaluate_gold_coverage.py \
+              --paf "$out/assembly_to_truth.paf" --truth-mapping "$ROOT/truth/truth_mapping.tsv" \
+              --assembly-fasta "$fasta" --min-identity 0.90 --min-alignment 500 --out "$out" \
+              > "$out/evaluate_console.log"
+          done < "$ROOT/evaluation/METHOD_PATHS.tsv"
+          python - "$ROOT" "$PAIR" "$A" "$B" <<'PY'
+          import csv,json,random,statistics,sys
+          from pathlib import Path
+          root=Path(sys.argv[1]); pair,a,b=sys.argv[2:]
+          methods=['megahit_A','megahit_B','megahit_pair','lantern_v1','lantern_v1_no_longitudinal','lantern_v2']
+          summaries={m:json.loads((root/'evaluation'/m/'GOLD_COVERAGE_SUMMARY.json').read_text()) for m in methods}
+          strongest=max(['megahit_A','megahit_B','megahit_pair'],key=lambda m:summaries[m]['genome_fraction_percent'])
+          def per_genome(method):
+              rows={}
+              with (root/'evaluation'/method/'per_genome_recovery.tsv').open() as f:
+                  for row in csv.DictReader(f,delimiter='\t'):
+                      gid=row.get('genome_id') or row.get('BINID') or row.get('binid')
+                      val=row.get('recovery_fraction') or row.get('recovery') or row.get('fraction')
+                      rows[gid]=float(val)
+              return rows
+          base_pg=per_genome(strongest); v2_pg=per_genome('lantern_v2')
+          gids=sorted(set(base_pg)&set(v2_pg)); diffs=[100*(v2_pg[g]-base_pg[g]) for g in gids]
+          rng=random.Random(20260820); boots=[]
+          if diffs:
+              for _ in range(5000): boots.append(sum(rng.choice(diffs) for _ in diffs)/len(diffs))
+              boots.sort(); ci=[boots[int(.025*len(boots))],boots[int(.975*len(boots))-1]]
+          else: ci=[None,None]
+          v2=summaries['lantern_v2']; base=summaries[strongest]; v1=summaries['lantern_v1']; abl=summaries['lantern_v1_no_longitudinal']
+          rel_chim=(v2['cross_binid_chimeric_bp_fraction']-base['cross_binid_chimeric_bp_fraction'])/max(base['cross_binid_chimeric_bp_fraction'],1e-12)
+          out={
+            'pair_id':pair,'sample_a':int(a),'sample_b':int(b),'stress':'deterministic 1% short-read depth',
+            'strongest_baseline':strongest,
+            'baseline_genome_fraction_percent':base['genome_fraction_percent'],
+            'v1_genome_fraction_percent':v1['genome_fraction_percent'],
+            'v2_genome_fraction_percent':v2['genome_fraction_percent'],
+            'v1_gain_percentage_points':v1['genome_fraction_percent']-base['genome_fraction_percent'],
+            'v2_gain_percentage_points':v2['genome_fraction_percent']-base['genome_fraction_percent'],
+            'v2_mean_recovery_gain_percentage_points':100*(v2['mean_genome_recovery']-base['mean_genome_recovery']),
+            'v2_paired_per_genome_mean_gain_percentage_points':statistics.fmean(diffs) if diffs else None,
+            'v2_paired_bootstrap_95_ci':ci,
+            'n_paired_genomes':len(diffs),
+            'v1_longitudinal_ablation_drop_percentage_points':v1['genome_fraction_percent']-abl['genome_fraction_percent'],
+            'baseline_chimera_proxy_bp_fraction':base['cross_binid_chimeric_bp_fraction'],
+            'v2_chimera_proxy_bp_fraction':v2['cross_binid_chimeric_bp_fraction'],
+            'v2_relative_chimera_change':rel_chim,
+            'v2_recovered_50':v2['genomes_recovered_50'],
+            'v2_recovered_90':v2['genomes_recovered_90'],
+            'truth_blind':True,
+            'claim_boundary':'Frozen v2 result on an independent public Toy-pair low-depth stress test; not CAMI hidden-challenge rank or novel-organism validation.'
+          }
+          (root/'PAIR_RESULT.json').write_text(json.dumps(out,indent=2)+'\n')
+          print(json.dumps(out,indent=2))
+          PY
+
+      - name: Compact and hash pair evidence
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          PAIR='${{ matrix.pair_id }}'; ROOT="v2_holdout_${PAIR}"
+          rm -rf "$ROOT/reads" "$ROOT/truth_download" "$ROOT/truth/references"
+          rm -rf "$ROOT/assemblies"/*/intermediate_contigs
+          rm -f "$ROOT/truth/combined_truth.fasta" "$ROOT/truth_blind/evidence"/*.bam "$ROOT/truth_blind/evidence"/*.bai
+          find "$ROOT/evaluation" -type f \( -name 'per_truth_contig.tsv' -o -name 'assembly_to_truth.paf' \) -delete
+          find "$ROOT" -type f ! -name SHA256SUMS_ALL.txt -print0 | sort -z | xargs -0 sha256sum > "$ROOT/SHA256SUMS_ALL.txt" || true
+          du -ah "$ROOT" | sort -h > "$ROOT/FILE_SIZES.txt" || true
+
+      - name: Upload compact v2 pair evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: LANTERN_CAMI3_V2_HOLDOUT_${{ matrix.pair_id }}_20260820
+          path: v2_holdout_${{ matrix.pair_id }}
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
+
+  aggregate:
+    needs: holdout-pair
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: LANTERN_CAMI3_V2_HOLDOUT_pair_*_20260820
+          path: pair_artifacts
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Aggregate every held-out pair without cherry-picking
+        run: |
+          set -euo pipefail
+          mkdir -p aggregate
+          python - <<'PY'
+          import csv,json,math,statistics
+          from pathlib import Path
+          files=sorted(Path('pair_artifacts').rglob('PAIR_RESULT.json'))
+          if len(files)!=4: raise SystemExit(f'Expected four pair results, found {len(files)}: {files}')
+          rows=[json.loads(p.read_text()) for p in files]
+          rows.sort(key=lambda x:x['pair_id'])
+          fields=sorted({k for r in rows for k in r if not isinstance(r.get(k),(dict,list))})
+          with open('aggregate/V2_HOLDOUT_PAIR_RESULTS.csv','w',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=fields); w.writeheader(); w.writerows({k:r.get(k) for k in fields} for r in rows)
+          gains=[r['v2_gain_percentage_points'] for r in rows]
+          mean_gains=[r['v2_mean_recovery_gain_percentage_points'] for r in rows]
+          chim=[r['v2_relative_chimera_change'] for r in rows]
+          positives=sum(g>0 for g in gains); negatives=sum(g<0 for g in gains)
+          summary={
+            'status':'EXTERNAL_TOY_HOLDOUT_COMPLETE',
+            'n_pairs':len(rows),
+            'pair_ids':[r['pair_id'] for r in rows],
+            'mean_v2_genome_fraction_gain_percentage_points':statistics.fmean(gains),
+            'median_v2_genome_fraction_gain_percentage_points':statistics.median(gains),
+            'minimum_v2_gain_percentage_points':min(gains),
+            'maximum_v2_gain_percentage_points':max(gains),
+            'positive_pairs':positives,
+            'negative_pairs':negatives,
+            'zero_pairs':len(rows)-positives-negatives,
+            'mean_v2_mean_recovery_gain_percentage_points':statistics.fmean(mean_gains),
+            'mean_relative_chimera_change':statistics.fmean(chim),
+            'all_pairs_nonnegative':all(g>=0 for g in gains),
+            'majority_pairs_positive':positives>=3,
+            'prespecified_success_gate':(
+                statistics.fmean(gains)>=0.5
+                and statistics.fmean(mean_gains)>=1.0
+                and positives>=3
+                and max(chim)<=0.10
+            ),
+            'claim_boundary':'Independent public Toy holdout-pair aggregate only. It is not a CAMI III hidden-challenge result, leaderboard rank, or novel-organism discovery.'
+          }
+          Path('aggregate/V2_HOLDOUT_AGGREGATE.json').write_text(json.dumps(summary,indent=2)+'\n')
+          lines=['# LANTERN v2 public Toy holdout verdict','',f"- Pairs: **{len(rows)}**",f"- Mean genome-fraction gain: **{summary['mean_v2_genome_fraction_gain_percentage_points']:.6f} percentage points**",f"- Positive / negative pairs: **{positives} / {negatives}**",f"- Mean recovery gain: **{summary['mean_v2_mean_recovery_gain_percentage_points']:.6f} percentage points**",f"- Mean relative chimera-proxy change: **{summary['mean_relative_chimera_change']:.6f}**",f"- Prespecified success gate: **{'PASS' if summary['prespecified_success_gate'] else 'FAIL'}**",'',summary['claim_boundary']]
+          Path('aggregate/V2_HOLDOUT_VERDICT.md').write_text('\n'.join(lines)+'\n')
+          print(json.dumps(summary,indent=2))
+          PY
+          find aggregate -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > aggregate/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LANTERN_CAMI3_V2_HOLDOUT_AGGREGATE_20260820
+          path: aggregate
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
