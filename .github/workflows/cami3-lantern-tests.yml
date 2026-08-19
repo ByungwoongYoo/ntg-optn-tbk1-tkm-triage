@@ -1,0 +1,45 @@
+name: CAMI III LANTERN synthetic integration tests
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cami3-lantern-tests.yml'
+      - 'lantern_cami3/scripts/**'
+      - 'lantern_cami3/config/**'
+      - 'lantern_cami3/tests/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile all Python sources
+        run: |
+          set -euo pipefail
+          python -m compileall -q lantern_cami3
+      - name: Run truth-blind synthetic integration test
+        run: |
+          set -euo pipefail
+          mkdir -p lantern_test_evidence
+          python lantern_cami3/tests/test_pipeline.py 2>&1 | tee lantern_test_evidence/TEST_CONSOLE.log
+          grep -q 'LANTERN_SYNTHETIC_INTEGRATION_PASS' lantern_test_evidence/TEST_CONSOLE.log
+          python --version > lantern_test_evidence/PYTHON_VERSION.txt
+          git rev-parse HEAD > lantern_test_evidence/GIT_HEAD.txt
+          find lantern_test_evidence -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > lantern_test_evidence/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: LANTERN_CAMI3_SYNTHETIC_TESTS_20260819
+          path: lantern_test_evidence
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
