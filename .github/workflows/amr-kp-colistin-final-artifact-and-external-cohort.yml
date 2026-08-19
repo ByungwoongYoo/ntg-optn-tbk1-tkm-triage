@@ -1,0 +1,193 @@
+name: Final K. pneumoniae colistin artifact gates and external cohort freeze
+
+on:
+  pull_request:
+    branches: [amr-kp-colistin-targeted-portal-gwas-20260819]
+    paths:
+      - '.github/workflows/amr-kp-colistin-final-artifact-and-external-cohort.yml'
+      - 'amr_final_extensions/**'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  TARGETED_RUN_ID: '32230694234'
+  TARGETED_ARTIFACT: 'KP_COLISTIN_TARGETED_GWAS_20260819_V4_BIOPROJECT_FIXED'
+  UNITIG_RUN_ID: '32220618443'
+  UNITIG_ARTIFACT: 'KP_COLISTIN_BIOPROJECT_UNITIG_GWAS_20260819'
+  DEEP_RUN_ID: '32220618444'
+  DEEP_ARTIFACT: 'KP_COLISTIN_DEEP_RESIDUAL_UNITIG_GWAS_20260819'
+  PHENOTYPE_RUN_ID: '32198245443'
+  PHENOTYPE_ARTIFACT: 'KP_COLISTIN_PHENOTYPE_QC_20260819'
+  LINEAGE_RUN_ID: '32235664321'
+  LINEAGE_ARTIFACT: 'KP_COLISTIN_LINEAGE_CMH_20260819_V3_VALIDATION_FIXED'
+  RARE_RUN_ID: '32234929736'
+  RARE_ARTIFACT: 'KP_COLISTIN_RARE_VARIANT_BURDEN_20260819_V2_EXACT_IDS'
+
+jobs:
+  artifact-final-gates:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download corrected targeted analysis artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.TARGETED_ARTIFACT }}
+          path: inputs/targeted
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.TARGETED_RUN_ID }}
+
+      - name: Download authoritative portal unitig artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.UNITIG_ARTIFACT }}
+          path: inputs/unitig
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.UNITIG_RUN_ID }}
+
+      - name: Download Kleborate-filtered deep-residual unitig artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.DEEP_ARTIFACT }}
+          path: inputs/deep
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.DEEP_RUN_ID }}
+
+      - name: Download phenotype quality-control artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.PHENOTYPE_ARTIFACT }}
+          path: inputs/phenotype
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.PHENOTYPE_RUN_ID }}
+
+      - name: Download corrected lineage-stratified artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.LINEAGE_ARTIFACT }}
+          path: inputs/lineage
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.LINEAGE_RUN_ID }}
+
+      - name: Download exact-ID rare-burden artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.RARE_ARTIFACT }}
+          path: inputs/rare
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.RARE_RUN_ID }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install exact analysis dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install pandas==2.3.1 numpy scipy biopython
+
+      - name: Freeze provenance and execute candidate-frozen final gates
+        run: |
+          set -euo pipefail
+          mkdir -p artifact_final/provenance
+          python --version > artifact_final/provenance/PYTHON_VERSION.txt
+          python -m pip freeze > artifact_final/provenance/PIP_FREEZE.txt
+          git rev-parse HEAD > artifact_final/provenance/GIT_HEAD.txt
+          cat > artifact_final/provenance/UPSTREAM_ARTIFACTS.json <<EOF
+          {
+            "targeted": {"run_id": "$TARGETED_RUN_ID", "artifact": "$TARGETED_ARTIFACT"},
+            "unitig": {"run_id": "$UNITIG_RUN_ID", "artifact": "$UNITIG_ARTIFACT"},
+            "deep_residual": {"run_id": "$DEEP_RUN_ID", "artifact": "$DEEP_ARTIFACT"},
+            "phenotype_qc": {"run_id": "$PHENOTYPE_RUN_ID", "artifact": "$PHENOTYPE_ARTIFACT"},
+            "lineage": {"run_id": "$LINEAGE_RUN_ID", "artifact": "$LINEAGE_ARTIFACT"},
+            "rare_burden": {"run_id": "$RARE_RUN_ID", "artifact": "$RARE_ARTIFACT"}
+          }
+          EOF
+          python amr_final_extensions/artifact_final_gates.py \
+            --targeted-root inputs/targeted \
+            --unitig-root inputs/unitig \
+            --deep-root inputs/deep \
+            --phenotype-root inputs/phenotype \
+            --lineage-root inputs/lineage \
+            --rare-root inputs/rare \
+            --out artifact_final/results \
+            2>&1 | tee artifact_final/console.log
+          find artifact_final -type f ! -name SHA256SUMS_ALL.txt -print0 | sort -z | xargs -0 sha256sum > artifact_final/SHA256SUMS_ALL.txt
+          du -ah artifact_final | sort -h > artifact_final/FILE_SIZES.txt
+
+      - name: Upload artifact-only final evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: KP_COLISTIN_ARTIFACT_FINAL_GATES_20260819
+          path: artifact_final
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
+
+  ncbi-external-cohort-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download frozen AMR Portal cohort labels
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.TARGETED_ARTIFACT }}
+          path: inputs/targeted
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.TARGETED_RUN_ID }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install exact cohort-audit dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install pandas==2.3.1 requests
+
+      - name: Locate portal labels and freeze candidate-blind NCBI cohorts
+        run: |
+          set -euo pipefail
+          labels=$(find inputs/targeted -type f -name target_labels.csv | head -1)
+          test -n "$labels"
+          mkdir -p external_cohort/provenance
+          python --version > external_cohort/provenance/PYTHON_VERSION.txt
+          python -m pip freeze > external_cohort/provenance/PIP_FREEZE.txt
+          git rev-parse HEAD > external_cohort/provenance/GIT_HEAD.txt
+          printf 'source_run=%s\nsource_artifact=%s\nsource_labels=%s\n' \
+            "$TARGETED_RUN_ID" "$TARGETED_ARTIFACT" "$labels" > external_cohort/provenance/UPSTREAM.txt
+          sha256sum "$labels" > external_cohort/provenance/PORTAL_LABELS_SHA256.txt
+          python amr_final_extensions/ncbi_external_cohort_audit.py \
+            --portal-labels "$labels" \
+            --max-per-class 250 \
+            --strict-max-per-class 150 \
+            --out external_cohort/results \
+            2>&1 | tee external_cohort/console.log
+          find external_cohort -type f ! -name SHA256SUMS_ALL.txt -print0 | sort -z | xargs -0 sha256sum > external_cohort/SHA256SUMS_ALL.txt
+          du -ah external_cohort | sort -h > external_cohort/FILE_SIZES.txt
+
+      - name: Upload frozen external-cohort evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: KP_COLISTIN_NCBI_EXTERNAL_COHORT_AUDIT_20260819
+          path: external_cohort
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
