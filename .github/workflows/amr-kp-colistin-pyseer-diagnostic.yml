@@ -1,0 +1,70 @@
+name: Diagnose K. pneumoniae colistin pyseer failure
+
+on:
+  push:
+    branches: [amr-kp-colistin-targeted-score-gwas-20260819]
+    paths:
+      - '.github/workflows/amr-kp-colistin-pyseer-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: KP_COLISTIN_TARGETED_PORTAL_GWAS_20260819_V2
+          path: upstream
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: '32211046692'
+      - name: Record exact failure and input schemas
+        shell: bash
+        run: |
+          set -euo pipefail
+          out=amr_discovery/diagnostics/PYSEER_FAILURE_20260819.txt
+          mkdir -p "$(dirname "$out")"
+          {
+            echo '# pyseer failure diagnostic'
+            echo
+            echo '## Log files'
+            find upstream -type f -path '*/pyseer/*.log' -print | sort | while read -r f; do
+              echo
+              echo "### $f"
+              cat "$f"
+            done
+            echo
+            echo '## Phenotype heads'
+            find upstream -type f -name '*phenotypes.tsv' -print | sort | while read -r f; do
+              echo
+              echo "### $f"
+              sed -n '1,8p' "$f"
+            done
+            echo
+            echo '## Rtab heads'
+            find upstream -type f -name '*variants.Rtab' -print | sort | while read -r f; do
+              echo
+              echo "### $f"
+              sed -n '1,4p' "$f" | cut -c1-1000
+            done
+            echo
+            echo '## Distance heads'
+            find upstream -type f -name '*mash.tsv' -print | sort | while read -r f; do
+              echo
+              echo "### $f"
+              sed -n '1,4p' "$f" | cut -c1-1000
+            done
+          } > "$out"
+          cat "$out"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$out"
+          git commit -m 'Record exact pyseer failure diagnostic' || exit 0
+          git push origin HEAD:${{ github.ref_name }}
