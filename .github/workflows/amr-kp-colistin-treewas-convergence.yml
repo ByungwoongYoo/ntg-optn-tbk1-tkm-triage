@@ -108,7 +108,6 @@ jobs:
             channel_priority: strict
           create-args: >-
             r-base=4.4
-            r-remotes
             r-jsonlite
             r-ape
             r-adegenet
@@ -126,11 +125,19 @@ jobs:
           cache-downloads: true
           post-cleanup: all
 
-      - name: Install pinned treeWAS source
+      - name: Install pinned treeWAS source archive
         shell: micromamba-shell {0}
         run: |
           set -euo pipefail
-          Rscript -e "remotes::install_github('caitiecollins/treeWAS@${TREEWAS_COMMIT}', dependencies=FALSE, upgrade='never')"
+          mkdir -p /tmp/treewas_source "treewas_${{ matrix.panel }}/provenance"
+          curl -L --fail --retry 5 --retry-all-errors \
+            "https://github.com/caitiecollins/treeWAS/archive/${TREEWAS_COMMIT}.tar.gz" \
+            -o /tmp/treewas.tar.gz
+          sha256sum /tmp/treewas.tar.gz \
+            > "treewas_${{ matrix.panel }}/provenance/TREEWAS_SOURCE_ARCHIVE_SHA256.txt"
+          tar -xzf /tmp/treewas.tar.gz --strip-components=1 -C /tmp/treewas_source
+          test -s /tmp/treewas_source/DESCRIPTION
+          R CMD INSTALL /tmp/treewas_source
           Rscript -e "library(treeWAS); cat(as.character(packageVersion('treeWAS')), '\n')"
 
       - name: Run frozen discovery-validation phylogenetic audit
