@@ -1,0 +1,330 @@
+name: K. pneumoniae colistin whole-genome unitig GWAS and held-out replication
+
+on:
+  pull_request:
+    branches: [amr-kp-colistin-gwas-20260819]
+    paths:
+      - 'amr_discovery/select_stable_unitigs.py'
+      - 'amr_discovery/evaluate_unitig_replication.py'
+      - 'amr_discovery/extract_unitig_contexts.py'
+      - '.github/workflows/amr-kp-colistin-unitig-gwas.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  TARGETED_GWAS_RUN_ID: 'REPLACE_AFTER_TARGETED_GWAS_COMPLETES'
+
+jobs:
+  unitig-gwas:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Guard pinned upstream run ID
+        run: |
+          [[ "$TARGETED_GWAS_RUN_ID" =~ ^[0-9]+$ ]] || { echo 'Replace TARGETED_GWAS_RUN_ID with the successful targeted-GWAS run ID before opening this PR.' >&2; exit 1; }
+
+      - name: Download successful targeted-GWAS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: KP_COLISTIN_TARGETED_GWAS_20260819
+          path: upstream_targeted
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.TARGETED_GWAS_RUN_ID }}
+
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: amr-unitig
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            pandas=2.3.1
+            scipy
+            scikit-learn
+            biopython
+            unitig-caller
+            pyseer
+            mash
+            ncbi-datasets-cli
+            blast
+            prokka
+            ncbi-amrfinderplus
+            tabulate
+          cache-downloads: true
+          post-cleanup: all
+
+      - name: Locate exact upstream cohort and record provenance
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p unitig_gwas/provenance
+          manifest=$(find upstream_targeted -type f -name 'gwas_sample_manifest.csv' | head -1)
+          refgbff=$(find upstream_targeted -type f -name 'reference.gbff' | head -1)
+          test -n "$manifest"; test -n "$refgbff"
+          cp "$manifest" unitig_gwas/gwas_sample_manifest_upstream.csv
+          cp "$refgbff" unitig_gwas/reference.gbff
+          uname -a > unitig_gwas/provenance/UNAME.txt
+          python --version > unitig_gwas/provenance/PYTHON_VERSION.txt
+          unitig-caller --version > unitig_gwas/provenance/UNITIG_CALLER_VERSION.txt
+          pyseer --version > unitig_gwas/provenance/PYSEER_VERSION.txt
+          mash --version > unitig_gwas/provenance/MASH_VERSION.txt
+          prokka --version > unitig_gwas/provenance/PROKKA_VERSION.txt
+          amrfinder --version > unitig_gwas/provenance/AMRFINDER_VERSION_PREUPDATE.txt
+          datasets version > unitig_gwas/provenance/DATASETS_VERSION.txt
+          micromamba list > unitig_gwas/provenance/MICROMAMBA_LIST.txt
+          git rev-parse HEAD > unitig_gwas/provenance/GIT_HEAD.txt
+          printf 'targeted_gwas_run_id=%s\n' "$TARGETED_GWAS_RUN_ID" > unitig_gwas/provenance/UPSTREAM_RUN.txt
+          find upstream_targeted -type f -print | sort > unitig_gwas/provenance/UPSTREAM_FILES.txt
+
+      - name: Download the exact QC-passed cohort assemblies
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p download assemblies
+          python - <<'PY'
+import pandas as pd
+x=pd.read_csv('unitig_gwas/gwas_sample_manifest_upstream.csv',dtype={'assembly_ID':str})
+x=x.drop_duplicates('assembly_ID')
+x[['assembly_ID']].to_csv('unitig_gwas/accessions.txt',index=False,header=False)
+print(x[['split','phenotype']].value_counts())
+PY
+          ok=0
+          for attempt in 1 2 3; do
+            rm -f download/genomes.zip
+            datasets download genome accession --inputfile unitig_gwas/accessions.txt --include genome --filename download/genomes.zip --no-progressbar \
+              2>&1 | tee "unitig_gwas/provenance/GENOME_DOWNLOAD_${attempt}.log" \
+              && unzip -tq download/genomes.zip && { ok=1; break; }
+            sleep 20
+          done
+          [[ "$ok" == 1 ]]
+          sha256sum download/genomes.zip > unitig_gwas/provenance/GENOME_ZIP_SHA256.txt
+          unzip -q download/genomes.zip -d download/package
+          cp download/package/ncbi_dataset/data/assembly_data_report.jsonl unitig_gwas/assembly_data_report.jsonl
+          find download/package/ncbi_dataset/data -mindepth 2 -maxdepth 2 -type f -name '*.fna' -print0 | while IFS= read -r -d '' f; do
+            acc=$(basename "$(dirname "$f")")
+            ln -s "$PWD/$f" "assemblies/${acc}.fna"
+          done
+          rm -f download/genomes.zip
+
+          python - <<'PY'
+from pathlib import Path
+import pandas as pd, re
+x=pd.read_csv('unitig_gwas/gwas_sample_manifest_upstream.csv',dtype={'assembly_ID':str}).drop_duplicates('assembly_ID')
+paths=list(Path('assemblies').glob('*.fna'))
+def find(acc):
+    for p in paths:
+        if acc in p.name: return str(p.resolve())
+    base=acc.split('.')[0]
+    for p in paths:
+        if base in p.name: return str(p.resolve())
+    return None
+x['assembly_path']=x.assembly_ID.map(find)
+missing=x[x.assembly_path.isna()].assembly_ID.astype(str).tolist()
+Path('unitig_gwas/MISSING_ASSEMBLIES.txt').write_text('\n'.join(missing)+('\n' if missing else ''))
+x=x[x.assembly_path.notna()].copy()
+x.to_csv('unitig_gwas/gwas_sample_manifest.csv',index=False)
+for cohort,sub in [('all',x),('discovery',x[x.split=='discovery']),('validation',x[x.split=='validation'])]:
+    Path(f'unitig_gwas/{cohort}_refs.txt').write_text('\n'.join(sub.assembly_path.astype(str))+'\n')
+    y=sub[['assembly_ID','phenotype']].copy(); y['phenotype']=(y.phenotype.astype(str)=='R').astype(int); y.columns=['samples','phenotype']; y.to_csv(f'unitig_gwas/{cohort}_phenotypes.tsv',sep='\t',index=False)
+print(x[['split','phenotype']].value_counts())
+assert len(x)>=100 and len(x[x.split=='discovery'])>=60 and len(x[x.split=='validation'])>=40
+PY
+
+      - name: Build discovery-only unitigs
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p unitig_gwas/discovery_unitigs
+          unitig-caller --call --refs unitig_gwas/discovery_refs.txt \
+            --out unitig_gwas/discovery_unitigs/discovery --pyseer --threads 4 \
+            2>&1 | tee unitig_gwas/discovery_unitigs/unitig_caller.log
+          test -s unitig_gwas/discovery_unitigs/discovery.pyseer
+          n=$(wc -l < unitig_gwas/discovery_unitigs/discovery.pyseer)
+          echo "$n" > unitig_gwas/discovery_unitigs/N_UNITIG_TESTS.txt
+          sha256sum unitig_gwas/discovery_unitigs/discovery.pyseer > unitig_gwas/provenance/DISCOVERY_UNITIG_MATRIX_SHA256.txt
+          [[ "$n" -ge 1000 ]]
+
+      - name: Build discovery Mash structure matrix
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p unitig_gwas/structure
+          mash sketch -p 4 -s 10000 -l unitig_gwas/discovery_refs.txt -o unitig_gwas/structure/discovery
+          mash dist unitig_gwas/structure/discovery.msh unitig_gwas/structure/discovery.msh | square_mash > unitig_gwas/structure/discovery_raw.tsv
+          python - <<'PY'
+from pathlib import Path
+import pandas as pd
+x=pd.read_csv('unitig_gwas/structure/discovery_raw.tsv',sep='\t',index_col=0)
+clean=lambda s: Path(str(s)).name.removesuffix('.fna')
+x.index=[clean(v) for v in x.index]; x.columns=[clean(v) for v in x.columns]; x=x.loc[x.index,x.index]
+x.to_csv('unitig_gwas/structure/discovery_mash.tsv',sep='\t')
+PY
+          rm -f unitig_gwas/structure/discovery_raw.tsv unitig_gwas/structure/discovery.msh
+
+      - name: Run discovery pyseer sensitivity models
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p unitig_gwas/pyseer_discovery
+          for dim in 10 20 30; do
+            pyseer \
+              --phenotypes unitig_gwas/discovery_phenotypes.tsv \
+              --kmers unitig_gwas/discovery_unitigs/discovery.pyseer --uncompressed \
+              --distances unitig_gwas/structure/discovery_mash.tsv \
+              --max-dimensions "$dim" --min-af 0.01 --max-af 0.99 \
+              --filter-pvalue 0.01 --lrt-pvalue 0.01 --cpu 4 --print-samples \
+              --output-patterns "unitig_gwas/pyseer_discovery/dim${dim}.patterns" \
+              > "unitig_gwas/pyseer_discovery/dim${dim}.tsv" \
+              2> "unitig_gwas/pyseer_discovery/dim${dim}.log"
+            test -s "unitig_gwas/pyseer_discovery/dim${dim}.tsv"
+          done
+
+      - name: Select direction-stable discovery unitigs without looking at validation
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          n=$(cat unitig_gwas/discovery_unitigs/N_UNITIG_TESTS.txt)
+          python amr_discovery/select_stable_unitigs.py \
+            --pyseer unitig_gwas/pyseer_discovery/dim10.tsv unitig_gwas/pyseer_discovery/dim20.tsv unitig_gwas/pyseer_discovery/dim30.tsv \
+            --n-tests "$n" --p-screen 1e-4 --max-candidates 5000 \
+            --out unitig_gwas/selection \
+            2>&1 | tee unitig_gwas/selection_console.log
+          selected=$(grep -c '^>' unitig_gwas/selection/selected_unitigs.fasta || true)
+          echo "selected=$selected" | tee unitig_gwas/selection/SELECTED_COUNT.txt
+
+      - name: Query selected unitigs in held-out validation and whole cohort
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          selected=$(grep -c '^>' unitig_gwas/selection/selected_unitigs.fasta || true)
+          if [[ "$selected" == 0 ]]; then
+            touch unitig_gwas/NO_DISCOVERY_UNITIGS_SELECTED
+            exit 0
+          fi
+          mkdir -p unitig_gwas/candidate_calls
+          unitig-caller --query --refs unitig_gwas/validation_refs.txt \
+            --unitigs unitig_gwas/selection/selected_unitigs.fasta \
+            --out unitig_gwas/candidate_calls/validation --rtab --threads 4 \
+            2>&1 | tee unitig_gwas/candidate_calls/validation.log
+          unitig-caller --query --refs unitig_gwas/all_refs.txt \
+            --unitigs unitig_gwas/selection/selected_unitigs.fasta \
+            --out unitig_gwas/candidate_calls/all --rtab --threads 4 \
+            2>&1 | tee unitig_gwas/candidate_calls/all.log
+          test -s unitig_gwas/candidate_calls/validation.rtab
+          test -s unitig_gwas/candidate_calls/all.rtab
+
+      - name: Build whole-cohort structure matrix and adjusted candidate models
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          [[ -f unitig_gwas/NO_DISCOVERY_UNITIGS_SELECTED ]] && exit 0
+          mash sketch -p 4 -s 10000 -l unitig_gwas/all_refs.txt -o unitig_gwas/structure/all
+          mash dist unitig_gwas/structure/all.msh unitig_gwas/structure/all.msh | square_mash > unitig_gwas/structure/all_raw.tsv
+          python - <<'PY'
+from pathlib import Path
+import pandas as pd
+x=pd.read_csv('unitig_gwas/structure/all_raw.tsv',sep='\t',index_col=0)
+clean=lambda s: Path(str(s)).name.removesuffix('.fna')
+x.index=[clean(v) for v in x.index]; x.columns=[clean(v) for v in x.columns]; x=x.loc[x.index,x.index]
+x.to_csv('unitig_gwas/structure/all_mash.tsv',sep='\t')
+PY
+          rm -f unitig_gwas/structure/all_raw.tsv unitig_gwas/structure/all.msh
+          mkdir -p unitig_gwas/pyseer_all_candidates
+          for dim in 10 20 30; do
+            pyseer \
+              --phenotypes unitig_gwas/all_phenotypes.tsv \
+              --pres unitig_gwas/candidate_calls/all.rtab \
+              --distances unitig_gwas/structure/all_mash.tsv \
+              --max-dimensions "$dim" --min-af 0.01 --max-af 0.99 \
+              --filter-pvalue 1 --lrt-pvalue 1 --print-samples \
+              --output-patterns "unitig_gwas/pyseer_all_candidates/dim${dim}.patterns" \
+              > "unitig_gwas/pyseer_all_candidates/dim${dim}.tsv" \
+              2> "unitig_gwas/pyseer_all_candidates/dim${dim}.log"
+          done
+
+      - name: Evaluate independent replication and cross-source robustness
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          if [[ -f unitig_gwas/NO_DISCOVERY_UNITIGS_SELECTED ]]; then
+            mkdir -p unitig_gwas/final_evaluation
+            printf '{"status":"NO_DISCOVERY_UNITIG_PASSED_SCREEN","n_strict_statistically_replicated":0}\n' > unitig_gwas/final_evaluation/UNITIG_REPLICATION_SUMMARY.json
+            exit 0
+          fi
+          python amr_discovery/evaluate_unitig_replication.py \
+            --selection unitig_gwas/selection/SELECTED_DISCOVERY_UNITIGS.csv \
+            --manifest unitig_gwas/gwas_sample_manifest.csv \
+            --validation-rtab unitig_gwas/candidate_calls/validation.rtab \
+            --all-rtab unitig_gwas/candidate_calls/all.rtab \
+            --whole-pyseer unitig_gwas/pyseer_all_candidates/dim10.tsv unitig_gwas/pyseer_all_candidates/dim20.tsv unitig_gwas/pyseer_all_candidates/dim30.tsv \
+            --out unitig_gwas/final_evaluation \
+            2>&1 | tee unitig_gwas/evaluation_console.log
+
+      - name: Extract and annotate contexts of statistically replicated unitigs
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          strict=unitig_gwas/final_evaluation/STRICT_STATISTICALLY_REPLICATED_UNITIGS.csv
+          [[ -s "$strict" ]] || { touch unitig_gwas/NO_STRICT_UNITIG_CONTEXTS; exit 0; }
+          n=$(python - <<'PY'
+import pandas as pd
+p='unitig_gwas/final_evaluation/STRICT_STATISTICALLY_REPLICATED_UNITIGS.csv'
+try: print(len(pd.read_csv(p)))
+except Exception: print(0)
+PY
+)
+          [[ "$n" -gt 0 ]] || { touch unitig_gwas/NO_STRICT_UNITIG_CONTEXTS; exit 0; }
+          python amr_discovery/extract_unitig_contexts.py \
+            --strict "$strict" \
+            --manifest unitig_gwas/gwas_sample_manifest.csv \
+            --all-rtab unitig_gwas/candidate_calls/all.rtab \
+            --reference-gbff unitig_gwas/reference.gbff \
+            --out unitig_gwas/contexts --flank 10000 --max-representatives 5 \
+            2>&1 | tee unitig_gwas/context_console.log
+          test -s unitig_gwas/contexts/replicated_unitig_contexts.fna || exit 0
+          mkdir -p unitig_gwas/context_annotation/prokka
+          prokka unitig_gwas/contexts/replicated_unitig_contexts.fna \
+            --outdir unitig_gwas/context_annotation/prokka --prefix replicated_contexts \
+            --kingdom Bacteria --genus Klebsiella --species pneumoniae --cpus 4 --force \
+            2>&1 | tee unitig_gwas/context_annotation/prokka.log
+          amrfinder -u 2>&1 | tee unitig_gwas/context_annotation/amrfinder_update.log
+          amrfinder -n unitig_gwas/contexts/replicated_unitig_contexts.fna \
+            -O Klebsiella_pneumoniae \
+            -o unitig_gwas/context_annotation/AMRFINDER_CONTEXTS.tsv \
+            2> unitig_gwas/context_annotation/amrfinder.log \
+            || amrfinder -n unitig_gwas/contexts/replicated_unitig_contexts.fna \
+                 -o unitig_gwas/context_annotation/AMRFINDER_CONTEXTS.tsv \
+                 2>> unitig_gwas/context_annotation/amrfinder.log
+
+      - name: Compact bulky intermediates and hash all retained evidence
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          mkdir -p unitig_gwas/provenance
+          if [[ -f unitig_gwas/discovery_unitigs/discovery.pyseer ]]; then
+            sha256sum unitig_gwas/discovery_unitigs/discovery.pyseer > unitig_gwas/provenance/FULL_DISCOVERY_UNITIG_PYSEER_SHA256.txt
+            rm -f unitig_gwas/discovery_unitigs/discovery.pyseer
+          fi
+          gzip -9 unitig_gwas/pyseer_discovery/*.tsv unitig_gwas/pyseer_discovery/*.patterns 2>/dev/null || true
+          rm -rf assemblies download
+          find unitig_gwas -type f ! -name SHA256SUMS_ALL.txt -print0 | sort -z | xargs -0 sha256sum > unitig_gwas/SHA256SUMS_ALL.txt || true
+          du -ah unitig_gwas | sort -h | tail -150 > unitig_gwas/FILE_SIZES.txt || true
+
+      - name: Upload whole-genome unitig evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: KP_COLISTIN_UNITIG_GWAS_20260819
+          path: unitig_gwas
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
