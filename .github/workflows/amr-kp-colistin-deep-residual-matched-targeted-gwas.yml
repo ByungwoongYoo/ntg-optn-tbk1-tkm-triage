@@ -1,0 +1,149 @@
+name: Matched deep-residual K. pneumoniae colistin targeted GWAS
+
+on:
+  pull_request:
+    branches: [amr-kp-colistin-genome-audit-20260819]
+    paths:
+      - '.github/workflows/amr-kp-colistin-deep-residual-matched-targeted-gwas.yml'
+      - 'amr_discovery/match_deep_residual_controls.py'
+      - 'amr_discovery/prepare_colistin_gwas_inputs.py'
+      - 'amr_discovery/evaluate_colistin_gwas.py'
+      - 'amr_discovery/tighten_colistin_gwas_gate.py'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  V4_RUN_ID: '32214559594'
+  V4_ARTIFACT: 'KP_COLISTIN_TARGETED_GWAS_20260819_V4_BIOPROJECT_FIXED'
+  CORE_RUN_ID: '32209530341'
+  CORE_ARTIFACT: 'KP_COLISTIN_CORE_KLEBORATE_AUDIT_20260819'
+
+jobs:
+  matched-deep-residual:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.V4_ARTIFACT }}
+          path: v4
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.V4_RUN_ID }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.CORE_ARTIFACT }}
+          path: core
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.CORE_RUN_ID }}
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: matched-residual
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11 pandas=2.3.1 numpy scipy scikit-learn pyseer tabulate=0.9.0
+          cache-downloads: true
+          post-cleanup: all
+
+      - name: Match balanced sequence-audited residual cohort
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p matched/provenance matched/dummy_assemblies
+          python amr_discovery/match_deep_residual_controls.py \
+            --manifest v4/gwas_inputs_bioproject/gwas_sample_manifest.csv \
+            --kleborate-labels core/summary/labels_with_kleborate.csv \
+            --out matched/matching 2>&1 | tee matched/matching_console.log
+          python - <<'PY'
+          from pathlib import Path
+          import pandas as pd
+          x=pd.read_csv('matched/matching/DEEP_RESIDUAL_MATCHED_COHORT.csv',dtype={'assembly_ID':str})
+          assert x.phenotype.value_counts().to_dict()=={'R':218,'S':218}
+          for acc in x.assembly_ID: (Path('matched/dummy_assemblies')/f'{acc}.fna').touch()
+          PY
+          python amr_discovery/prepare_colistin_gwas_inputs.py \
+            --metadata matched/matching/DEEP_RESIDUAL_MATCHED_COHORT.csv \
+            --rtab v4/targeted_variants/targeted_variants.Rtab \
+            --assembly-report v4/assembly_data_report.jsonl \
+            --assemblies-dir matched/dummy_assemblies \
+            --out matched/gwas_inputs --validation-fraction 0.30 --seed 20260819 --min-class 25 \
+            2>&1 | tee matched/input_console.log
+          rm -rf matched/dummy_assemblies
+          git rev-parse HEAD > matched/provenance/GIT_HEAD.txt
+          printf 'v4_run=%s\nv4_artifact=%s\ncore_run=%s\ncore_artifact=%s\n' "$V4_RUN_ID" "$V4_ARTIFACT" "$CORE_RUN_ID" "$CORE_ARTIFACT" > matched/provenance/UPSTREAM.txt
+          python --version > matched/provenance/PYTHON_VERSION.txt
+          pyseer --version > matched/provenance/PYSEER_VERSION.txt
+          micromamba list > matched/provenance/MICROMAMBA_LIST.txt
+
+      - name: Subset exact population-distance matrices
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p matched/structure
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import pandas as pd
+          s=json.loads(Path('matched/gwas_inputs/GWAS_INPUT_SUMMARY.json').read_text())
+          if s['primary_bioproject_coverage']<0.95 or not s['group_disjoint']: raise SystemExit(s)
+          x=pd.read_csv('v4/structure/all_mash.tsv',sep='\t',index_col=0); x.index=x.index.astype(str); x.columns=x.columns.astype(str)
+          m=pd.read_csv('matched/gwas_inputs/gwas_sample_manifest.csv',dtype={'assembly_ID':str})
+          ids=m.assembly_ID.tolist(); disc=m.loc[m.split.eq('discovery'),'assembly_ID'].tolist()
+          if set(ids)-set(x.index): raise SystemExit(f'Missing IDs {sorted(set(ids)-set(x.index))[:20]}')
+          x.loc[ids,ids].to_csv('matched/structure/all_mash.tsv',sep='\t')
+          x.loc[disc,disc].to_csv('matched/structure/discovery_mash.tsv',sep='\t')
+          print(json.dumps(s,indent=2))
+          PY
+
+      - name: Run targeted population-structure models
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p matched/pyseer
+          for dim in 10 20 30; do
+            pyseer --phenotypes matched/gwas_inputs/discovery_phenotypes.tsv --pres matched/gwas_inputs/discovery_variants.Rtab \
+              --distances matched/structure/discovery_mash.tsv --max-dimensions "$dim" --min-af 0.01 --max-af 0.99 --filter-pvalue 1 --print-samples \
+              --output-patterns "matched/pyseer/discovery_dim${dim}.patterns" > "matched/pyseer/discovery_dim${dim}.tsv" 2> "matched/pyseer/discovery_dim${dim}.log"
+            pyseer --phenotypes matched/gwas_inputs/all_phenotypes.tsv --pres matched/gwas_inputs/all_variants.Rtab \
+              --distances matched/structure/all_mash.tsv --max-dimensions "$dim" --min-af 0.01 --max-af 0.99 --filter-pvalue 1 --print-samples \
+              --output-patterns "matched/pyseer/all_dim${dim}.patterns" > "matched/pyseer/all_dim${dim}.tsv" 2> "matched/pyseer/all_dim${dim}.log"
+          done
+
+      - name: Apply complete replication gates
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          python amr_discovery/evaluate_colistin_gwas.py \
+            --manifest matched/gwas_inputs/gwas_sample_manifest.csv --rtab matched/gwas_inputs/all_variants.Rtab \
+            --feature-meta v4/targeted_variants/targeted_variant_metadata.csv \
+            --discovery matched/pyseer/discovery_dim10.tsv matched/pyseer/discovery_dim20.tsv matched/pyseer/discovery_dim30.tsv \
+            --whole matched/pyseer/all_dim10.tsv matched/pyseer/all_dim20.tsv matched/pyseer/all_dim30.tsv \
+            --out matched/evaluation 2>&1 | tee matched/evaluation_console.log
+          python amr_discovery/tighten_colistin_gwas_gate.py \
+            --evidence matched/evaluation/ALL_MARKER_EVIDENCE.csv --meta-details matched/evaluation/MARKER_META_ANALYSIS_DETAILS.json \
+            --out matched/final_gate 2>&1 | tee matched/final_gate_console.log
+
+      - name: Finalize hashes
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          find matched -type f ! -name SHA256SUMS_ALL.txt -print0 | sort -z | xargs -0 sha256sum > matched/SHA256SUMS_ALL.txt || true
+          du -ah matched | sort -h | tail -200 > matched/FILE_SIZES.txt || true
+      - name: Upload matched deep-residual evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: KP_COLISTIN_DEEP_RESIDUAL_MATCHED_TARGETED_GWAS_20260819
+          path: matched
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
