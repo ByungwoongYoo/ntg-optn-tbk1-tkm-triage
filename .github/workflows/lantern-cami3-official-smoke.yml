@@ -34,6 +34,33 @@ jobs:
           cp lantern/config/cami3_official_snapshot_20260820.json lantern_smoke/provenance/
           sha256sum lantern/config/cami3_official_snapshot_20260820.json > lantern_smoke/provenance/INPUT_CONFIG_SHA256.txt
 
+      - name: Exercise strict CAMI submission validator
+        run: |
+          set -euo pipefail
+          cat > lantern_smoke/validation/valid_submission.fasta <<'EOF'
+          >contig_1
+          ATCGNATCGN
+          >contig_2
+          NNNNATCG
+          EOF
+          python lantern/scripts/validate_cami_fasta.py \
+            lantern_smoke/validation/valid_submission.fasta \
+            --mode submission \
+            --out lantern_smoke/validation/VALID_SUBMISSION_SELFTEST.json
+
+          cat > lantern_smoke/validation/invalid_lowercase_submission.fasta <<'EOF'
+          >contig_lowercase
+          ATCGNatcgn
+          EOF
+          if python lantern/scripts/validate_cami_fasta.py \
+               lantern_smoke/validation/invalid_lowercase_submission.fasta \
+               --mode submission \
+               --out lantern_smoke/validation/INVALID_SUBMISSION_SELFTEST.json; then
+            echo 'Strict submission validator incorrectly accepted lowercase sequence' >&2
+            exit 1
+          fi
+          printf 'PASS\n' > lantern_smoke/validation/STRICT_SUBMISSION_VALIDATOR_SELFTEST.txt
+
       - name: Download official CAMI III Toy sample-0 assembly resources
         run: |
           set -euo pipefail
@@ -66,7 +93,7 @@ jobs:
             tar -xzf "$out" -C "lantern_smoke/extracted/${item}"
           done
 
-      - name: Validate every extracted FASTA-compatible file
+      - name: Validate every extracted official FASTA-compatible file
         run: |
           set -euo pipefail
           mapfile -d '' files < <(find lantern_smoke/extracted -type f \( -iname '*.fa' -o -iname '*.fasta' -o -iname '*.fna' -o -iname '*.fa.gz' -o -iname '*.fasta.gz' -o -iname '*.fna.gz' \) -print0)
@@ -75,8 +102,8 @@ jobs:
           n=0
           for f in "${files[@]}"; do
             n=$((n+1))
-            out="lantern_smoke/validation/fasta_${n}.json"
-            python lantern/scripts/validate_cami_fasta.py "$f" --out "$out"
+            out="lantern_smoke/validation/reference_fasta_${n}.json"
+            python lantern/scripts/validate_cami_fasta.py "$f" --mode reference --out "$out"
             printf '%s\t%s\n' "$n" "$f" >> lantern_smoke/validation/VALIDATED_FILES.tsv
           done
           echo "$n" > lantern_smoke/validation/N_FASTA_FILES.txt
@@ -89,15 +116,19 @@ jobs:
           from pathlib import Path
           root=Path('lantern_smoke')
           validations=[]
-          for p in sorted((root/'validation').glob('fasta_*.json')):
+          for p in sorted((root/'validation').glob('reference_fasta_*.json')):
               validations.append(json.loads(p.read_text()))
           verdict={
               'status':'PASS' if validations and all(v['valid'] for v in validations) else 'FAIL',
+              'strict_submission_validator_selftest':'PASS',
               'official_files_downloaded':2,
-              'fasta_files_validated':len(validations),
+              'official_fasta_files_validated':len(validations),
               'total_records':sum(v['records'] for v in validations),
               'total_bases':sum(v['total_bases'] for v in validations),
-              'claim_boundary':'Official-source retrieval and FASTA syntax/integrity smoke test only. No assembler baseline or biological performance result has been produced.'
+              'total_lowercase_bases':sum(v['lowercase_bases'] for v in validations),
+              'total_iupac_ambiguity_bases_excluding_n':sum(v['iupac_ambiguity_bases_excluding_n'] for v in validations),
+              'official_files_already_submission_compatible':sum(bool(v['submission_compatible']) for v in validations),
+              'claim_boundary':'Official-source retrieval and reference-FASTA syntax/integrity smoke test only. Strict CAMI submission syntax was tested separately. No assembler baseline or biological performance result has been produced.'
           }
           (root/'SMOKE_VERDICT.json').write_text(json.dumps(verdict,indent=2,sort_keys=True)+'\n')
           if verdict['status']!='PASS':
