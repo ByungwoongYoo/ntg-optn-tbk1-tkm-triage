@@ -116,7 +116,13 @@ extract_sig <- function(result, test_name, genotype_columns) {
                       score = numeric(), p_value = numeric()))
   }
   if (is.atomic(obj) && !is.data.frame(obj)) {
-    vals <- normalize_locus_ids(obj[!is.na(obj)], genotype_columns,
+    raw <- as.character(obj[!is.na(obj)])
+    raw <- raw[raw != "No significant SNPs found."]
+    if (!length(raw)) {
+      return(data.frame(pattern_id = character(), test = character(),
+                        score = numeric(), p_value = numeric()))
+    }
+    vals <- normalize_locus_ids(raw, genotype_columns,
                                 paste0(test_name, " atomic sig.snps"))
     return(data.frame(pattern_id = vals, test = test_name,
                       score = NA_real_, p_value = NA_real_))
