@@ -98,6 +98,7 @@ def sha(path):
     with path.open('rb') as f:
         for block in iter(lambda:f.read(1024*1024),b''): h.update(block)
     return h.hexdigest()
+rule_obj=json.loads(rule.read_text())
 obj={
   'status':'ACTIVE_PROTOCOL_FROZEN_BEFORE_EXECUTION',
   'repository_path':str(repo),
@@ -107,6 +108,8 @@ obj={
   'input_manifest_sha256':sha(manifest),
   'rule_path':str(rule),
   'rule_sha256':sha(rule),
+  'algorithm_source_commit':rule_obj['algorithm_source_commit'],
+  'assembly_protocol_source_commit':rule_obj['assembly_protocol_source_commit'],
   'platform':platform.platform(),
   'python':platform.python_version(),
   'post_result_tuning_allowed':False,
@@ -118,7 +121,7 @@ PY
 {
   echo "python=$(python --version 2>&1 || true)"
   echo "megahit=$(megahit --version 2>&1 | head -1 || true)"
-  echo "spades=$(spades.py --version 2>&1 | head -1 || metaspades.py --version 2>&1 | head -1 || true)"
+  echo "metaspades=$(metaspades.py --version 2>&1 | head -1 || true)"
   echo "flye=$(flye --version 2>&1 | head -1 || true)"
   echo "minimap2=$(minimap2 --version 2>&1 | head -1 || true)"
   echo "samtools=$(samtools --version 2>&1 | head -1 || true)"
@@ -137,29 +140,48 @@ fi
   bash "$plan_root/RUN_PLAN.sh"
 )
 
-printf 'individual_id\tfasta\n' > "$submission_root/INDIVIDUAL_FASTAS.tsv"
-python - "$out" "$submission_root/INDIVIDUAL_FASTAS.tsv" <<'PY'
+candidate_manifest="$submission_root/CANDIDATE_INDIVIDUAL_FASTAS.tsv"
+baseline_manifest="$submission_root/BASELINE_INDIVIDUAL_FASTAS.tsv"
+printf 'individual_id\tfasta\n' > "$candidate_manifest"
+printf 'individual_id\tfasta\n' > "$baseline_manifest"
+python - "$out" "$candidate_manifest" "$baseline_manifest" <<'PY'
 import json,sys
 from pathlib import Path
-root=Path(sys.argv[1]); dest=Path(sys.argv[2])
+root=Path(sys.argv[1]); candidate_dest=Path(sys.argv[2]); baseline_dest=Path(sys.argv[3])
 freeze=json.loads((root/'freeze/mapping/MAPPING_FREEZE.json').read_text())
-with dest.open('a',encoding='utf-8') as f:
+with candidate_dest.open('a',encoding='utf-8') as candidate_out, baseline_dest.open('a',encoding='utf-8') as baseline_out:
     for group in freeze['groups']:
         ind=str(group['individual_id'])
-        fasta=root/f'work/individual_{ind}/submission/LANTERN_V7_INDIVIDUAL_{ind}.fasta'
-        if not fasta.is_file() or fasta.stat().st_size==0:
-            raise SystemExit(f'missing individual FASTA: {fasta}')
-        f.write(f'{ind}\t{fasta}\n')
+        candidate=root/f'work/individual_{ind}/submission/LANTERN_V7_INDIVIDUAL_{ind}.fasta'
+        baseline=root/f'work/individual_{ind}/submission/METASPADES_HYBRID_INDIVIDUAL_{ind}.fasta'
+        for label,path in [('candidate',candidate),('baseline',baseline)]:
+            if not path.is_file() or path.stat().st_size==0:
+                raise SystemExit(f'missing {label} individual FASTA: {path}')
+        candidate_out.write(f'{ind}\t{candidate}\n')
+        baseline_out.write(f'{ind}\t{baseline}\n')
 PY
 
+candidate_combined="$submission_root/LANTERN_CAMI3_CANDIDATE_COMBINED_INTERNAL.fasta"
+baseline_combined="$submission_root/METASPADES_HYBRID_BASELINE_COMBINED_INTERNAL.fasta"
 python "$repo_root/lantern_submission/scripts/combine_submission_fastas.py" \
-  --manifest "$submission_root/INDIVIDUAL_FASTAS.tsv" \
-  --out-fasta "$submission_root/LANTERN_CAMI3_ASSEMBLY.fasta" \
-  --out-json "$submission_root/COMBINATION_SUMMARY.json"
+  --manifest "$candidate_manifest" \
+  --out-fasta "$candidate_combined" \
+  --out-json "$submission_root/CANDIDATE_COMBINATION_SUMMARY.json"
+python "$repo_root/lantern_submission/scripts/combine_submission_fastas.py" \
+  --manifest "$baseline_manifest" \
+  --out-fasta "$baseline_combined" \
+  --out-json "$submission_root/BASELINE_COMBINATION_SUMMARY.json"
 
 python "$repo_root/lantern_cami3/scripts/verify_cami_assembly.py" \
-  "$submission_root/LANTERN_CAMI3_ASSEMBLY.fasta" \
-  --out "$submission_root/VALIDATION.json"
-sha256sum "$submission_root/LANTERN_CAMI3_ASSEMBLY.fasta" > "$submission_root/SHA256.txt"
+  "$candidate_combined" --out "$submission_root/CANDIDATE_VALIDATION.json"
+python "$repo_root/lantern_cami3/scripts/verify_cami_assembly.py" \
+  "$baseline_combined" --out "$submission_root/BASELINE_VALIDATION.json"
+sha256sum "$candidate_combined" "$baseline_combined" > "$submission_root/SHA256.txt"
 find "$out" -type f ! -name MANIFEST.sha256 -print0 | sort -z | xargs -0 sha256sum > "$out/MANIFEST.sha256"
-echo "FROZEN_RUN_COMPLETE_AWAITING_EXTERNAL_SUBMISSION_APPROVAL"
+cat > "$submission_root/STATUS.txt" <<'EOF'
+FROZEN_RUN_COMPLETE_AWAITING_SUBMISSION_FORMAT_CLARIFICATION_AND_EXTERNAL_APPROVAL
+The combined FASTAs are internal deterministic bundles. CAMI support must first confirm
+whether patient-specific submission requires nine FASTAs, an archive, a combined FASTA,
+or separate submissions. No portal upload has been authorized.
+EOF
+cat "$submission_root/STATUS.txt"
