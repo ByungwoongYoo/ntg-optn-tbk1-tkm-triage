@@ -1,0 +1,48 @@
+{
+  "baseline_chimera_bp_fraction": 0.1198228082692852,
+  "claim_boundary": "Untouched public Toy participant-pair validation of the exact frozen v7 rule. This is not an official hidden CAMI III result or a novel-organism discovery.",
+  "full_chimera_bp_fraction": 0.0668761342728595,
+  "full_method": "v7_full",
+  "gates": {
+    "chimera_tradeoff": true,
+    "genome_fraction_gain": false,
+    "longitudinal_ablation_contribution": true,
+    "low_abundance_gain": false,
+    "mean_genome_recovery_gain": false,
+    "paired_bootstrap_positive": true,
+    "pseudo_novel_all_tiers": true
+  },
+  "genome_fraction_gain_percentage_points": 0.19712208152569133,
+  "holdout_pair": [
+    18,
+    19
+  ],
+  "longitudinal_ablation_drop_percentage_points": 0.8174993408148445,
+  "low_abundance_baseline_mean_recovery_percent": 1.4792828453578144,
+  "low_abundance_full_mean_recovery_percent": 1.8230799754782634,
+  "low_abundance_gain_percentage_points": 0.343797130120449,
+  "mean_genome_recovery_gain_percentage_points": 0.8235602738728574,
+  "n_paired_genomes": 607,
+  "paired_bootstrap_95_ci": [
+    0.3989332218457324,
+    1.3009848342488515
+  ],
+  "paired_per_genome_mean_gain_percentage_points": 0.823560273872852,
+  "pseudo_novel_gains_percentage_points": {
+    "deep_neighbour_withheld": 0.7014520570930922,
+    "exact_target_withheld": 0.9877345599826359,
+    "genus_neighbour_withheld": 0.624042296572922,
+    "species_neighbour_withheld": 0.8798994043692909
+  },
+  "relative_chimera_change": -0.44187475457456615,
+  "status": "PARTIAL",
+  "strict_success": false,
+  "strict_success_gates": {
+    "genome_fraction_gain_minimum_percentage_points": 0.5,
+    "longitudinal_ablation_drop_minimum_percentage_points": 0.5,
+    "low_abundance_gain_minimum_percentage_points": 2.0,
+    "mean_genome_recovery_gain_minimum_percentage_points": 1.0,
+    "relative_cross_binid_chimera_increase_maximum": 0.1
+  },
+  "strongest_baseline": "metaspades_hybrid_pair"
+}

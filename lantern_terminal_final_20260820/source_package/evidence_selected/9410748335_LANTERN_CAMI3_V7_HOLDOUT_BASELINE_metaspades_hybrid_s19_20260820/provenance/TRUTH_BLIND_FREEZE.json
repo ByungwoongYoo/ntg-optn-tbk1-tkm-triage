@@ -1,0 +1,8 @@
+{
+  "method": "metaspades_hybrid_s19",
+  "assembly_sha256": "83d41213e143eab9541b2a7fbbfe9277fcd60d259228cd11aac6070fd5609b79",
+  "assembly_bytes": 58529306,
+  "truth_accessed": false,
+  "freeze_utc": "2026-08-20T14:29:12Z",
+  "boundary": "Baseline assembly completed and hashed before holdout GSA access."
+}

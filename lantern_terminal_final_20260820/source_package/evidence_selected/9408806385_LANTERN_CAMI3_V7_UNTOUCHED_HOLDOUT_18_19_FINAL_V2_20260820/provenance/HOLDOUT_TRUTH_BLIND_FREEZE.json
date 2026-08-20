@@ -1,0 +1,29 @@
+{
+  "boundary": "Exact frozen v7 development rule and all matched ablations were constructed and hashed before sample-18/19 gold or abundance metadata was accessed.",
+  "freeze_utc": "2026-08-20T13:21:58Z",
+  "holdout_pair": [
+    18,
+    19
+  ],
+  "outputs": {
+    "v7_full": {
+      "bytes": 113794444,
+      "sha256": "4f8b875683c62c785b1301939fbe28fce2a704afd8ba0e8e1d9c8cfba328cf4b"
+    },
+    "v7_no_extension": {
+      "bytes": 103342896,
+      "sha256": "cab2077b92425fa8e18a29822ccf9f3254f08908b2e8e7c0a3ce1c103743c765"
+    },
+    "v7_no_long": {
+      "bytes": 104751706,
+      "sha256": "5f52759a9a6e1434a08fbdd08ef932b9a402940fcad93a5f631551fa9b67e199"
+    },
+    "v7_no_longitudinal": {
+      "bytes": 116352426,
+      "sha256": "b5691152a5f3c28e2179d4185ed53faea6e52721ef272f0baa7cd4daaf17ff36"
+    }
+  },
+  "status": "V7_HOLDOUT_18_19_FROZEN_BEFORE_GOLD",
+  "truth_accessed": false,
+  "winner_sha256": "fecae2983740ac8026d99a6b4a92f9900c5969a6298ca9eb51137635bbf75e30"
+}

@@ -1,0 +1,8 @@
+{
+  "method": "flye_long_pair",
+  "assembly_sha256": "a10542fff0a8254d05928596deb3fd382add6d8916686bf16fb0120320afbd58",
+  "assembly_bytes": 29005931,
+  "truth_accessed": false,
+  "freeze_utc": "2026-08-20T14:34:35Z",
+  "boundary": "Baseline assembly completed and hashed before holdout GSA access."
+}

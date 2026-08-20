@@ -1,0 +1,7 @@
+{
+  "n_input": 32334,
+  "n_clusters": 19183,
+  "n_edges_accepted": 21776,
+  "min_identity": 0.97,
+  "min_shorter_coverage": 0.85
+}

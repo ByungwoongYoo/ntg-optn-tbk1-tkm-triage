@@ -1,0 +1,3 @@
+method,role,genome_fraction_percent,mean_genome_recovery_percent,chimera_bp_fraction,assembly_total_bp
+v4_balanced,lantern,19.062453838524288,15.330145384472788,0.06055884662518693,
+metaspades_hybrid_pair,baseline,18.843242227216013,15.038218048836526,0.055889752379119625,153108211

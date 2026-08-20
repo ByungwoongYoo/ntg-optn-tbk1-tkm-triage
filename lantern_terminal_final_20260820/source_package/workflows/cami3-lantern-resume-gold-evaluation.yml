@@ -1,0 +1,302 @@
+name: CAMI III LANTERN resume frozen Toy gold evaluation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cami3-lantern-resume-gold-evaluation.yml'
+      - 'lantern_cami3/scripts/evaluate_gold_coverage.py'
+      - 'lantern_cami3/scripts/build_pseudo_novel_audit.py'
+      - 'lantern_cami3/scripts/summarize_benchmark.py'
+      - 'lantern_cami3/config/decision_gate_v1.json'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  UPSTREAM_RUN_ID: '32313703218'
+  UPSTREAM_ARTIFACT: 'LANTERN_CAMI3_TOY_SHORT_BENCHMARK_20260819'
+
+jobs:
+  resume-gold-evaluation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download immutable frozen benchmark artifact inside runner
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.UPSTREAM_ARTIFACT }}
+          path: upstream
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.UPSTREAM_RUN_ID }}
+
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: lantern-evaluate
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            minimap2=2.31
+            mash=2.3
+          cache-downloads: true
+          post-cleanup: all
+
+      - name: Locate and audit frozen truth-blind inputs
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=$(find upstream -type d -name lantern_short_benchmark | head -1)
+          test -n "$root"
+          test -s "$root/truth/combined_truth.fasta"
+          test -s "$root/truth/truth_mapping.tsv"
+          test -s "$root/truth/genome_reference_manifest.tsv"
+          test -s "$root/truth_blind/TRUTH_BLIND_FREEZE.json"
+          test -s "$root/truth_blind/LANTERN_full/LANTERN_ASSEMBLY.fasta"
+          test -s "$root/truth_blind/LANTERN_no_longitudinal/LANTERN_ASSEMBLY.fasta"
+          mkdir -p resumed/{evaluation,pseudo_novel,decision,provenance,logs,failure_audit}
+          printf '%s\n' "$root" > /tmp/lantern_root
+          printf 'upstream_run=%s\nupstream_artifact=%s\nroot=%s\n' \
+            "$UPSTREAM_RUN_ID" "$UPSTREAM_ARTIFACT" "$root" > resumed/provenance/UPSTREAM.txt
+          git rev-parse HEAD > resumed/provenance/EVALUATOR_GIT_HEAD.txt
+          uname -a > resumed/provenance/UNAME.txt
+          python --version > resumed/provenance/PYTHON_VERSION.txt
+          minimap2 --version > resumed/provenance/MINIMAP2_VERSION.txt
+          mash --version > resumed/provenance/MASH_VERSION.txt
+          micromamba list > resumed/provenance/MICROMAMBA_LIST.txt
+          cp "$root/truth_blind/TRUTH_BLIND_FREEZE.json" resumed/provenance/
+          cp "$root/truth/TRUTH_SUMMARY.json" resumed/provenance/
+          cp lantern_cami3/config/decision_gate_v1.json resumed/provenance/
+          sha256sum \
+            "$root/truth_blind/TRUTH_BLIND_FREEZE.json" \
+            "$root/truth/combined_truth.fasta" \
+            "$root/truth/truth_mapping.tsv" \
+            "$root/truth/genome_reference_manifest.tsv" \
+            lantern_cami3/scripts/evaluate_gold_coverage.py \
+            lantern_cami3/scripts/build_pseudo_novel_audit.py \
+            lantern_cami3/scripts/summarize_benchmark.py \
+            lantern_cami3/config/decision_gate_v1.json \
+            > resumed/provenance/INPUT_AND_CODE_SHA256.txt
+
+      - name: Freeze eligible method set and metadata
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=$(cat /tmp/lantern_root)
+          cat > resumed/METHOD_MANIFEST.tsv <<'EOF'
+          method	role	mode	scope	ablation	eligible_primary_baseline
+          megahit_s0	baseline	short	single	none	true
+          megahit_s1	baseline	short	single	none	true
+          megahit_pair	baseline	short	longitudinal	none	true
+          metaspades_pair	baseline	short	longitudinal	none	true
+          lantern_full	lantern	short	longitudinal	full	false
+          lantern_no_longitudinal	ablation	short	longitudinal	no_longitudinal	false
+          lantern_no_consensus	ablation	short	longitudinal	no_consensus	false
+          EOF
+          python - "$root" <<'PY'
+          import json,sys
+          from pathlib import Path
+          root=Path(sys.argv[1])
+          methods={
+            'megahit_s0':root/'assemblies/megahit_single0/final.contigs.fa',
+            'megahit_s1':root/'assemblies/megahit_single1/final.contigs.fa',
+            'megahit_pair':root/'assemblies/megahit_longitudinal/final.contigs.fa',
+            'metaspades_pair':root/'assemblies/metaspades_longitudinal/contigs.fasta',
+            'lantern_full':root/'truth_blind/LANTERN_full/LANTERN_ASSEMBLY.fasta',
+            'lantern_no_longitudinal':root/'truth_blind/LANTERN_no_longitudinal/LANTERN_ASSEMBLY.fasta',
+            'lantern_no_consensus':root/'truth_blind/LANTERN_no_consensus/LANTERN_ASSEMBLY.fasta',
+          }
+          available={k:str(v) for k,v in methods.items() if v.is_file() and v.stat().st_size>0}
+          required={'megahit_s0','megahit_s1','megahit_pair','lantern_full','lantern_no_longitudinal','lantern_no_consensus'}
+          missing=sorted(required-set(available))
+          if missing:
+              raise SystemExit(f'missing required frozen methods: {missing}')
+          Path('resumed/AVAILABLE_METHODS.json').write_text(json.dumps({'available':available,'missing_optional':sorted(set(methods)-set(available))},indent=2)+'\n')
+          PY
+
+      - name: Build one reusable Toy-truth minimap2 index
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=$(cat /tmp/lantern_root)
+          /usr/bin/time -v minimap2 -I 4G -d resumed/toy_truth.mmi "$root/truth/combined_truth.fasta" \
+            > resumed/logs/TRUTH_INDEX.stdout 2> resumed/logs/TRUTH_INDEX.log
+          test -s resumed/toy_truth.mmi
+          sha256sum resumed/toy_truth.mmi > resumed/provenance/TRUTH_INDEX_SHA256.txt
+
+      - name: Evaluate every frozen assembly against Toy truth
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=$(cat /tmp/lantern_root)
+          python - <<'PY' > /tmp/method_paths.tsv
+          import json
+          from pathlib import Path
+          x=json.loads(Path('resumed/AVAILABLE_METHODS.json').read_text())['available']
+          for name,path in x.items():
+              print(f'{name}\t{path}')
+          PY
+          : > resumed/failure_audit/EVALUATION_STATUS.tsv
+          while IFS=$'\t' read -r name fasta; do
+            dir="resumed/evaluation/$name"
+            mkdir -p "$dir"
+            sha256sum "$fasta" > "$dir/ASSEMBLY_SHA256.txt"
+            set +e
+            /usr/bin/time -v timeout --signal=TERM --kill-after=120s 60m \
+              minimap2 -x asm5 -c -N 100 -t 4 resumed/toy_truth.mmi "$fasta" \
+              > "$dir/assembly_to_truth.paf" 2> "$dir/minimap2.log"
+            rc=$?
+            set -e
+            if [[ "$rc" -ne 0 || ! -s "$dir/assembly_to_truth.paf" ]]; then
+              printf '%s\tMINIMAP2_FAILED\t%s\n' "$name" "$rc" >> resumed/failure_audit/EVALUATION_STATUS.tsv
+              exit 1
+            fi
+            set +e
+            python lantern_cami3/scripts/evaluate_gold_coverage.py \
+              --paf "$dir/assembly_to_truth.paf" \
+              --truth-mapping "$root/truth/truth_mapping.tsv" \
+              --assembly-fasta "$fasta" \
+              --min-identity 0.90 \
+              --min-alignment 500 \
+              --out "$dir" \
+              > "$dir/evaluate_console.log" 2> "$dir/evaluate_error.log"
+            rc=$?
+            set -e
+            if [[ "$rc" -ne 0 || ! -s "$dir/GOLD_COVERAGE_SUMMARY.json" ]]; then
+              printf '%s\tEVALUATOR_FAILED\t%s\n' "$name" "$rc" >> resumed/failure_audit/EVALUATION_STATUS.tsv
+              exit 1
+            fi
+            printf '%s\tPASS\t0\n' "$name" >> resumed/failure_audit/EVALUATION_STATUS.tsv
+            rm -f "$dir/assembly_to_truth.paf"
+          done < /tmp/method_paths.tsv
+
+      - name: Build evaluation-only pseudo-novel tiers
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=$(cat /tmp/lantern_root)
+          python - "$root" <<'PY'
+          import csv,sys
+          from pathlib import Path
+          root=Path(sys.argv[1])
+          rows=list(csv.DictReader(open(root/'truth/genome_reference_manifest.tsv'),delimiter='\t'))
+          paths=[]
+          for r in rows:
+              if int(r['truth_bp'])<50000:
+                  continue
+              candidate=root/'truth/references'/Path(r['reference_path']).name
+              if not candidate.is_file():
+                  raise SystemExit(f'missing truth reference: {candidate}')
+              paths.append(str(candidate))
+          Path('resumed/pseudo_novel/mash_reference_files.txt').write_text('\n'.join(paths)+'\n')
+          PY
+          n=$(wc -l < resumed/pseudo_novel/mash_reference_files.txt)
+          [[ "$n" -ge 2 ]]
+          mash sketch -k 21 -s 1000 -l resumed/pseudo_novel/mash_reference_files.txt \
+            -o resumed/pseudo_novel/truth_genomes > resumed/logs/MASH_SKETCH.log 2>&1
+          mash dist resumed/pseudo_novel/truth_genomes.msh resumed/pseudo_novel/truth_genomes.msh \
+            > resumed/pseudo_novel/truth_genome_distances.tsv
+          mapfile -t rec_args < <(python - <<'PY'
+          import json
+          from pathlib import Path
+          x=json.loads(Path('resumed/AVAILABLE_METHODS.json').read_text())['available']
+          for name in x:
+              print('--recovery')
+              print(f'{name}=resumed/evaluation/{name}/per_genome_recovery.tsv')
+          PY
+          )
+          python lantern_cami3/scripts/build_pseudo_novel_audit.py \
+            --manifest "$root/truth/genome_reference_manifest.tsv" \
+            --mash resumed/pseudo_novel/truth_genome_distances.tsv \
+            "${rec_args[@]}" \
+            --min-truth-bp 50000 \
+            --out resumed/pseudo_novel \
+            > resumed/logs/PSEUDO_NOVEL.log 2>&1
+          python - <<'PY'
+          import csv
+          rows=list(csv.DictReader(open('resumed/pseudo_novel/PSEUDO_NOVEL_TARGETS.tsv'),delimiter='\t'))
+          tiers=['exact_target_withheld','species_neighbour_withheld','genus_neighbour_withheld','deep_neighbour_withheld']
+          with open('resumed/pseudo_novel/PSEUDO_NOVEL_SPLITS.tsv','w',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=['genome_id','tier'],delimiter='\t');w.writeheader()
+              for r in rows:
+                  for tier in tiers:
+                      if r[tier]=='true':w.writerow({'genome_id':r['genome_id'],'tier':tier})
+          PY
+          rm -f resumed/pseudo_novel/truth_genomes.msh resumed/pseudo_novel/truth_genome_distances.tsv
+
+      - name: Apply current frozen decision gate
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mapfile -t method_args < <(python - <<'PY'
+          import json
+          from pathlib import Path
+          x=json.loads(Path('resumed/AVAILABLE_METHODS.json').read_text())['available']
+          for name in x:
+              print('--method')
+              print(f'{name}=resumed/evaluation/{name}')
+          PY
+          )
+          python lantern_cami3/scripts/summarize_benchmark.py \
+            "${method_args[@]}" \
+            --manifest resumed/METHOD_MANIFEST.tsv \
+            --decision-config lantern_cami3/config/decision_gate_v1.json \
+            --full-method lantern_full \
+            --no-longitudinal-method lantern_no_longitudinal \
+            --pseudo-splits resumed/pseudo_novel/PSEUDO_NOVEL_SPLITS.tsv \
+            --seed 20260819 \
+            --bootstrap 5000 \
+            --out resumed/decision \
+            > resumed/logs/FINAL_DECISION.log 2>&1
+          cat resumed/decision/FINAL_DECISION.md
+          test -s resumed/decision/FINAL_DECISION.json
+
+      - name: Independent compact consistency audit and hashes
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          python - <<'PY'
+          import csv,hashlib,json
+          from pathlib import Path
+          root=Path('resumed')
+          errors=[]
+          decision_path=root/'decision/FINAL_DECISION.json'
+          comparison_path=root/'decision/METHOD_COMPARISON.csv'
+          decision=json.loads(decision_path.read_text()) if decision_path.exists() else {}
+          methods=list(csv.DictReader(open(comparison_path))) if comparison_path.exists() else []
+          names={r['method'] for r in methods}
+          required={'megahit_s0','megahit_s1','megahit_pair','lantern_full','lantern_no_longitudinal','lantern_no_consensus'}
+          if decision_path.exists() and not required.issubset(names):errors.append(f'missing methods {sorted(required-names)}')
+          if decision_path.exists() and decision.get('full_method')!='lantern_full':errors.append('full method mismatch')
+          if decision_path.exists() and decision.get('strongest_baseline') not in names:errors.append('strongest baseline absent')
+          verdict={'status':'PASS' if decision_path.exists() and not errors else 'INCOMPLETE','errors':errors,'decision_status':decision.get('status'),'n_methods':len(methods),'strongest_baseline':decision.get('strongest_baseline'),'claim_boundary':'Consistency check of public Toy evaluation outputs; not CAMI active-challenge scoring.'}
+          (root/'INDEPENDENT_AUDIT.json').write_text(json.dumps(verdict,indent=2)+'\n')
+          for p in root.rglob('*.paf'):p.unlink()
+          index=root/'toy_truth.mmi'
+          if index.exists():index.unlink()
+          lines=[]
+          for p in sorted(root.rglob('*')):
+              if p.is_file() and p.name!='SHA256SUMS_ALL.txt':
+                  lines.append(f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.relative_to(root)}')
+          (root/'SHA256SUMS_ALL.txt').write_text('\n'.join(lines)+'\n')
+          PY
+          find resumed -type f -printf '%P\t%s\n' | sort > resumed/CONTENTS.tsv
+          du -sh resumed > resumed/PACKAGE_SIZE.txt
+
+      - name: Upload compact resumed gold-evaluation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: LANTERN_CAMI3_TOY_GOLD_EVALUATION_RESUMED_20260820
+          path: resumed
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9

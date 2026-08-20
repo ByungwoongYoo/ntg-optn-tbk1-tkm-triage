@@ -1,0 +1,4 @@
+ablation,method,genome_fraction_percent,mean_genome_recovery_percent,cross_binid_chimeric_bp_fraction
+full,v7_full,9.069792298158212,7.5866022910198065,0.0668761342728595
+no_longitudinal,v7_no_longitudinal,8.252437677076687,6.8121434056656565,0.04883694987776335
+no_long,v7_no_long,8.446441842122116,7.148188751788881,0.05571215637072726

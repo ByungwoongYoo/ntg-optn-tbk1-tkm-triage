@@ -1,0 +1,16 @@
+{
+  "version": "LANTERN-decision-v1-20260819",
+  "minimum_genome_fraction_gain_percentage_points": 0.5,
+  "minimum_mean_genome_recovery_gain_percentage_points": 1.0,
+  "minimum_low_abundance_gain_percentage_points": 2.0,
+  "maximum_relative_misassembly_increase": 0.10,
+  "acceptable_misassembly_tradeoff_if_genome_fraction_gain": 2.0,
+  "minimum_longitudinal_ablation_drop_percentage_points": 0.5,
+  "success_requires": [
+    "truth-blind configuration frozen before evaluation",
+    "gain over strongest evaluated baseline",
+    "no prohibited truth leakage",
+    "CAMI FASTA validator pass",
+    "longitudinal or evidence-rescue contribution shown by ablation"
+  ]
+}

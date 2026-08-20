@@ -1,0 +1,24 @@
+{
+  "backbone_bp": 93658161,
+  "backbone_preserved_record_for_record": true,
+  "backbone_records": 219236,
+  "boundary": "Backbone-preserving construction from assembly-to-assembly alignments only; no gold, taxonomy, or performance input was accepted.",
+  "candidate_records": 48129,
+  "final_bp": 104124633,
+  "final_records": 226384,
+  "mode": "terminal",
+  "parameters": {
+    "alignment_identity": 0.97,
+    "alignment_min_bp": 500,
+    "containment_fraction": 0.98,
+    "min_candidate_length": 500,
+    "min_source_count": 1,
+    "min_terminal_bp": 500,
+    "single_target_terminal": true,
+    "whole_max_aligned_fraction": 0.3
+  },
+  "selected_segment_bp": 10466472,
+  "selected_segments": 7148,
+  "status": "PASS",
+  "truth_input_accepted": false
+}

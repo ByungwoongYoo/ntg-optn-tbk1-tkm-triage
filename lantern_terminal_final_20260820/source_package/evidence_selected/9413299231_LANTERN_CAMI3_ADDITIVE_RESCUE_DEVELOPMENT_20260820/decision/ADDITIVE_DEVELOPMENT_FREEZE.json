@@ -1,0 +1,44 @@
+{
+  "status": "WINNER_FROZEN_FOR_UNTOUCHED_PAIR_VALIDATION",
+  "development_samples": [
+    "sample0",
+    "sample1"
+  ],
+  "winner": {
+    "variant": "additive_selected_nonbaseline",
+    "genome_fraction_gain_pp": 0.17890891079853866,
+    "mean_recovery_gain_pp": 0.197045153161491,
+    "relative_chimera_change": 0.016151250433161138,
+    "alignment_ratio_increase": 0.036223285428917285,
+    "safe_development_candidate": "true",
+    "mode": "selected_nonbaseline",
+    "baseline_source_id": "megahit_pair",
+    "thresholds": {
+      "min_score": 0.0,
+      "min_breadth": 0.0,
+      "min_length": 1000,
+      "min_timepoints": 1
+    },
+    "baseline_contigs": 8990,
+    "baseline_bp": 23231910,
+    "added_contigs": 789,
+    "added_bp": 1149454,
+    "output_contigs": 9779,
+    "output_bp": 24381364,
+    "truth_blind": true,
+    "boundary": "Baseline-preserving additive construction uses only assembly provenance and frozen mapping evidence; no gold or taxonomy is read."
+  },
+  "selection_order": [
+    "maximum genome-fraction gain",
+    "maximum mean-recovery gain",
+    "minimum relative chimera change",
+    "minimum added-contig count"
+  ],
+  "safety_constraints": {
+    "genome_fraction_gain_pp": ">0",
+    "relative_chimera_change": "<=0.10",
+    "alignment_ratio_increase": "<=0.10"
+  },
+  "builder_sha256": "c9e93f57acc254d7c92f15afacaa1d1966bc21fd85017724f9e926d0b77ba367",
+  "claim_boundary": "Gold-informed choice is development-only. No result is promoted unless the exact frozen rule succeeds without modification on an untouched Toy participant pair."
+}

@@ -1,0 +1,18 @@
+{
+  "ablation": "no_consensus",
+  "alignment_redundant_candidates": 16013,
+  "backbone_bp": 153108211,
+  "backbone_records": 275607,
+  "backbone_sequences_preserved_exactly": true,
+  "candidate_records": 19183,
+  "claim_boundary": "Truth-blind construction only. Gold-standard performance must be evaluated separately after freeze.",
+  "config_version": "LANTERN-v4-consensus-strict-20260820",
+  "exact_duplicate_candidates_rejected": 2607,
+  "final_bp": 155853124,
+  "final_records": 275946,
+  "method": "truth-blind baseline-preserving augmentation",
+  "selected_augmentation_bp": 2744913,
+  "selected_augmentation_records": 339,
+  "status": "PASS",
+  "truth_input_accepted": false
+}

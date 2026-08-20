@@ -1,0 +1,150 @@
+name: Repair LANTERN v4 holdout input lifetime and dispatch validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cami3-lantern-v4-holdout-input-repair.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  repair-dispatch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Replace ephemeral read symlinks with durable copies
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          path=Path('.github/workflows/cami3-lantern-v4-holdout-14-15.yml')
+          text=path.read_text()
+          old='ln -s "$PWD/$src" "$root/reads/S${s}_${kind}.fastq.gz"'
+          new='cp "$src" "$root/reads/S${s}_${kind}.fastq.gz"'
+          n=text.count(old)
+          if n < 1:
+              if new in text:
+                  print('durable-copy repair already present')
+              else:
+                  raise SystemExit('expected read-link construction not found')
+          else:
+              text=text.replace(old,new)
+              path.write_text(text)
+              print(f'replaced {n} ephemeral read symlink construction(s)')
+          text=path.read_text()
+          if old in text:
+              raise SystemExit('ephemeral read symlink remains')
+          if 'rm -rf inputs/read_artifacts inputs/baseline_artifacts' not in text:
+              raise SystemExit('expected cleanup boundary missing')
+          if new not in text:
+              raise SystemExit('durable read copies missing')
+          PY
+          python -m pip install --quiet pyyaml
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+          p=Path('.github/workflows/cami3-lantern-v4-holdout-14-15.yml')
+          obj=yaml.safe_load(p.read_text())
+          if not isinstance(obj,dict) or 'jobs' not in obj:
+              raise SystemExit('invalid repaired workflow YAML')
+          print('REPAIRED_V4_HOLDOUT_YAML_VALID')
+          PY
+          git diff --check
+
+      - name: Commit durable-input repair
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
+        run: |
+          set -euo pipefail
+          git config user.name 'LANTERN execution bot'
+          git config user.email 'yoonge3@gmail.com'
+          git add .github/workflows/cami3-lantern-v4-holdout-14-15.yml
+          if git diff --cached --quiet; then
+            echo 'repair already committed'
+          else
+            git commit -m 'Preserve v4 holdout reads after artifact cleanup'
+            git push origin "HEAD:${BRANCH}"
+          fi
+
+      - name: Dispatch repaired v4 holdout and capture run ID
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
+        run: |
+          set -euo pipefail
+          before=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          gh workflow run cami3-lantern-v4-holdout-14-15.yml --repo "$REPO" --ref "$REF"
+          run_id=''
+          for attempt in $(seq 1 30); do
+            run_id=$(gh run list --repo "$REPO" --workflow cami3-lantern-v4-holdout-14-15.yml \
+              --branch "$REF" --event workflow_dispatch --limit 10 \
+              --json databaseId,createdAt,headSha,status \
+              --jq 'sort_by(.createdAt) | reverse | .[0].databaseId // empty')
+            if test -n "$run_id"; then break; fi
+            sleep 5
+          done
+          test -n "$run_id"
+          printf '%s\n' "$run_id" > REPAIRED_V4_RUN_ID.txt
+          gh run view "$run_id" --repo "$REPO" --json databaseId,status,url,headSha,createdAt > REPAIRED_V4_RUN.json
+          cat REPAIRED_V4_RUN.json
+
+      - name: Point v5 holdout to repaired v4 run
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
+        run: |
+          set -euo pipefail
+          run_id=$(cat REPAIRED_V4_RUN_ID.txt)
+          python - "$run_id" <<'PY'
+          import re,sys
+          from pathlib import Path
+          run_id=sys.argv[1]
+          path=Path('.github/workflows/cami3-lantern-v5-precision-holdout-14-15.yml')
+          text=path.read_text()
+          new,n=re.subn(r"HOLDOUT_RUN_ID: '[0-9]+'",f"HOLDOUT_RUN_ID: '{run_id}'",text,count=1)
+          if n != 1:
+              raise SystemExit(f'expected one HOLDOUT_RUN_ID replacement, found {n}')
+          path.write_text(new)
+          PY
+          git add .github/workflows/cami3-lantern-v5-precision-holdout-14-15.yml
+          if git diff --cached --quiet; then
+            echo 'v5 already points at repaired run'
+          else
+            git commit -m "Point v5 precision holdout to repaired v4 run $(cat REPAIRED_V4_RUN_ID.txt)"
+            git push origin "HEAD:${BRANCH}"
+          fi
+
+      - name: Dispatch v5 watcher against repaired v4 run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh workflow run cami3-lantern-v5-precision-holdout-14-15.yml --repo "$REPO" --ref "$REF"
+          sleep 10
+          gh run list --repo "$REPO" --workflow cami3-lantern-v5-precision-holdout-14-15.yml \
+            --branch "$REF" --limit 5 --json databaseId,status,conclusion,url,headSha,createdAt \
+            > REPAIRED_V5_RUNS.json
+          cat REPAIRED_V5_RUNS.json
+
+      - name: Upload dispatch provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: LANTERN_CAMI3_V4_INPUT_REPAIR_DISPATCH_20260820
+          path: |
+            REPAIRED_V4_RUN_ID.txt
+            REPAIRED_V4_RUN.json
+            REPAIRED_V5_RUNS.json
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9

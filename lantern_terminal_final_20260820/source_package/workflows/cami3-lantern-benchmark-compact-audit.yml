@@ -1,0 +1,65 @@
+name: CAMI III LANTERN failed benchmark compact audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cami3-lantern-benchmark-compact-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  UPSTREAM_RUN_ID: '32285680577'
+  UPSTREAM_ARTIFACT: 'LANTERN_CAMI3_TOY_SHORT_BENCHMARK_20260819'
+
+jobs:
+  compact-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download prior benchmark artifact in runner
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.UPSTREAM_ARTIFACT }}
+          path: upstream
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.UPSTREAM_RUN_ID }}
+
+      - name: Extract compact diagnostics without read or assembly payloads
+        run: |
+          set -euo pipefail
+          mkdir -p compact/{logs,evaluation,decision,pseudo_novel,failure_audit,provenance,truth}
+          root=$(find upstream -type d -name lantern_short_benchmark | head -1)
+          test -n "$root"
+          printf 'upstream_run=%s\nupstream_artifact=%s\nroot=%s\n' "$UPSTREAM_RUN_ID" "$UPSTREAM_ARTIFACT" "$root" > compact/provenance/UPSTREAM.txt
+
+          find "$root/logs" -maxdepth 1 -type f -size -20M -exec cp -a {} compact/logs/ \; || true
+          find "$root/failure_audit" -maxdepth 1 -type f -size -2M -exec cp -a {} compact/failure_audit/ \; || true
+          find "$root/decision" -maxdepth 2 -type f -size -20M -exec cp -a {} compact/decision/ \; || true
+          find "$root/pseudo_novel" -maxdepth 2 -type f -size -20M -exec cp -a {} compact/pseudo_novel/ \; || true
+          find "$root/evaluation" -type f \( -name '*.json' -o -name '*.tsv' -o -name '*.log' \) -size -20M -exec cp -a --parents {} compact/evaluation/ \; || true
+          find "$root/provenance" -maxdepth 1 -type f -size -20M -exec cp -a {} compact/provenance/ \; || true
+          find "$root/truth" -maxdepth 1 -type f -size -20M -exec cp -a {} compact/truth/ \; || true
+          cp -a "$root/truth_blind/TRUTH_BLIND_FREEZE.json" compact/ 2>/dev/null || true
+          cp -a "$root/SHA256SUMS_ALL.txt" compact/UPSTREAM_SHA256SUMS_ALL.txt 2>/dev/null || true
+          cp -a lantern_short_benchmark_EXECUTED_SCRIPT.sh compact/ 2>/dev/null || true
+
+          find compact -type f -printf '%P\t%s\n' | sort > compact/COMPACT_CONTENTS.tsv
+          find compact -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > compact/SHA256SUMS.txt
+          du -sh compact > compact/COMPACT_SIZE.txt
+          test -s compact/COMPACT_CONTENTS.tsv
+
+      - name: Upload compact benchmark audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: LANTERN_CAMI3_TOY_SHORT_BENCHMARK_COMPACT_AUDIT_20260820
+          path: compact
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9

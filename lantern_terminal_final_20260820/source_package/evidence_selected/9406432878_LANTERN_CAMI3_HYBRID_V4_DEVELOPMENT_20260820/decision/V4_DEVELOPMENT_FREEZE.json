@@ -1,0 +1,58 @@
+{
+  "baseline_method": "metaspades_hybrid_pair",
+  "claim_boundary": "The winner, if any, is selected on the public Toy development pair only. It must be rerun unchanged on the corrected untouched Toy pair 14/16 before any performance claim.",
+  "development_pair": [
+    0,
+    1
+  ],
+  "grid_sha256": "67fd5b7681cb73ef59b250fd3f76baefc1787265e335e6ef38093bc852edeb68",
+  "selection_rule": {
+    "no_safe_winner_behavior": "do not promote v4 to the untouched holdout",
+    "primary_objective": "maximum genome-fraction gain over the immutable hybrid backbone",
+    "safety_constraints": {
+      "alignment_to_unique_truth_ratio_increase_maximum": 0.1,
+      "longitudinal_ablation_drop_minimum_percentage_points": 0.0,
+      "relative_cross_binid_chimera_increase_maximum": 0.1
+    },
+    "secondary_objective": "maximum mean per-genome recovery gain",
+    "tertiary_objective": "maximum low-abundance recovery gain",
+    "winner_count": 1
+  },
+  "status": "WINNER_FROZEN_FOR_UNTOUCHED_VALIDATION",
+  "strict_success_gates": {
+    "genome_fraction_gain_minimum_percentage_points": 0.5,
+    "longitudinal_ablation_drop_minimum_percentage_points": 0.5,
+    "low_abundance_gain_minimum_percentage_points": 2.0,
+    "mean_genome_recovery_gain_minimum_percentage_points": 1.0,
+    "pseudo_novel_improvement_required_in_all_tiers": true,
+    "relative_cross_binid_chimera_increase_maximum": 0.1
+  },
+  "untouched_validation_pair": [
+    14,
+    16
+  ],
+  "winner": {
+    "alignment_ratio_increase": 0.049099629290434654,
+    "alignment_to_unique_truth_ratio": 1.0540755135898003,
+    "cross_binid_chimera_bp_fraction": 0.06055884662518693,
+    "genome_fraction_gain_percentage_points": 0.2192116113082747,
+    "genome_fraction_percent": 19.062453838524288,
+    "longitudinal_ablation_drop_percentage_points": 0.083022689249173,
+    "low_abundance_gain_percentage_points": 0.08732665082516711,
+    "low_abundance_mean_recovery_percent": 6.046488830591992,
+    "mean_genome_recovery_gain_percentage_points": 0.2919273356362606,
+    "mean_genome_recovery_percent": 15.330145384472788,
+    "pseudo_deep_gain_pp": 0.5155627796965074,
+    "pseudo_exact_gain_pp": 0.3724884345736079,
+    "pseudo_genus_gain_pp": 0.2690943172621054,
+    "pseudo_novel_consistent_all_tiers": true,
+    "pseudo_species_gain_pp": 0.2732067966788687,
+    "relative_chimera_change": 0.08354115105744635,
+    "safe_development_candidate": true,
+    "strict_development_success": false,
+    "strict_gate_json": "{\"chimera_tradeoff\": true, \"genome_fraction_gain\": false, \"longitudinal_ablation_contribution\": false, \"low_abundance_gain\": false, \"mean_genome_recovery_gain\": false, \"pseudo_novel_all_tiers\": true}",
+    "variant": "v4_balanced"
+  },
+  "winner_config_sha256": "9d8b1a0e92300adcd30fd6ff3e5a44ad6d7f9480cc8c6487df22ffaa62c16400",
+  "winner_name": "v4_balanced"
+}

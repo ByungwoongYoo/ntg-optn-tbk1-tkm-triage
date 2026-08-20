@@ -1,0 +1,18 @@
+{
+  "mode": "rescue_strict",
+  "baseline_source_id": "megahit_pair",
+  "thresholds": {
+    "min_score": 0.45,
+    "min_breadth": 0.95,
+    "min_length": 1500,
+    "min_timepoints": 2
+  },
+  "baseline_contigs": 8990,
+  "baseline_bp": 23231910,
+  "added_contigs": 0,
+  "added_bp": 0,
+  "output_contigs": 8990,
+  "output_bp": 23231910,
+  "truth_blind": true,
+  "boundary": "Baseline-preserving additive construction uses only assembly provenance and frozen mapping evidence; no gold or taxonomy is read."
+}

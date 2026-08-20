@@ -1,0 +1,1 @@
+d97d723b9820d8efdc5ab39cb63de83fb16860ac73e89e9cd29b3c745fe82ee7  lantern_short_benchmark/truth_blind/TRUTH_BLIND_FREEZE.json

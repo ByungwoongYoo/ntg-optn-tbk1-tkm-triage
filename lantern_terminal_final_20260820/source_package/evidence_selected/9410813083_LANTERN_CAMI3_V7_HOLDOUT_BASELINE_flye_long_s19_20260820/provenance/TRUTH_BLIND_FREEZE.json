@@ -1,0 +1,8 @@
+{
+  "method": "flye_long_s19",
+  "assembly_sha256": "1306aaa4b916103e8ea84f1bebbee786192bea7dd2c8e78461b4323822d4bb3f",
+  "assembly_bytes": 10801714,
+  "truth_accessed": false,
+  "freeze_utc": "2026-08-20T14:31:01Z",
+  "boundary": "Baseline assembly completed and hashed before holdout GSA access."
+}

@@ -1,0 +1,7 @@
+{
+  "n_abundance_genomes": 353,
+  "n_joined_rows": 2471,
+  "low_threshold_percent": 0.01,
+  "high_threshold_percent": 0.1,
+  "boundary": "Abundance and genome labels are gold-standard evaluation metadata accessed after truth-blind output freeze. Low-abundance strata do not influence selection."
+}

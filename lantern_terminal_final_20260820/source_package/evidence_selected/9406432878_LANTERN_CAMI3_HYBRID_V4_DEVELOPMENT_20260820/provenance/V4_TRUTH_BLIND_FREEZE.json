@@ -1,0 +1,192 @@
+{
+  "freeze_utc": "2026-08-20T12:06:39Z",
+  "truth_accessed": false,
+  "development_pair": [
+    0,
+    1
+  ],
+  "n_files": 36,
+  "files": [
+    {
+      "path": "v4_hybrid_development/inputs/metaspades_hybrid_backbone.fasta",
+      "bytes": 165903328,
+      "sha256": "3abe62daa7e6d01b8ee0d4678a6f924fabfec4e4e1dbd8a322c699d83c7eac24"
+    },
+    {
+      "path": "v4_hybrid_development/candidates/clusters/representative_metadata.tsv",
+      "bytes": 3903485,
+      "sha256": "d20619f9acc549adeecfa4321b262c58bb592cbd7b8049b07839184e03e04e84"
+    },
+    {
+      "path": "v4_hybrid_development/candidates/clusters/cluster_members.tsv",
+      "bytes": 3572481,
+      "sha256": "4ea40f16b23da1ea622814a19deeb478248ac92dab08940b019f3910ac6e29c0"
+    },
+    {
+      "path": "v4_hybrid_development/evidence/merged/mapping_evidence.tsv",
+      "bytes": 2674020,
+      "sha256": "cf4b6724f41c23dc2582c5eb106b35d7194a9261aa8fdc9ada3dd41849ceba6d"
+    },
+    {
+      "path": "lantern_cami3/config/lantern_hybrid_v4_grid_20260820.json",
+      "bytes": 7260,
+      "sha256": "67fd5b7681cb73ef59b250fd3f76baefc1787265e335e6ef38093bc852edeb68"
+    },
+    {
+      "path": "lantern_cami3/scripts/baseline_preserving_augment.py",
+      "bytes": 15424,
+      "sha256": "57ba4ba8494681a78173fc2c67cd764054074e41c22cef6469f2c395239a5621"
+    },
+    {
+      "path": "v4_hybrid_development/configs/v4_balanced.json",
+      "bytes": 581,
+      "sha256": "9d8b1a0e92300adcd30fd6ff3e5a44ad6d7f9480cc8c6487df22ffaa62c16400"
+    },
+    {
+      "path": "v4_hybrid_development/configs/v4_consensus_strict.json",
+      "bytes": 585,
+      "sha256": "8b7e247b30bd1b53a870dae370c8fc8e4e00b54b2d4fc413d5a1237a96caed44"
+    },
+    {
+      "path": "v4_hybrid_development/configs/v4_long_supported.json",
+      "bytes": 585,
+      "sha256": "181dc1bf79a818b3503d1ce2db14ca6f72d8c205da96f988ddfe318d2e26e73d"
+    },
+    {
+      "path": "v4_hybrid_development/configs/v4_multimodal_strict.json",
+      "bytes": 583,
+      "sha256": "91848150acc324f64055f3a031bafb44cd33313dbcd023733d20b51cb7cf5793"
+    },
+    {
+      "path": "v4_hybrid_development/configs/v4_temporal_strict.json",
+      "bytes": 583,
+      "sha256": "1e5a497eede361ade81a2b2644bf25f0c37c23df3073c6ec2bf0dc2c7d99c4c2"
+    },
+    {
+      "path": "v4_hybrid_development/configs/v4_ultra_strict.json",
+      "bytes": 582,
+      "sha256": "0dda8913497b3c1375f46669af6c03c2213713aadce8e486fae6dc680ac222a9"
+    },
+    {
+      "path": "v4_hybrid_development/variants/v4_balanced_full/LANTERN_BACKBONE_AUGMENTED.fasta",
+      "bytes": 172919717,
+      "sha256": "e4a555ab66e04b4b7e8330d58ad675600b9a61de80a148e7a14eda1c0be4527d"
+    },
+    {
+      "path": "v4_hybrid_development/variants/v4_balanced_no_consensus/LANTERN_BACKBONE_AUGMENTED.fasta",
+      "bytes": 172793057,
+      "sha256": "ec8d9e46f9ad4599c0e87e52fedcf8ec71a4d94b6325a79b57818e979cbcc575"
+    },
+    {
+      "path": "v4_hybrid_development/variants/v4_balanced_no_long/LANTERN_BACKBONE_AUGMENTED.fasta",
+      "bytes": 169263824,
+      "sha256": "837c32af8781d05961eeae0c81d37ead00394576efeeb4b9d1d7be94440d6170"
+    },
+    {
+      "path": "v4_hybrid_development/variants/v4_balanced_no_longitudinal/LANTERN_BACKBONE_AUGMENTED.fasta",
+      "bytes": 170035397,
+      "sha256": "55160e32a84ea2800386fb20c75fab9b42b487ac9a3f512916147e5a5802ee29"
+    },
+    {
+      "path": "v4_hybrid_development/variants/v4_consensus_strict_full/LANTERN_BACKBONE_AUGMENTED.fasta",
+      "bytes": 168544972,
+      "sha256": "5b5228dd2d6e692647e5e54e33456c2c7e5cafb9d7b4a2a4bf5d94a1a436b8a4"
+    },
+    {
+      "path": "v4_hybrid_development/variants/v4_consensus_strict_no_consensus/LANTERN_BACKBONE_AUGMENTED.fasta",
+      "bytes": 168061262,
+      "sha256": "9cb06db74c16236a6f2fc2ce9773588f9894e4d5e4d1a6e93f1dbceda7a1aacc"
+    },
+    {
+      "path": "v4_hybrid_development/variants/v4_consensus_strict_no_long/LANTERN_BACKBONE_AUGMENTED.fasta",
+      "bytes": 167460494,
+      "sha256": "77e275278f0d3fd278f070ad88e7dcd6c60e38a1700b47b93272e90e15ca33f1"
+    },
+    {
+      "path": "v4_hybrid_development/variants/v4_consensus_strict_no_longitudinal/LANTERN_BACKBONE_AUGMENTED.fasta",
+      "bytes": 167531530,
+      "sha256": "5260e5a7352595e510e6c01660369fd30ce01fef0bbae554b980bd4ed1353946"
+    },
+    {
+      "path": "v4_hybrid_development/variants/v4_long_supported_full/LANTERN_BACKBONE_AUGMENTED.fasta",
+      "bytes": 170282753,
+      "sha256": "046a447df6af64bd6f3f96e2e1fcab58521f663e6557d57f37b3fe871a193951"
+    },
+    {
+      "path": "v4_hybrid_development/variants/v4_long_supported_no_consensus/LANTERN_BACKBONE_AUGMENTED.fasta",
+      "bytes": 170179883,
+      "sha256": "65b2ac83e3c8dc20e1a07f57566d6913f60455994a0b82ac788dd08a68f2656b"
+    },
+    {
+      "path": "v4_hybrid_development/variants/v4_long_supported_no_long/LANTERN_BACKBONE_AUGMENTED.fasta",
+      "bytes": 167138650,
+      "sha256": "f3dc0a2b93d0a9f9dc6b25e59d10ea26faaf23f12222dcc10b4e4229ccfba0c3"
+    },
+    {
+      "path": "v4_hybrid_development/variants/v4_long_supported_no_longitudinal/LANTERN_BACKBONE_AUGMENTED.fasta",
+      "bytes": 168563149,
+      "sha256": "ba8e56f499f7e80f549025b7420fc80b976a2138532acf5d7aff6a4895cf8ec9"
+    },
+    {
+      "path": "v4_hybrid_development/variants/v4_multimodal_strict_full/LANTERN_BACKBONE_AUGMENTED.fasta",
+      "bytes": 168766408,
+      "sha256": "e48df98a0ef3569722d9ab65ccecdce53bf2d7966b58bc783fa44702524d6b90"
+    },
+    {
+      "path": "v4_hybrid_development/variants/v4_multimodal_strict_no_consensus/LANTERN_BACKBONE_AUGMENTED.fasta",
+      "bytes": 168142725,
+      "sha256": "21d4f0d8fab88107c6e7d3bd35f08d0450c292b60a0aa11ba62b22396f8fa229"
+    },
+    {
+      "path": "v4_hybrid_development/variants/v4_multimodal_strict_no_long/LANTERN_BACKBONE_AUGMENTED.fasta",
+      "bytes": 166500397,
+      "sha256": "3bff2c53873268fd5e076a46269f3ff57f020f2cc48a1df6d22b93e930c92fd0"
+    },
+    {
+      "path": "v4_hybrid_development/variants/v4_multimodal_strict_no_longitudinal/LANTERN_BACKBONE_AUGMENTED.fasta",
+      "bytes": 168291366,
+      "sha256": "1a9aaa5e395de54ef037018e42bbbed2f3349c58079f07c44bf82348b22ce2f4"
+    },
+    {
+      "path": "v4_hybrid_development/variants/v4_temporal_strict_full/LANTERN_BACKBONE_AUGMENTED.fasta",
+      "bytes": 169454554,
+      "sha256": "cf41c4f6d197436cd827cd15294b444fbf5d6c5192069fea0bd4ad72b0a5b608"
+    },
+    {
+      "path": "v4_hybrid_development/variants/v4_temporal_strict_no_consensus/LANTERN_BACKBONE_AUGMENTED.fasta",
+      "bytes": 168747541,
+      "sha256": "b21a56035f8fd07906c493808f3d463fc466a7202b53b48e1eae153ca48122cb"
+    },
+    {
+      "path": "v4_hybrid_development/variants/v4_temporal_strict_no_long/LANTERN_BACKBONE_AUGMENTED.fasta",
+      "bytes": 167088132,
+      "sha256": "378ec3736bb4cebda62d485cd08751cf2fafdf83431efc39d2f96b5eca90496c"
+    },
+    {
+      "path": "v4_hybrid_development/variants/v4_temporal_strict_no_longitudinal/LANTERN_BACKBONE_AUGMENTED.fasta",
+      "bytes": 168879866,
+      "sha256": "26f2b839bee1d65305c124a3f7ef7ef7dc6d2001b42b8d51f114f6d0c80d7664"
+    },
+    {
+      "path": "v4_hybrid_development/variants/v4_ultra_strict_full/LANTERN_BACKBONE_AUGMENTED.fasta",
+      "bytes": 166147571,
+      "sha256": "6f150db03c5b7921e84bb8bfa2b7a654475bb6fa24d647f7d22be9af064afc83"
+    },
+    {
+      "path": "v4_hybrid_development/variants/v4_ultra_strict_no_consensus/LANTERN_BACKBONE_AUGMENTED.fasta",
+      "bytes": 165692297,
+      "sha256": "85cccaf053878a15a5e9d60aa705bca27acb4e14ab845120d06acb70e010bb25"
+    },
+    {
+      "path": "v4_hybrid_development/variants/v4_ultra_strict_no_long/LANTERN_BACKBONE_AUGMENTED.fasta",
+      "bytes": 165689642,
+      "sha256": "26aae9d2099956e0bf49efb44555767eab5940f9737c4ec3fb69d6ba2928faad"
+    },
+    {
+      "path": "v4_hybrid_development/variants/v4_ultra_strict_no_longitudinal/LANTERN_BACKBONE_AUGMENTED.fasta",
+      "bytes": 166132886,
+      "sha256": "a577bfcd752140db515c25549a2f8debdf7055d38dd29c93b514632a64323115"
+    }
+  ],
+  "boundary": "All v4 configurations, full assemblies, three ablations per configuration, evidence, and hashes were fixed before public Toy gold access."
+}

@@ -1,0 +1,24 @@
+{
+  "status": "PASS",
+  "strongest_method": "v4_balanced",
+  "strongest_role": "lantern",
+  "methods": [
+    {
+      "method": "v4_balanced",
+      "role": "lantern",
+      "genome_fraction_percent": 19.062453838524288,
+      "mean_genome_recovery_percent": 15.330145384472788,
+      "chimera_bp_fraction": 0.06055884662518693,
+      "assembly_total_bp": ""
+    },
+    {
+      "method": "metaspades_hybrid_pair",
+      "role": "baseline",
+      "genome_fraction_percent": 18.843242227216013,
+      "mean_genome_recovery_percent": 15.038218048836526,
+      "chimera_bp_fraction": 0.055889752379119625,
+      "assembly_total_bp": 153108211
+    }
+  ],
+  "boundary": "Public Toy development comparison only. metaMDBG was evaluated after truth-blind assembly freeze; this is not a CAMI hidden-challenge result."
+}

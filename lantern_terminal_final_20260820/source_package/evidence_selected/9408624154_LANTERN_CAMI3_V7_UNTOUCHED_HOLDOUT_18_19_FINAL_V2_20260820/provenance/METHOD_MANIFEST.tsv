@@ -1,0 +1,17 @@
+method	role	mode	scope	ablation	eligible_primary_baseline
+metaspades_short_pair	baseline	short	longitudinal	none	true
+metaspades_hybrid_pair	baseline	hybrid	longitudinal	none	true
+megahit_short_pair	baseline	short	longitudinal	none	true
+flye_long_pair	baseline	long	longitudinal	none	true
+metaspades_short_s18	baseline	short	single	none	false
+metaspades_hybrid_s18	baseline	hybrid	single	none	false
+megahit_short_s18	baseline	short	single	none	false
+flye_long_s18	baseline	long	single	none	false
+metaspades_short_s19	baseline	short	single	none	false
+metaspades_hybrid_s19	baseline	hybrid	single	none	false
+megahit_short_s19	baseline	short	single	none	false
+flye_long_s19	baseline	long	single	none	false
+v7_full	lantern	hybrid	longitudinal	full	false
+v7_no_longitudinal	ablation	hybrid	single_union	no_longitudinal	false
+v7_no_extension	ablation	short	longitudinal	no_extension	false
+v7_no_long	ablation	short	longitudinal	no_long	false

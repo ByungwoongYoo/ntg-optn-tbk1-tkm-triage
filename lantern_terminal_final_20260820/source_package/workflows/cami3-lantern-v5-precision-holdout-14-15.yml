@@ -1,0 +1,346 @@
+name: CAMI III LANTERN v5 precision-filter holdout 14-15
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cami3-lantern-v5-precision-holdout-14-15.yml'
+      - 'lantern_v5/**'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  DEVELOPMENT_RUN_ID: '32332720793'
+  DEVELOPMENT_ARTIFACT: 'LANTERN_CAMI3_HYBRID_V4_DEVELOPMENT_20260820'
+  HOLDOUT_RUN_ID: '32332720846'
+  HOLDOUT_ARTIFACT: 'LANTERN_CAMI3_V4_HOLDOUT_14_15_20260820'
+  HOLDOUT_CONFIG: 'lantern_cami3/config/lantern_v4_holdout_14_15_20260820.json'
+
+jobs:
+  train-model:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download immutable development evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.DEVELOPMENT_ARTIFACT }}
+          path: development_artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.DEVELOPMENT_RUN_ID }}
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: lantern-v5-train
+          condarc: |
+            channels:
+              - conda-forge
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            pandas=2.3.1
+            numpy
+            scikit-learn=1.7.1
+            joblib
+          cache-downloads: true
+          post-cleanup: all
+      - name: Train, audit and freeze development-only model
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          decision=$(find development_artifact -type f -name V4_DEVELOPMENT_DECISION.md -print -quit)
+          test -n "$decision"
+          root=$(dirname "$(dirname "$decision")")
+          mkdir -p v5_model/provenance
+          python lantern_v5/train_precision_filter.py \
+            --decisions "$root/variants/v4_balanced_full/AUGMENTATION_DECISIONS.tsv" \
+            --metadata "$root/candidates/clusters/representative_metadata.tsv" \
+            --chimera-audit "$root/evaluation/v4_balanced/cross_binid_chimera_audit.tsv" \
+            --target-precision 0.80 --minimum-threshold 0.50 --seed 20260820 \
+            --out v5_model > v5_model/TRAIN_CONSOLE.log 2>&1
+          git rev-parse HEAD > v5_model/provenance/GIT_HEAD.txt
+          uname -a > v5_model/provenance/UNAME.txt
+          python --version > v5_model/provenance/PYTHON_VERSION.txt
+          micromamba list > v5_model/provenance/MICROMAMBA_LIST.txt
+          printf 'development_run=%s\ndevelopment_artifact=%s\nholdout_pair_not_accessed=14,15\n' \
+            "$DEVELOPMENT_RUN_ID" "$DEVELOPMENT_ARTIFACT" > v5_model/provenance/BOUNDARY.txt
+          sha256sum lantern_v5/train_precision_filter.py lantern_v5/apply_precision_filter.py \
+            > v5_model/provenance/CODE_SHA256.txt
+          find v5_model -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > v5_model/SHA256SUMS.txt
+          cat v5_model/MODEL_FREEZE.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LANTERN_CAMI3_V5_PRECISION_MODEL_20260820
+          path: v5_model
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
+
+  untouched-holdout:
+    needs: train-model
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download frozen model from this workflow run
+        uses: actions/download-artifact@v4
+        with:
+          name: LANTERN_CAMI3_V5_PRECISION_MODEL_20260820
+          path: model_artifact
+      - name: Wait for and download immutable v4 holdout construction artifact
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p incoming
+          artifact_id=''
+          for attempt in $(seq 1 240); do
+            curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${HOLDOUT_RUN_ID}/artifacts?per_page=100" \
+              -o incoming/artifacts.json || true
+            artifact_id=$(python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('incoming/artifacts.json')
+          if not p.is_file(): print(''); raise SystemExit
+          x=json.loads(p.read_text())
+          target='LANTERN_CAMI3_V4_HOLDOUT_14_15_20260820'
+          print(next((str(a['id']) for a in x.get('artifacts',[]) if a.get('name')==target and not a.get('expired')),''))
+          PY
+            )
+            if test -n "$artifact_id"; then break; fi
+            echo "waiting for holdout artifact: attempt $attempt" >&2
+            sleep 60
+          done
+          test -n "$artifact_id"
+          printf '%s\n' "$artifact_id" > incoming/HOLDOUT_ARTIFACT_ID.txt
+          curl -fL -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" \
+            -o incoming/holdout.zip
+          unzip -tq incoming/holdout.zip
+          sha256sum incoming/holdout.zip > incoming/HOLDOUT_ARTIFACT_ZIP_SHA256.txt
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: lantern-v5-holdout
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            pandas=2.3.1
+            numpy
+            scikit-learn=1.7.1
+            joblib
+            minimap2=2.31
+            mash=2.3
+            seqkit=2.13.0
+          cache-downloads: true
+          post-cleanup: all
+      - name: Extract only truth-blind construction files
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p pretruth v5_holdout/{variants,evaluation,pseudo_novel,abundance,decision,submission,validation,provenance,logs,truth_download,truth}
+          unzip -q incoming/holdout.zip \
+            '*submission/LANTERN_V4_HOLDOUT_14_15.fasta' \
+            '*variants/v4_balanced_*/AUGMENTATION_DECISIONS.tsv' \
+            '*candidates/clusters/representative_metadata.tsv' \
+            '*provenance/V4_HOLDOUT_TRUTH_BLIND_FREEZE.json' \
+            -d pretruth
+          full=$(find pretruth -type f -path '*/submission/LANTERN_V4_HOLDOUT_14_15.fasta' -print -quit)
+          metadata=$(find pretruth -type f -path '*/candidates/clusters/representative_metadata.tsv' -print -quit)
+          freeze=$(find pretruth -type f -path '*/provenance/V4_HOLDOUT_TRUTH_BLIND_FREEZE.json' -print -quit)
+          test -s "$full"; test -s "$metadata"; test -s "$freeze"
+          printf '%s\n' "$full" > /tmp/v4_full
+          printf '%s\n' "$metadata" > /tmp/v4_metadata
+          printf '%s\n' "$freeze" > /tmp/v4_freeze
+          model=$(find model_artifact -type f -name LANTERN_V5_PRECISION_FILTER.joblib -print -quit)
+          model_freeze=$(find model_artifact -type f -name MODEL_FREEZE.json -print -quit)
+          test -s "$model"; test -s "$model_freeze"
+          printf '%s\n' "$model" > /tmp/v5_model
+          printf '%s\n' "$model_freeze" > /tmp/v5_model_freeze
+          cp "$HOLDOUT_CONFIG" v5_holdout/provenance/
+          cp "$freeze" v5_holdout/provenance/V4_HOLDOUT_TRUTH_BLIND_FREEZE.json
+          cp "$model_freeze" v5_holdout/provenance/MODEL_FREEZE.json
+          cp incoming/HOLDOUT_ARTIFACT_ID.txt incoming/HOLDOUT_ARTIFACT_ZIP_SHA256.txt v5_holdout/provenance/
+      - name: Apply frozen model to full method and all ablations before gold access
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          full=$(cat /tmp/v4_full); metadata=$(cat /tmp/v4_metadata)
+          model=$(cat /tmp/v5_model); model_freeze=$(cat /tmp/v5_model_freeze)
+          for ablation in full no_longitudinal no_long no_consensus; do
+            decisions=$(find pretruth -type f -path "*/variants/v4_balanced_${ablation}/AUGMENTATION_DECISIONS.tsv" -print -quit)
+            test -s "$decisions"
+            out="v5_holdout/variants/v5_precision_${ablation}"
+            python lantern_v5/apply_precision_filter.py \
+              --input-assembly "$full" --decisions "$decisions" --metadata "$metadata" \
+              --model "$model" --model-freeze "$model_freeze" --out "$out" \
+              > "v5_holdout/logs/APPLY_${ablation}.log" 2>&1
+            python lantern_cami3/scripts/verify_cami_assembly.py "$out/LANTERN_V5_ASSEMBLY.fasta" \
+              --out "$out/VALIDATION.json"
+          done
+      - name: Freeze v5 outputs before opening holdout gold
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json,time
+          from pathlib import Path
+          paths=[Path('lantern_v5/train_precision_filter.py'),Path('lantern_v5/apply_precision_filter.py'),Path('v5_holdout/provenance/MODEL_FREEZE.json')]
+          paths += sorted(Path('v5_holdout/variants').glob('*/LANTERN_V5_ASSEMBLY.fasta'))
+          paths += sorted(Path('v5_holdout/variants').glob('*/V5_FILTER_DECISIONS.tsv'))
+          files=[]
+          for p in paths:
+              if not p.is_file(): raise SystemExit(f'missing freeze file: {p}')
+              files.append({'path':str(p),'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()})
+          obj={'freeze_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'holdout_pair':[14,15],'truth_accessed':False,'n_files':len(files),'files':files,'boundary':'The development-trained model, threshold, filtered full assembly and all ablations were frozen before sample-14/15 GSA archives or gold-derived evaluation tables were extracted.'}
+          Path('v5_holdout/provenance/V5_HOLDOUT_TRUTH_BLIND_FREEZE.json').write_text(json.dumps(obj,indent=2)+'\n')
+          PY
+          sha256sum v5_holdout/provenance/V5_HOLDOUT_TRUTH_BLIND_FREEZE.json > v5_holdout/provenance/V5_HOLDOUT_TRUTH_BLIND_FREEZE_SHA256.txt
+          git rev-parse HEAD > v5_holdout/provenance/GIT_HEAD.txt
+          uname -a > v5_holdout/provenance/UNAME.txt
+          python --version > v5_holdout/provenance/PYTHON_VERSION.txt
+          micromamba list > v5_holdout/provenance/MICROMAMBA_LIST.txt
+      - name: Open public holdout gold only after v5 freeze
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          unzip -q incoming/holdout.zip '*evaluation/*' '*abundance/sample14_abundance.tsv' '*abundance/sample15_abundance.tsv' -d postfreeze
+          for s in 14 15; do
+            curl -fsSL --retry 8 --retry-all-errors \
+              "https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_${s}_gsa.tar.gz" \
+              -o "v5_holdout/truth_download/sample_${s}_gsa.tar.gz"
+          done
+          sha256sum v5_holdout/truth_download/*.tar.gz > v5_holdout/provenance/GSA_SHA256SUMS.txt
+          python lantern_cami3/scripts/extract_gsa_truth.py \
+            --gsa-tar "S14=v5_holdout/truth_download/sample_14_gsa.tar.gz" \
+            --gsa-tar "S15=v5_holdout/truth_download/sample_15_gsa.tar.gz" \
+            --out v5_holdout/truth > v5_holdout/logs/EXTRACT_TRUTH.log 2>&1
+          minimap2 -I 4G -d v5_holdout/truth/toy_truth.mmi v5_holdout/truth/combined_truth.fasta \
+            > v5_holdout/logs/TRUTH_INDEX.stdout 2> v5_holdout/logs/TRUTH_INDEX.log
+      - name: Evaluate v5 assemblies and import frozen baseline evaluations
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          eval_root=$(find postfreeze -type d -name evaluation -print -quit)
+          test -n "$eval_root"
+          mkdir -p v5_holdout/evaluation
+          for d in "$eval_root"/*; do
+            test -s "$d/GOLD_COVERAGE_SUMMARY.json" || continue
+            cp -a "$d" "v5_holdout/evaluation/$(basename "$d")"
+          done
+          for ablation in full no_longitudinal no_long no_consensus; do
+            method=v5_precision; test "$ablation" = full || method="v5_precision_${ablation}"
+            fasta="v5_holdout/variants/v5_precision_${ablation}/LANTERN_V5_ASSEMBLY.fasta"
+            dir="v5_holdout/evaluation/$method"; mkdir -p "$dir"
+            minimap2 -x asm5 -c -N 100 -t 4 v5_holdout/truth/toy_truth.mmi "$fasta" \
+              > "$dir/assembly_to_truth.paf" 2> "$dir/minimap2.log"
+            python lantern_cami3/scripts/evaluate_gold_coverage.py \
+              --paf "$dir/assembly_to_truth.paf" --truth-mapping v5_holdout/truth/truth_mapping.tsv \
+              --assembly-fasta "$fasta" --min-identity 0.90 --min-alignment 500 --out "$dir" \
+              > "$dir/evaluate_console.log" 2>&1
+            rm -f "$dir/assembly_to_truth.paf"
+          done
+      - name: Build common pseudo-novel and low-abundance tables
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv
+          from pathlib import Path
+          root=Path('v5_holdout'); rows=list(csv.DictReader(open(root/'truth/genome_reference_manifest.tsv'),delimiter='\t')); paths=[]
+          for r in rows:
+              if int(r['truth_bp'])<50000: continue
+              p=root/'truth/references'/Path(r['reference_path']).name
+              if p.is_file(): paths.append(str(p))
+          (root/'pseudo_novel/mash_reference_files.txt').write_text('\n'.join(paths)+'\n')
+          PY
+          mash sketch -k 21 -s 1000 -l v5_holdout/pseudo_novel/mash_reference_files.txt \
+            -o v5_holdout/pseudo_novel/truth_genomes > v5_holdout/logs/MASH_SKETCH.log 2>&1
+          mash dist v5_holdout/pseudo_novel/truth_genomes.msh v5_holdout/pseudo_novel/truth_genomes.msh \
+            > v5_holdout/pseudo_novel/truth_genome_distances.tsv
+          recovery_args=()
+          for d in v5_holdout/evaluation/*; do
+            test -s "$d/per_genome_recovery.tsv" || continue
+            recovery_args+=(--recovery "$(basename "$d")=$d/per_genome_recovery.tsv")
+          done
+          python lantern_cami3/scripts/build_pseudo_novel_audit.py \
+            --manifest v5_holdout/truth/genome_reference_manifest.tsv \
+            --mash v5_holdout/pseudo_novel/truth_genome_distances.tsv \
+            "${recovery_args[@]}" --min-truth-bp 50000 --out v5_holdout/pseudo_novel \
+            > v5_holdout/logs/PSEUDO_NOVEL.log 2>&1
+          a14=$(find postfreeze -type f -name sample14_abundance.tsv -print -quit)
+          a15=$(find postfreeze -type f -name sample15_abundance.tsv -print -quit)
+          test -s "$a14"; test -s "$a15"
+          cp "$a14" v5_holdout/abundance/sample14_abundance.tsv
+          cp "$a15" v5_holdout/abundance/sample15_abundance.tsv
+          python lantern_cami3/scripts/summarize_abundance_recovery.py \
+            --abundance v5_holdout/abundance/sample14_abundance.tsv \
+            --abundance v5_holdout/abundance/sample15_abundance.tsv \
+            "${recovery_args[@]}" --low-percent 0.01 --high-percent 0.1 \
+            --out v5_holdout/abundance/results > v5_holdout/logs/ABUNDANCE_SUMMARY.log 2>&1
+      - name: Apply unchanged strict holdout gates
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          cat > v5_holdout/provenance/METHOD_MANIFEST.tsv <<'EOF'
+          method	role	mode	scope	ablation	eligible_primary_baseline
+          megahit_short_pair	baseline	short	longitudinal	none	true
+          metaspades_short_pair	baseline	short	longitudinal	none	true
+          metaspades_hybrid_pair	baseline	hybrid	longitudinal	none	true
+          flye_long_pair	baseline	long	longitudinal	none	true
+          flye_long_s14	baseline	long	single	none	true
+          flye_long_s15	baseline	long	single	none	true
+          v5_precision	lantern	hybrid	longitudinal	full	false
+          v5_precision_no_longitudinal	ablation	hybrid	longitudinal	no_longitudinal	false
+          v5_precision_no_long	ablation	hybrid	longitudinal	no_long	false
+          v5_precision_no_consensus	ablation	hybrid	longitudinal	no_consensus	false
+          EOF
+          method_args=()
+          while IFS=$'\t' read -r method role rest; do
+            test "$method" = method && continue
+            test -s "v5_holdout/evaluation/$method/GOLD_COVERAGE_SUMMARY.json" || continue
+            method_args+=(--method "$method=v5_holdout/evaluation/$method")
+          done < v5_holdout/provenance/METHOD_MANIFEST.tsv
+          python lantern_cami3/scripts/evaluate_frozen_holdout.py \
+            "${method_args[@]}" --manifest v5_holdout/provenance/METHOD_MANIFEST.tsv \
+            --holdout-config "$HOLDOUT_CONFIG" --full-method v5_precision \
+            --no-longitudinal-method v5_precision_no_longitudinal --no-long-method v5_precision_no_long \
+            --no-consensus-method v5_precision_no_consensus \
+            --abundance-summary v5_holdout/abundance/results/ABUNDANCE_STRATIFIED_SUMMARY.tsv \
+            --pseudo-summary v5_holdout/pseudo_novel/PSEUDO_NOVEL_RECOVERY_SUMMARY.tsv \
+            --out v5_holdout/decision > v5_holdout/logs/HOLDOUT_DECISION.log 2>&1
+          cp v5_holdout/variants/v5_precision_full/LANTERN_V5_ASSEMBLY.fasta \
+            v5_holdout/submission/LANTERN_V5_HOLDOUT_14_15.fasta
+          python lantern_cami3/scripts/verify_cami_assembly.py \
+            v5_holdout/submission/LANTERN_V5_HOLDOUT_14_15.fasta \
+            --out v5_holdout/validation/SUBMISSION_FASTA_VALIDATION.json
+          sha256sum v5_holdout/submission/LANTERN_V5_HOLDOUT_14_15.fasta \
+            > v5_holdout/validation/SUBMISSION_FASTA_SHA256.txt
+          cat v5_holdout/decision/HOLDOUT_DECISION.md
+      - name: Compact and hash complete v5 evidence
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          rm -rf v5_holdout/truth_download v5_holdout/truth/references pretruth postfreeze incoming/holdout.zip
+          rm -f v5_holdout/truth/combined_truth.fasta v5_holdout/truth/toy_truth.mmi \
+            v5_holdout/pseudo_novel/truth_genomes.msh v5_holdout/pseudo_novel/truth_genome_distances.tsv
+          for d in v5_holdout/variants/v5_precision_no_*; do rm -f "$d/LANTERN_V5_ASSEMBLY.fasta"; done
+          find v5_holdout -type f ! -name SHA256SUMS_ALL.txt -print0 | sort -z | xargs -0 sha256sum > v5_holdout/SHA256SUMS_ALL.txt || true
+          find v5_holdout -type f -printf '%P\t%s\n' | sort > v5_holdout/CONTENTS.tsv || true
+          du -sh v5_holdout > v5_holdout/PACKAGE_SIZE.txt || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: LANTERN_CAMI3_V5_PRECISION_HOLDOUT_14_15_20260820
+          path: v5_holdout
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9

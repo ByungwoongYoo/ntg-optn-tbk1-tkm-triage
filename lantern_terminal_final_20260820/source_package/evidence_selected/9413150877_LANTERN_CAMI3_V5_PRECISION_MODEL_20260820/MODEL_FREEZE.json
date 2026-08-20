@@ -1,0 +1,43 @@
+{
+  "base_safe_fraction": 0.49341021416803954,
+  "claim_boundary": "The model was trained on public Toy development gold after its assembly freeze. It is not evidence of holdout or CAMI challenge performance.",
+  "features": [
+    "length",
+    "timepoints_supported",
+    "assembler_count",
+    "max_short_breadth",
+    "max_long_breadth",
+    "long_spanning_reads",
+    "score",
+    "best_backbone_identity",
+    "best_backbone_shorter_coverage"
+  ],
+  "input_sha256": {
+    "chimera_audit": "0ec1644fd0cc1f2c340dcac314387578e1cbb6677b43b68ac48f936bbc3c940d",
+    "decisions": "bd63ea1758399697615620eef8dcede8ea43e5475b98c99c009fbb83953839ba",
+    "metadata": "d20619f9acc549adeecfa4321b262c58bb592cbd7b8049b07839184e03e04e84"
+  },
+  "model": {
+    "class": "sklearn.ensemble.HistGradientBoostingClassifier",
+    "l2_regularization": 2.0,
+    "learning_rate": 0.04,
+    "max_depth": 3,
+    "max_iter": 150,
+    "min_samples_leaf": 20,
+    "random_state": 20260820
+  },
+  "model_sha256": "9805ab75ed3688df192cd0d803a72d21e59c95b3a2c4bfbb1b4fcf2ad917057c",
+  "n_candidates": 1214,
+  "n_safe": 599,
+  "oof_average_precision": 0.7748146900920073,
+  "oof_roc_auc": 0.8415896412720388,
+  "status": "MODEL_FROZEN_FOR_UNTOUCHED_APPLICATION",
+  "threshold": 0.8501340552973546,
+  "threshold_selection": {
+    "minimum_threshold": 0.5,
+    "observed_oof_precision": 0.8034188034188035,
+    "observed_oof_recall": 0.15692821368948248,
+    "target_oof_precision": 0.8
+  },
+  "version": "LANTERN-v5-precision-filter-20260820"
+}

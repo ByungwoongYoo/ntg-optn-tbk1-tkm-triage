@@ -1,0 +1,79 @@
+name: CAMI III LANTERN public asset probe
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cami3-lantern-asset-probe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Probe public Toy dataset assets without downloading them
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p lantern_probe
+          python - <<'PY'
+          import json, re, subprocess, time
+          from pathlib import Path
+
+          urls = {
+              'short_sample_0_reads': 'https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_0_reads.tar.gz',
+              'short_sample_1_reads': 'https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_1_reads.tar.gz',
+              'long_sample_0_reads': 'https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy-long/sample_0_reads.tar.gz',
+              'long_sample_1_reads': 'https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy-long/sample_1_reads.tar.gz',
+              'short_sample_0_gsa': 'https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_0_gsa.tar.gz',
+              'short_sample_1_gsa': 'https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_1_gsa.tar.gz',
+              'long_sample_0_gsa': 'https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy-long/sample_0_gsa.tar.gz',
+              'long_sample_1_gsa': 'https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy-long/sample_1_gsa.tar.gz',
+              'short_pooled_gsa': 'https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/gsa_pooled.fasta.gz',
+              'short_pooled_mapping': 'https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/gsa_pooled_mapping.tsv.gz',
+              'short_source_genomes': 'https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/source_genomes.tar.gz',
+              'short_coverages': 'https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/coverages.tar.gz',
+          }
+          rows=[]
+          for name,url in urls.items():
+              p=subprocess.run(['curl','-fsSIL','--retry','4','--retry-all-errors','--connect-timeout','20','--max-time','90',url],text=True,capture_output=True)
+              blocks=[]; block={}
+              for line in p.stdout.splitlines():
+                  if line.startswith('HTTP/'):
+                      if block: blocks.append(block)
+                      block={'status_line':line.strip()}
+                  elif ':' in line:
+                      k,v=line.split(':',1); block[k.strip().lower()]=v.strip()
+              if block: blocks.append(block)
+              final=blocks[-1] if blocks else {}; status=final.get('status_line','')
+              rows.append({'name':name,'url':url,'curl_exit':p.returncode,'status':status,'content_length':int(final['content-length']) if final.get('content-length','').isdigit() else None,'etag':final.get('etag'),'last_modified':final.get('last-modified'),'accept_ranges':final.get('accept-ranges'),'stderr':p.stderr[-1000:]})
+              time.sleep(.2)
+          Path('lantern_probe/ASSET_PROBE.json').write_text(json.dumps(rows,indent=2)+'\n')
+          with Path('lantern_probe/ASSET_PROBE.tsv').open('w') as f:
+              f.write('name\tstatus\tbytes\tGiB\tetag\tlast_modified\turl\n')
+              for r in rows:
+                  n=r['content_length'];gib='' if n is None else f'{n/1024**3:.3f}'
+                  f.write(f"{r['name']}\t{r['status']}\t{n or ''}\t{gib}\t{r['etag'] or ''}\t{r['last_modified'] or ''}\t{r['url']}\n")
+          bad=[r for r in rows if r['curl_exit']!=0 or re.search(r'\s200(?:\s|$)',r['status']) is None]
+          Path('lantern_probe/PROBE_STATUS.json').write_text(json.dumps({'n':len(rows),'n_bad':len(bad),'bad':[r['name'] for r in bad]},indent=2)+'\n')
+          if bad: raise SystemExit(f'Asset probe failures: {[r["name"] for r in bad]}')
+          PY
+          uname -a > lantern_probe/UNAME.txt
+          git rev-parse HEAD > lantern_probe/GIT_HEAD.txt
+          find lantern_probe -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > lantern_probe/SHA256SUMS.txt
+          cat lantern_probe/ASSET_PROBE.tsv
+
+      - name: Upload probe evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: LANTERN_CAMI3_TOY_ASSET_PROBE_20260819
+          path: lantern_probe
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9

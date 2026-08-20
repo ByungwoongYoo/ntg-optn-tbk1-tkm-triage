@@ -1,0 +1,10 @@
+{
+  "n_genomes": 353,
+  "n_sequences": 1344994,
+  "total_truth_bp": 878918771,
+  "samples": [
+    "S0",
+    "S1"
+  ],
+  "truth_access_boundary": "Gold truth is used only after truth-blind assembly and selection artifacts are frozen."
+}

@@ -1,0 +1,13 @@
+{
+  "n_manifest_genomes": 353,
+  "n_eligible_targets": 250,
+  "min_truth_bp": 50000,
+  "thresholds": {
+    "species": 0.05,
+    "genus": 0.15,
+    "deep": 0.25
+  },
+  "n_unresolved_mash_ids": 0,
+  "unresolved_examples": [],
+  "boundary": "Pseudo-novel tiers are evaluation-only target-withholding stress tests within the Toy community. They are not claims that a genome is taxonomically novel in RefSeq, and no truth information entered LANTERN selection."
+}

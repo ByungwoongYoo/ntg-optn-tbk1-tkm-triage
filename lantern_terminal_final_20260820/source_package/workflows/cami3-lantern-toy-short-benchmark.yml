@@ -1,0 +1,89 @@
+name: CAMI III LANTERN Toy short-read benchmark
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cami3-lantern-toy-short-benchmark.yml'
+      - 'lantern_cami3/scripts/run_toy_short_benchmark_v2.sh'
+      - 'lantern_cami3/scripts/**'
+      - 'lantern_cami3/config/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: lantern-short
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            megahit=1.2.9
+            spades=4.3.0
+            minimap2=2.31
+            samtools=1.24
+            mash=2.3
+            seqkit=2.13.0
+          cache-downloads: true
+          post-cleanup: all
+
+      - name: Execute frozen public-Toy longitudinal short-read benchmark v2
+        id: execute
+        shell: micromamba-shell {0}
+        env:
+          LANTERN_SHORT_FRACTION: '0.03'
+          LANTERN_SEED: '20260819'
+          LANTERN_THREADS: '4'
+          LANTERN_MEMORY_GB: '12'
+        run: |
+          set +e
+          cp lantern_cami3/scripts/run_toy_short_benchmark_v2.sh LANTERN_EXECUTED_SCRIPT.sh
+          bash lantern_cami3/scripts/run_toy_short_benchmark_v2.sh lantern_short_benchmark_v2
+          rc=$?
+          printf '%s\n' "$rc" > LANTERN_BENCHMARK_EXIT_CODE.txt
+          exit "$rc"
+
+      - name: Preserve compact provenance and bound failed artifacts
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=lantern_short_benchmark_v2
+          mkdir -p "$root/provenance" "$root/failure_audit"
+          git rev-parse HEAD > "$root/provenance/WORKFLOW_GIT_HEAD.txt"
+          cp LANTERN_BENCHMARK_EXIT_CODE.txt "$root/failure_audit/WORKFLOW_EXIT_CODE.txt" 2>/dev/null || true
+          sha256sum LANTERN_EXECUTED_SCRIPT.sh > "$root/provenance/EXECUTED_SCRIPT_SHA256.txt" 2>/dev/null || true
+          if [[ ! -s "$root/decision/FINAL_DECISION.json" ]]; then
+            rm -rf "$root/reads" "$root/truth_download" "$root/truth/references" 2>/dev/null || true
+            rm -f "$root/truth/combined_truth.fasta" "$root/truth/toy_truth.mmi" 2>/dev/null || true
+            rm -f "$root/truth_blind/evidence"/*.bam "$root/truth_blind/evidence"/*.bai 2>/dev/null || true
+            find "$root/assemblies" -type d -name intermediate_contigs -prune -exec rm -rf {} + 2>/dev/null || true
+            rm -rf "$root/assemblies/metaspades_longitudinal/K21" "$root/assemblies/metaspades_longitudinal/K33" "$root/assemblies/metaspades_longitudinal/K55" 2>/dev/null || true
+          fi
+          find "$root" -type f ! -name SHA256SUMS_ALL.txt -print0 | sort -z | xargs -0 sha256sum > "$root/SHA256SUMS_ALL.txt" || true
+          find "$root" -type f -printf '%P\t%s\n' | sort > "$root/CONTENTS.tsv" || true
+          du -sh "$root" > "$root/PACKAGE_SIZE.txt" || true
+
+      - name: Upload bounded Toy benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: LANTERN_CAMI3_TOY_SHORT_BENCHMARK_V2_20260820
+          path: |
+            lantern_short_benchmark_v2
+            LANTERN_EXECUTED_SCRIPT.sh
+            LANTERN_BENCHMARK_EXIT_CODE.txt
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
