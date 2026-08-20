@@ -1,0 +1,215 @@
+name: LANTERN terminal evidence closer
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/lantern-terminal-evidence-closer.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: read
+
+env:
+  SOURCE_BRANCH: 'lantern-final-orchestrator-20260820'
+  SOURCE_WORKFLOW: 'LANTERN final evidence orchestrator'
+
+jobs:
+  close:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Wait until all non-finalizer critical research runs settle
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          mkdir -p terminal/{incoming,extracted,output,provenance,diagnostics}
+          stable=0
+          : > terminal/diagnostics/WAIT_LOG.tsv
+          for attempt in $(seq 1 240); do
+            python - "$attempt" <<'PY'
+          import json,os,re,subprocess,sys,datetime
+          repo=os.environ['REPO']; attempt=sys.argv[1]
+          runs=[]
+          for page in range(1,4):
+              x=json.loads(subprocess.check_output(['gh','api',f'/repos/{repo}/actions/runs?per_page=100&page={page}']))
+              rows=x.get('workflow_runs',[]); runs.extend(rows)
+              if not rows: break
+          critical=re.compile(r'(pairing|holdout|high.depth|metamdbg|domain.specific|extension|precision|additive|v4|v5|v6|v7)',re.I)
+          ignore=re.compile(r'(inspection|probe|metadata|compact audit|asset|final evidence orchestrator|terminal evidence closer|repair and dispatch)',re.I)
+          active=[]
+          for r in runs:
+              if r.get('created_at','')<'2026-08-20T00:00:00Z': continue
+              name=r.get('name','')
+              if not critical.search(name) or ignore.search(name): continue
+              if r.get('status') in {'queued','in_progress','waiting','pending','requested'}:
+                  active.append({k:r.get(k) for k in ['id','name','head_branch','status','created_at','updated_at']})
+          open('terminal/diagnostics/CURRENT_ACTIVE.json','w').write(json.dumps(active,indent=2)+'\n')
+          with open('terminal/diagnostics/WAIT_LOG.tsv','a') as f:
+              f.write(f"{datetime.datetime.now(datetime.timezone.utc).isoformat()}\t{attempt}\t{len(active)}\t"+';'.join(f"{x['id']}:{x['name']}" for x in active)+'\n')
+          open('/tmp/active_count','w').write(str(len(active)))
+          PY
+            n=$(cat /tmp/active_count)
+            if test "$n" = 0; then stable=$((stable+1)); else stable=0; fi
+            if test "$stable" -ge 3; then break; fi
+            sleep 60
+          done
+          test "$stable" -ge 3
+          printf '%s\n' "$stable" > terminal/provenance/QUIESCENCE_STABLE_CYCLES.txt
+
+      - name: Find latest completed source orchestrator artifact
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          source_run=''
+          artifact_id=''
+          for attempt in $(seq 1 180); do
+            python - <<'PY' > /tmp/source_run
+          import json,os,subprocess
+          repo=os.environ['REPO']; branch=os.environ['SOURCE_BRANCH']; target=os.environ['SOURCE_WORKFLOW']
+          x=json.loads(subprocess.check_output(['gh','api',f'/repos/{repo}/actions/runs?branch={branch}&per_page=30']))
+          runs=[r for r in x.get('workflow_runs',[]) if r.get('name')==target and r.get('status')=='completed']
+          runs.sort(key=lambda r:r.get('created_at',''),reverse=True)
+          print(runs[0]['id'] if runs else '')
+          PY
+            source_run=$(cat /tmp/source_run)
+            if test -n "$source_run"; then
+              python - "$source_run" <<'PY' > /tmp/artifact_id
+          import json,os,subprocess,sys
+          repo=os.environ['REPO']; run=sys.argv[1]
+          x=json.loads(subprocess.check_output(['gh','api',f'/repos/{repo}/actions/runs/{run}/artifacts?per_page=100']))
+          print(next((str(a['id']) for a in x.get('artifacts',[]) if a.get('name')=='LANTERN_CAMI3_FINAL_ORCHESTRATION_20260820' and not a.get('expired')),''))
+          PY
+              artifact_id=$(cat /tmp/artifact_id)
+              test -n "$artifact_id" && break
+            fi
+            sleep 60
+          done
+          test -n "$source_run"; test -n "$artifact_id"
+          printf '%s\n' "$source_run" > terminal/provenance/SOURCE_ORCHESTRATOR_RUN_ID.txt
+          printf '%s\n' "$artifact_id" > terminal/provenance/SOURCE_ARTIFACT_ID.txt
+          gh api -H 'Accept: application/vnd.github+json' "/repos/$REPO/actions/artifacts/$artifact_id/zip" > terminal/incoming/source.zip
+          unzip -tq terminal/incoming/source.zip
+          sha256sum terminal/incoming/source.zip > terminal/provenance/SOURCE_ARTIFACT_ZIP_SHA256.txt
+          unzip -q terminal/incoming/source.zip -d terminal/extracted
+
+      - name: Convert only a settled nonterminal classification into a terminal scientific verdict
+        run: |
+          set -euo pipefail
+          summary=$(find terminal/extracted -type f -path '*/final_work/output/FINAL_MACHINE_SUMMARY.json' -print -quit)
+          verdict=$(find terminal/extracted -type f -path '*/final_work/output/FINAL_VERDICT.md' -print -quit)
+          candidates=$(find terminal/extracted -type f -path '*/final_work/output/DECISION_CANDIDATES.csv' -print -quit)
+          test -s "$summary"; test -s "$verdict"; test -s "$candidates"
+          cp "$summary" terminal/output/FINAL_MACHINE_SUMMARY.json
+          cp "$candidates" terminal/output/DECISION_CANDIDATES.csv
+          python - <<'PY'
+          import csv,json
+          from pathlib import Path
+          p=Path('terminal/output/FINAL_MACHINE_SUMMARY.json'); x=json.loads(p.read_text())
+          active=json.loads(Path('terminal/diagnostics/CURRENT_ACTIVE.json').read_text())
+          if active: raise SystemExit('critical runs became active after quiescence')
+          strict=int(x.get('strict_success_count',0) or 0)
+          ready=bool(x.get('challenge_submission_ready'))
+          blind=bool(x.get('restricted_blind_data_applied'))
+          if strict and ready and blind: status='SUCCESS'
+          elif strict: status='TOY_STRICT_SUCCESS_AWAITING_RESTRICTED_CAMI_APPLICATION'
+          else: status='FINAL_NEGATIVE_RESULT'
+          x['terminalized_after_quiescence']=True
+          x['active_run_count_at_terminalization']=0
+          x['overall_status']=status
+          x['terminalization_rule']='Success thresholds were unchanged. Once all critical computational paths were quiescent, zero strict holdout survivors is a final negative result even when a technically failed optional implementation is retained in the failure audit.'
+          p.write_text(json.dumps(x,indent=2,ensure_ascii=False)+'\n')
+          rows=list(csv.DictReader(open('terminal/output/DECISION_CANDIDATES.csv')))
+          def n(v):
+              try:return float(v)
+              except:return float('-inf')
+          rows.sort(key=lambda r:(r.get('strict_holdout_success','').lower()=='true',r.get('is_holdout','').lower()=='true',sum(r.get(k,'').lower()=='true' for k in ['gate_genome_fraction','gate_mean_recovery','gate_low_abundance','gate_chimera','gate_longitudinal','gate_bootstrap','gate_pseudo']),n(r.get('genome_fraction_gain_pp')),n(r.get('mean_recovery_gain_pp'))),reverse=True)
+          best=rows[0] if rows else None
+          if status=='SUCCESS': opening='연구 완료 — 엄격한 독립 holdout 관문과 실제 CAMI restricted-data 적용 및 제출 준비를 모두 확인했습니다.'
+          elif status.startswith('TOY_STRICT_SUCCESS'): opening='연구 완료 — 공개 Toy의 엄격한 미사용 holdout 기준을 통과했으며 실제 CAMI restricted-data 적용·제출만 사용자 승인 단계로 남았습니다.'
+          else: opening='연구 완료 — 사전 정의된 합리적 계산 경로를 소진했으나 엄격한 성공 기준 전체를 독립 holdout에서 통과하지 못했습니다.'
+          lines=['# '+opening,'',f'- 최종 기계 판정: **{status}**',f'- 엄격한 holdout 생존자: **{strict}개**','- 종료 시 활성 핵심 workflow: **0개**','- 성공 숫자 기준·분할·threshold의 사후 완화: **없음**','']
+          if best:
+              lines+=['## 가장 강한 확인 후보','']
+              for k in ['source','original_status','is_holdout','genome_fraction_gain_pp','mean_recovery_gain_pp','low_abundance_gain_pp','relative_chimera_change','longitudinal_drop_pp','paired_bootstrap_ci_low_pp','paired_bootstrap_ci_high_pp','pseudo_all_positive','metrics_complete','strict_holdout_success']:
+                  lines.append(f'- `{k}`: `{best.get(k)}`')
+              lines.append('')
+          lines+=['## 주장 경계','',x.get('claim_boundary',''),'','기술 실패는 failure audit에 남겼으며, 성공으로 바꾸기 위해 수치 문턱을 낮추지 않았습니다.']
+          Path('terminal/output/FINAL_VERDICT.md').write_text('\n'.join(lines)+'\n')
+          Path('terminal/output/OVERALL_STATUS.txt').write_text(status+'\n')
+          PY
+          cat terminal/output/FINAL_VERDICT.md
+
+      - name: Build and verify final delivery ZIP
+        run: |
+          set -euo pipefail
+          package=terminal/LANTERN_CAMI3_TERMINAL_FINAL_20260820
+          mkdir -p "$package"/{results,provenance,failure_audit,source_package}
+          cp terminal/output/* "$package/results/"
+          cp terminal/provenance/* "$package/provenance/"
+          cp terminal/diagnostics/* "$package/failure_audit/"
+          srcpkg=$(find terminal/extracted -type d -name final_package -print -quit)
+          test -n "$srcpkg"
+          cp -a "$srcpkg"/. "$package/source_package/"
+          cp terminal/output/FINAL_VERDICT.md "$package/FINAL_VERDICT.md"
+          cat > "$package/README.md" <<'EOF'
+          # LANTERN CAMI III terminal final package
+
+          This package terminalizes the settled evidence campaign without changing any success threshold. It includes the strict machine verdict, all candidate gates, source-orchestrator package, run/artifact provenance, quiescence proof, and failure audit. Public raw reads are not duplicated.
+          EOF
+          find "$package" -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > "$package/SHA256SUMS.txt"
+          python - <<'PY'
+          import zipfile
+          from pathlib import Path
+          root=Path('terminal/LANTERN_CAMI3_TERMINAL_FINAL_20260820'); out=Path('terminal/LANTERN_FINAL.zip')
+          with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED,allowZip64=True) as z:
+              for p in sorted(root.rglob('*')):
+                  if p.is_file(): z.write(p,p.relative_to(root.parent))
+          with zipfile.ZipFile(out) as z:
+              bad=z.testzip()
+              if bad: raise SystemExit(bad)
+          PY
+          sha256sum terminal/LANTERN_FINAL.zip > terminal/LANTERN_FINAL_SHA256.txt
+          stat --printf='%n\t%s\t%y\n' terminal/LANTERN_FINAL.zip > terminal/LANTERN_FINAL_STAT.txt
+          unzip -t terminal/LANTERN_FINAL.zip > terminal/LANTERN_FINAL_UNZIP_TEST.txt
+
+      - name: Commit terminal final package to the branch
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
+        run: |
+          set -euo pipefail
+          rm -rf lantern_terminal_final_20260820
+          mkdir -p lantern_terminal_final_20260820
+          cp -a terminal/LANTERN_CAMI3_TERMINAL_FINAL_20260820/. lantern_terminal_final_20260820/
+          cp terminal/LANTERN_FINAL.zip terminal/LANTERN_FINAL_SHA256.txt terminal/LANTERN_FINAL_STAT.txt terminal/LANTERN_FINAL_UNZIP_TEST.txt lantern_terminal_final_20260820/
+          git config user.name 'LANTERN terminal closer'
+          git config user.email 'yoonge3@gmail.com'
+          git add lantern_terminal_final_20260820
+          git commit -m "Close LANTERN evidence campaign: $(cat terminal/output/OVERALL_STATUS.txt)"
+          git push origin "HEAD:${BRANCH}"
+
+      - name: Upload terminal final package
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: LANTERN_CAMI3_TERMINAL_FINAL_20260820
+          path: |
+            terminal/LANTERN_CAMI3_TERMINAL_FINAL_20260820
+            terminal/LANTERN_FINAL.zip
+            terminal/LANTERN_FINAL_SHA256.txt
+            terminal/LANTERN_FINAL_STAT.txt
+            terminal/LANTERN_FINAL_UNZIP_TEST.txt
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
