@@ -1,0 +1,23 @@
+{
+  "n_genomes": 329,
+  "truth_bp_total": 459434279,
+  "unique_truth_bp_covered": 54626881,
+  "genome_fraction_percent": 11.890031609940015,
+  "mean_genome_recovery": 0.09524654087312748,
+  "median_genome_recovery": 0.0,
+  "genomes_recovered_50": 28,
+  "genomes_recovered_90": 8,
+  "assembly_contigs_total": 201639,
+  "assembly_total_bp": 101483583,
+  "assembly_contigs_with_accepted_alignment": 23606,
+  "assembly_contigs_without_accepted_alignment": 178033,
+  "accepted_alignment_bp": 54870743,
+  "alignment_to_unique_truth_ratio": 1.0044641391845162,
+  "cross_binid_chimeric_contigs": 1330,
+  "cross_binid_chimeric_bp": 4169095,
+  "cross_binid_chimeric_bp_fraction": 0.041081472261380446,
+  "min_identity": 0.9,
+  "min_alignment": 500,
+  "truth_only_evaluation": true,
+  "boundary": "Cross-BINID mappings are a conservative chimera proxy against the CAMI gold-standard assembly; they are not identical to the official MetaQUAST misassembly metric."
+}

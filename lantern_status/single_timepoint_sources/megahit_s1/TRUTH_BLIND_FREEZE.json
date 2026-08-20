@@ -1,0 +1,8 @@
+{
+  "method": "megahit_s1",
+  "freeze_utc": "2026-08-20T09:37:40Z",
+  "assembly_sha256": "108851905b5ea5a1b03a9c5e69b3afab8b2a006bb53a533558cafceb2a0ca34a",
+  "assembly_bytes": 33801828,
+  "truth_accessed": false,
+  "boundary": "Single-timepoint source assembly completed and hashed before Toy gold-standard access."
+}

@@ -1,0 +1,2 @@
+file	format	type	num_seqs	sum_len	min_len	avg_len	max_len
+source_metaspades_hybrid_s0/assembly/final_assembly.fasta	FASTA	DNA	194262	98506545	56	507.1	249994

@@ -1,0 +1,8 @@
+{
+  "status": "PASS",
+  "n_sequences": 205281,
+  "total_bp": 96687131,
+  "n_errors": 0,
+  "errors": [],
+  "sha256": "fb0f9f15749ee18ddb5889eb16221a1059b31d5a2f3f32d63a1d1c8b7d7dcf08"
+}

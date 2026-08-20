@@ -1,0 +1,8 @@
+{
+  "method": "metaspades_hybrid_s0",
+  "freeze_utc": "2026-08-20T09:31:37Z",
+  "assembly_sha256": "2989dd5e5b96010a99da888969c8c88c02f47d0391427586f3be1cc95c2d4a03",
+  "assembly_bytes": 107336679,
+  "truth_accessed": false,
+  "boundary": "Single-timepoint source assembly completed and hashed before Toy gold-standard access."
+}

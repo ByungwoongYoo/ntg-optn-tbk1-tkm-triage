@@ -1,0 +1,2 @@
+file	format	type	num_seqs	sum_len	min_len	avg_len	max_len
+source_megahit_s1/assembly/final_assembly.fasta	FASTA	DNA	8551	33445844	1000	3911.3	203786
