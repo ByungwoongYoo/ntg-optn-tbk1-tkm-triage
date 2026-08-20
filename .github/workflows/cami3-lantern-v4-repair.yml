@@ -20,93 +20,42 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
           fetch-depth: 0
 
-      - name: Patch robust artifact discovery without changing frozen science
+      - name: Repair v4 workflow text and validate YAML
         run: |
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
+          path=Path('.github/workflows/cami3-lantern-hybrid-v4-development.yml')
+          text=path.read_text()
 
-          path = Path('.github/workflows/cami3-lantern-hybrid-v4-development.yml')
-          text = path.read_text()
-
-          old = r'''          backbone=$(find inputs/hybrid_raw -type f -path '*/assembly/out/contigs.fasta' | head -1)
-          megahit=$(find inputs/megahit_raw -type f -path '*/assembly/out/final.contigs.fa' | head -1)
-          metashort=$(find inputs/metaspades_short_raw -type f -path '*/assembly/out/contigs.fasta' | head -1)
-          flyepair=$(find inputs/flye_pair_raw -type f -path '*/assembly/out/assembly.fasta' | head -1)
-          flyes0=$(find inputs/flye_single_raw -type f -path '*/multimodal_flye_long_s0/assembly/out/assembly.fasta' | head -1)
-          flyes1=$(find inputs/flye_single_raw -type f -path '*/multimodal_flye_long_s1/assembly/out/assembly.fasta' | head -1)
-          for f in "$backbone" "$megahit" "$metashort" "$flyepair" "$flyes0" "$flyes1"; do test -s "$f"; done
-'''
-
-          new = r'''          # Artifact directory layouts differ by actions/download-artifact mode. Resolve
-          # only non-empty, pre-existing FASTA files. Flye timepoint S0 did not
-          # produce a final assembly, so a non-empty consensus/repeat-graph FASTA is
-          # allowed strictly as an auxiliary candidate source and is recorded as a
-          # fallback; it is never represented as a completed Flye assembly.
-          pick_required_fasta() {
-            local root="$1"; shift
-            local pattern candidate
-            for pattern in "$@"; do
-              candidate=$(find "$root" -type f -path "$pattern" -size +0c -print -quit)
-              if [[ -n "$candidate" ]]; then
-                printf '%s\n' "$candidate"
-                return 0
-              fi
-            done
-            return 1
+          replacements={
+          """\nsource_id\tassembler\tscope\tmode\nmegahit_short_pair\tmegahit\tlongitudinal\tshort\nmetaspades_short_pair\tmetaspades\tlongitudinal\tshort\nflye_long_pair\tflye\tlongitudinal\tlong\nflye_long_s0\tflye\ttimepoint_support\tlong\nflye_long_s1\tflye\ttimepoint_support\tlong\nEOF\n""":
+          """\n          source_id\tassembler\tscope\tmode\n          megahit_short_pair\tmegahit\tlongitudinal\tshort\n          metaspades_short_pair\tmetaspades\tlongitudinal\tshort\n          flye_long_pair\tflye\tlongitudinal\tlong\n          flye_long_s0\tflye\ttimepoint_support\tlong\n          flye_long_s1\tflye\ttimepoint_support\tlong\n          EOF\n""",
+          """winner=$(python - <<'PY'\nimport json\nx=json.load(open('v4_hybrid_development/decision/V4_DEVELOPMENT_FREEZE.json'))\nprint(x.get('winner_name',''))\nPY\n""":
+          """winner=$(python - <<'PY'\n          import json\n          x=json.load(open('v4_hybrid_development/decision/V4_DEVELOPMENT_FREEZE.json'))\n          print(x.get('winner_name',''))\n          PY\n""",
+          """          python - <<'PY'\nimport json\nfrom pathlib import Path\nroot=Path('v4_hybrid_development'); errors=[]\nfreeze=root/'provenance/V4_TRUTH_BLIND_FREEZE.json'; decision=root/'decision/V4_DEVELOPMENT_FREEZE.json'\nif not freeze.is_file(): errors.append('truth-blind freeze missing')\nif not decision.is_file(): errors.append('development decision missing')\nif freeze.is_file() and json.loads(freeze.read_text()).get('truth_accessed') is not False: errors.append('freeze boundary invalid')\nif decision.is_file():\n    d=json.loads(decision.read_text())\n    if d.get('winner_name') and not (root/'decision/FROZEN_V4_WINNER_CONFIG.json').is_file(): errors.append('winner config missing')\naudit={'status':'PASS' if not errors else 'INCOMPLETE','errors':errors,'claim_boundary':'Public Toy development audit only; no active CAMI challenge data or rank.'}\n(root/'INDEPENDENT_AUDIT.json').write_text(json.dumps(audit,indent=2)+'\\n')\nPY\n""":
+          """          python - <<'PY'\n          import json\n          from pathlib import Path\n          root=Path('v4_hybrid_development'); errors=[]\n          freeze=root/'provenance/V4_TRUTH_BLIND_FREEZE.json'; decision=root/'decision/V4_DEVELOPMENT_FREEZE.json'\n          if not freeze.is_file(): errors.append('truth-blind freeze missing')\n          if not decision.is_file(): errors.append('development decision missing')\n          if freeze.is_file() and json.loads(freeze.read_text()).get('truth_accessed') is not False: errors.append('freeze boundary invalid')\n          if decision.is_file():\n              d=json.loads(decision.read_text())\n              if d.get('winner_name') and not (root/'decision/FROZEN_V4_WINNER_CONFIG.json').is_file(): errors.append('winner config missing')\n          audit={'status':'PASS' if not errors else 'INCOMPLETE','errors':errors,'claim_boundary':'Public Toy development audit only; no active CAMI challenge data or rank.'}\n          (root/'INDEPENDENT_AUDIT.json').write_text(json.dumps(audit,indent=2)+'\\n')\n          PY\n"""
           }
-
-          flye_status() {
-            case "$1" in
-              */assembly/out/assembly.fasta) printf 'final_assembly\n' ;;
-              */assembly/out/10-consensus/consensus.fasta) printf 'consensus_fallback_from_incomplete_run\n' ;;
-              */assembly/out/20-repeat/repeat_graph_edges.fasta) printf 'repeat_graph_fallback_from_incomplete_run\n' ;;
-              *) printf 'unclassified\n' ;;
-            esac
-          }
-
-          backbone=$(pick_required_fasta inputs/hybrid_raw '*/assembly/out/contigs.fasta')
-          megahit=$(pick_required_fasta inputs/megahit_raw '*/assembly/out/final.contigs.fa')
-          metashort=$(pick_required_fasta inputs/metaspades_short_raw '*/assembly/out/contigs.fasta')
-          flyepair=$(pick_required_fasta inputs/flye_pair_raw '*/assembly/out/assembly.fasta')
-          flyes0=$(pick_required_fasta inputs/flye_single_raw \
-            '*flye_long_s0*/assembly/out/assembly.fasta' \
-            '*flye_long_s0*/assembly/out/10-consensus/consensus.fasta' \
-            '*flye_long_s0*/assembly/out/20-repeat/repeat_graph_edges.fasta')
-          flyes1=$(pick_required_fasta inputs/flye_single_raw \
-            '*flye_long_s1*/assembly/out/assembly.fasta' \
-            '*flye_long_s1*/assembly/out/10-consensus/consensus.fasta' \
-            '*flye_long_s1*/assembly/out/20-repeat/repeat_graph_edges.fasta')
-
-          flyes0_status=$(flye_status "$flyes0")
-          flyes1_status=$(flye_status "$flyes1")
-          printf 'logical_source\tselected_path\tstatus\n' > "$ROOT/provenance/AUXILIARY_FASTA_SELECTION.tsv"
-          printf 'metaspades_hybrid_backbone\t%s\tfinal_assembly\n' "$backbone" >> "$ROOT/provenance/AUXILIARY_FASTA_SELECTION.tsv"
-          printf 'megahit_short_pair\t%s\tfinal_assembly\n' "$megahit" >> "$ROOT/provenance/AUXILIARY_FASTA_SELECTION.tsv"
-          printf 'metaspades_short_pair\t%s\tfinal_assembly\n' "$metashort" >> "$ROOT/provenance/AUXILIARY_FASTA_SELECTION.tsv"
-          printf 'flye_long_pair\t%s\tfinal_assembly\n' "$flyepair" >> "$ROOT/provenance/AUXILIARY_FASTA_SELECTION.tsv"
-          printf 'flye_long_s0\t%s\t%s\n' "$flyes0" "$flyes0_status" >> "$ROOT/provenance/AUXILIARY_FASTA_SELECTION.tsv"
-          printf 'flye_long_s1\t%s\t%s\n' "$flyes1" "$flyes1_status" >> "$ROOT/provenance/AUXILIARY_FASTA_SELECTION.tsv"
-'''
-
-          if old in text:
-              text = text.replace(old, new, 1)
-          elif 'pick_required_fasta()' not in text:
-              raise SystemExit('expected v4 discovery block not found and robust repair not present')
-
-          old_read = r'''            read_dir=$(dirname "$(find inputs/read_artifacts -type f -name "S${s}_R1.fastq.gz" | head -1)")'''
-          new_read = r'''            read_dir=$(dirname "$(find inputs/read_artifacts -type f -name "S${s}_R1.fastq.gz" -print -quit)")'''
-          if old_read in text:
-              text = text.replace(old_read, new_read, 1)
-
-          if 'AUXILIARY_FASTA_SELECTION.tsv' not in text:
-              raise SystemExit('repair did not install auxiliary FASTA provenance')
+          for old,new in replacements.items():
+              text=text.replace(old,new)
+          if 'pick_required_fasta()' not in text:
+              raise SystemExit('robust v4 artifact resolver missing')
           path.write_text(text)
+          PY
+          python -m pip install --quiet pyyaml
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+          p=Path('.github/workflows/cami3-lantern-hybrid-v4-development.yml')
+          obj=yaml.safe_load(p.read_text())
+          if not isinstance(obj,dict) or 'jobs' not in obj:
+              raise SystemExit('invalid workflow object')
+          print('V4_WORKFLOW_YAML_VALID')
           PY
           git diff --check
           git diff -- .github/workflows/cami3-lantern-hybrid-v4-development.yml
 
-      - name: Commit repaired execution wrapper
+      - name: Commit repaired v4 workflow
         env:
           BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
         run: |
@@ -117,7 +66,7 @@ jobs:
           if git diff --cached --quiet; then
             echo 'repair already present'
           else
-            git commit -m 'Allow audited Flye fallback FASTA in v4 development'
+            git commit -m 'Validate and repair v4 workflow YAML'
             git push origin "HEAD:${BRANCH}"
           fi
 
