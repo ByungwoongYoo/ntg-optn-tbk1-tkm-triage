@@ -1,0 +1,78 @@
+name: CAMI III LANTERN isolated v4 holdout 14-15
+
+on:
+  pull_request:
+    branches: [cami3-lantern-20260819]
+    paths:
+      - '.github/workflows/cami3-lantern-v4-holdout-isolated.yml'
+      - 'lantern_cami3/scripts/run_v4_holdout_14_15_isolated.sh'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  SOURCE_RUN_ID: '32332720846'
+  HOLDOUT_CONFIG: 'lantern_cami3/config/lantern_v4_holdout_14_15_20260820.json'
+  THREADS: '4'
+
+jobs:
+  isolated-holdout:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download immutable Toy 14/15 read artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: LANTERN_CAMI3_V4_HOLDOUT_READS_S*_20260820
+          path: inputs/read_artifacts
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+
+      - name: Download immutable truth-blind baseline artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: LANTERN_CAMI3_V4_HOLDOUT_BASELINE_*_20260820
+          path: inputs/baseline_artifacts
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: lantern-v4-isolated
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            minimap2=2.31
+            samtools=1.24
+            mash=2.3
+            seqkit=2.13.0
+          cache-downloads: true
+          post-cleanup: all
+
+      - name: Execute frozen v4 holdout without pre-gold tuning
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          bash lantern_cami3/scripts/run_v4_holdout_14_15_isolated.sh v4_holdout_14_15_isolated
+
+      - name: Upload complete compact holdout evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: LANTERN_CAMI3_V4_HOLDOUT_14_15_ISOLATED_20260820
+          path: v4_holdout_14_15_isolated
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
