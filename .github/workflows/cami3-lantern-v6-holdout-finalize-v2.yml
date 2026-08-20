@@ -1,0 +1,132 @@
+name: CAMI III LANTERN v6 holdout finalization v2
+
+on:
+  pull_request:
+    branches: [lantern-v6-extension-holdout-14-15-20260820]
+    paths:
+      - '.github/workflows/cami3-lantern-v6-holdout-finalize-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  PARTIAL_RUN_ID: '32345690040'
+  PARTIAL_ARTIFACT: 'LANTERN_CAMI3_V6_EXTENSION_HOLDOUT_14_15_20260820'
+  SEED: '20260819'
+
+jobs:
+  finalize-v2:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download artifact contents directly into finalization root
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.PARTIAL_ARTIFACT }}
+          path: finalized
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.PARTIAL_RUN_ID }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Audit immutable inputs
+        run: |
+          set -euo pipefail
+          for f in \
+            finalized/provenance/HOLDOUT_TRUTH_BLIND_FREEZE.json \
+            finalized/provenance/FROZEN_EXTENSION_WINNER.json \
+            finalized/variants/v6_frozen_full/LANTERN_V6_EXTENSION_UNION.fasta \
+            finalized/abundance/sample14_abundance.tsv \
+            finalized/abundance/sample15_abundance.tsv \
+            finalized/pseudo/results/PSEUDO_NOVEL_RECOVERY_SUMMARY.tsv \
+            finalized/provenance/METHOD_MANIFEST.tsv \
+            finalized/provenance/EVALUATED_METHODS.tsv; do test -s "$f"; done
+          mkdir -p finalized/{decision,validation,submission,provenance/finalization,logs}
+          printf 'partial_run=%s\npartial_artifact=%s\nconstruction_not_repeated=true\nassemblies_not_modified=true\n' \
+            "$PARTIAL_RUN_ID" "$PARTIAL_ARTIFACT" > finalized/provenance/finalization/UPSTREAM.txt
+          git rev-parse HEAD > finalized/provenance/finalization/FINALIZER_GIT_HEAD.txt
+          python --version > finalized/provenance/finalization/PYTHON_VERSION.txt
+          sha256sum finalized/provenance/HOLDOUT_TRUTH_BLIND_FREEZE.json \
+            finalized/provenance/FROZEN_EXTENSION_WINNER.json \
+            finalized/variants/v6_frozen_full/LANTERN_V6_EXTENSION_UNION.fasta \
+            lantern_cami3/scripts/summarize_abundance_recovery.py \
+            lantern_cami3/scripts/evaluate_frozen_holdout.py \
+            > finalized/provenance/finalization/INPUT_AND_CODE_SHA256.txt
+      - name: Repair abundance table and apply unchanged gates
+        run: |
+          set -euo pipefail
+          recovery_args=(); method_args=()
+          while IFS=$'\t' read -r method fasta; do
+            test "$method" = method && continue
+            recovery_args+=(--recovery "$method=finalized/evaluation/$method/per_genome_recovery.tsv")
+            method_args+=(--method "$method=finalized/evaluation/$method")
+          done < finalized/provenance/EVALUATED_METHODS.tsv
+          rm -rf finalized/abundance/results finalized/decision
+          mkdir -p finalized/abundance/results finalized/decision
+          python lantern_cami3/scripts/summarize_abundance_recovery.py \
+            --abundance finalized/abundance/sample14_abundance.tsv \
+            --abundance finalized/abundance/sample15_abundance.tsv \
+            "${recovery_args[@]}" --low-percent 0.01 --high-percent 0.1 \
+            --out finalized/abundance/results > finalized/logs/ABUNDANCE_SUMMARY_FIXED.log 2>&1
+          cat > finalized/provenance/HOLDOUT_CONFIG.json <<'EOF'
+          {
+            "holdout_pair": [14, 15],
+            "strict_success_gates": {
+              "genome_fraction_gain_minimum_percentage_points": 0.5,
+              "mean_genome_recovery_gain_minimum_percentage_points": 1.0,
+              "low_abundance_gain_minimum_percentage_points": 2.0,
+              "relative_cross_binid_chimera_increase_maximum": 0.10,
+              "longitudinal_ablation_drop_minimum_percentage_points": 0.5
+            },
+            "claim_boundary": "Frozen public Toy sample-14/15 cross-sample robustness control; not an official longitudinal assignment, hidden CAMI result, or novel-organism discovery."
+          }
+          EOF
+          python lantern_cami3/scripts/evaluate_frozen_holdout.py \
+            "${method_args[@]}" --manifest finalized/provenance/METHOD_MANIFEST.tsv \
+            --holdout-config finalized/provenance/HOLDOUT_CONFIG.json \
+            --full-method v6_frozen_full --no-longitudinal-method v6_no_extension \
+            --abundance-summary finalized/abundance/results/ABUNDANCE_STRATIFIED_SUMMARY.tsv \
+            --pseudo-summary finalized/pseudo/results/PSEUDO_NOVEL_RECOVERY_SUMMARY.tsv \
+            --seed "$SEED" --out finalized/decision > finalized/logs/HOLDOUT_DECISION_FIXED.log 2>&1
+          test -s finalized/decision/HOLDOUT_DECISION.json
+          cat finalized/decision/HOLDOUT_DECISION.md
+      - name: Validate frozen FASTA and final decision
+        run: |
+          set -euo pipefail
+          cp finalized/variants/v6_frozen_full/LANTERN_V6_EXTENSION_UNION.fasta finalized/submission/LANTERN_V6_EXTENSION_HOLDOUT_14_15.fasta
+          python lantern_cami3/scripts/verify_cami_assembly.py finalized/submission/LANTERN_V6_EXTENSION_HOLDOUT_14_15.fasta --out finalized/validation/SUBMISSION_FASTA_VALIDATION.json
+          sha256sum finalized/submission/LANTERN_V6_EXTENSION_HOLDOUT_14_15.fasta > finalized/validation/SUBMISSION_FASTA_SHA256.txt
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('finalized')
+          d=json.loads((root/'decision/HOLDOUT_DECISION.json').read_text())
+          v=json.loads((root/'validation/SUBMISSION_FASTA_VALIDATION.json').read_text())
+          errors=[]
+          if d.get('status')!='NEGATIVE': errors.append(f"expected NEGATIVE, found {d.get('status')}")
+          if d.get('strict_success') is not False: errors.append('strict_success must be false')
+          if d.get('strongest_baseline')!='metaspades_short_pair': errors.append('strongest baseline mismatch')
+          if v.get('status')!='PASS': errors.append('FASTA validation failed')
+          audit={'status':'PASS' if not errors else 'FAIL','errors':errors,'decision_status':d.get('status'),'strict_success':d.get('strict_success'),'strongest_baseline':d.get('strongest_baseline'),'boundary':'Immutable-output finalization only; no construction or threshold changed.'}
+          (root/'INDEPENDENT_FINALIZATION_AUDIT.json').write_text(json.dumps(audit,indent=2,sort_keys=True)+'\n')
+          if errors: raise SystemExit(errors)
+          PY
+      - name: Compact and hash final evidence
+        if: always()
+        run: |
+          rm -f finalized/evaluation/*/per_truth_contig.tsv finalized/variants/v6_frozen_full/EXTENSION_DECISIONS.tsv
+          find finalized -type f ! -name SHA256SUMS_FINAL.txt -print0 | sort -z | xargs -0 sha256sum > finalized/SHA256SUMS_FINAL.txt || true
+          find finalized -type f -printf '%P\t%s\n' | sort > finalized/FINAL_CONTENTS.tsv || true
+          du -sh finalized > finalized/FINAL_SIZE.txt || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: LANTERN_CAMI3_V6_EXTENSION_HOLDOUT_14_15_FINALIZED_V2_20260820
+          path: finalized
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
