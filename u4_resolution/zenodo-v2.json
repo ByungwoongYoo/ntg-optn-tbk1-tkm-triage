@@ -1,0 +1,42 @@
+{
+  "title": "An Explicit Infinite Model Refuting Ulrich's u4 as a Single Axiom for Positive Implication",
+  "upload_type": "publication",
+  "publication_type": "preprint",
+  "publication_date": "2026-08-21",
+  "creators": [
+    {
+      "name": "Yoo, Byungwoong",
+      "affiliation": "Independent Researcher",
+      "orcid": "0009-0002-1797-3100"
+    }
+  ],
+  "description": "Corrected and strengthened v2. This release supplies a complete preprint and a Lean 4.33.0 formalization of an explicit substitution-closed infinite countermodel showing that Ulrich's u4 is not a single axiom for positive implicational logic under uniform substitution and modus ponens. Project-run checks include direct Lean compilation, leanchecker, nanoda, a compiled axiom-dependency audit, and a separate Python symbolic checker. Independent third-party specialist review and journal peer review have not yet occurred.",
+  "version": "2.0.0",
+  "license": "cc-by-4.0",
+  "language": "eng",
+  "keywords": [
+    "positive implicational logic",
+    "single axiom",
+    "Ulrich u4",
+    "Lean 4.33.0",
+    "formal verification",
+    "countermodel"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "10.5281/zenodo.21987699",
+      "relation": "isNewVersionOf",
+      "resource_type": "publication-preprint"
+    },
+    {
+      "identifier": "10.1007/s10817-026-09752-1",
+      "relation": "references",
+      "resource_type": "publication-article"
+    },
+    {
+      "identifier": "https://github.com/ByungwoongYoo/ntg-optn-tbk1-tkm-triage/tree/u4-resolution-20260818/u4_resolution",
+      "relation": "isSupplementedBy",
+      "resource_type": "software"
+    }
+  ]
+}

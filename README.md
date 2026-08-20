@@ -6,6 +6,7 @@ The `u4_resolution/` directory contains an explicit infinite syntactic
 countermodel showing that Ulrich's `u4` formula is not a single axiom for
 positive implicational logic. The formal proof, exact problem correspondence,
 and independent-verification design are documented in
+[`u4_resolution/README.md`](u4_resolution/README.md) and
 [`u4_resolution/U4_FORMAL_SCOPE_20260820.md`](u4_resolution/U4_FORMAL_SCOPE_20260820.md).
 
 This result is logically and methodologically separate from the biomedical
@@ -13,8 +14,12 @@ docking study described below. Historical verification records remain in the
 repository; strengthened releases must be made only from an all-green commit of
 the dedicated Lean 4.33 workflow.
 
-Historical public deposit: [version DOI 10.5281/zenodo.21987699](https://doi.org/10.5281/zenodo.21987699).
-Future corrected versions belong under [concept DOI 10.5281/zenodo.21987698](https://doi.org/10.5281/zenodo.21987698); the invalid identifier `10.5281/zenodo.21987529` must not be cited.
+Corrected v2 reserved DOI:
+[10.5281/zenodo.22031656](https://doi.org/10.5281/zenodo.22031656).
+All versions belong under [concept DOI
+10.5281/zenodo.21987698](https://doi.org/10.5281/zenodo.21987698); the historical
+v1 is [10.5281/zenodo.21987699](https://doi.org/10.5281/zenodo.21987699).
+The invalid identifier `10.5281/zenodo.21987529` must not be cited.
 
 This repository contains the **processed data, analysis outputs, and figure source files** for a
 hypothesis-generating *in silico* triage study of traditional Korean medicine (TKM)-derived

@@ -296,10 +296,10 @@ theorem u4_fails_single_axiom_test : ∀ q : Fml, ¬ U4Derivable (I q q) := by
 ## Separation from positive implicational logic
 
 The countermodel already refutes the candidate, because reflexivity is a
-theorem of positive implicational logic.  For a fully internalized comparison,
-we also define the standard `K`/`S` Hilbert basis and derive reflexivity from it.
-Thus the final separation theorem has no informal premise about the target
-logic left outside the checked file.
+theorem of positive implicational logic.  For an internal comparison, we also
+define the standard `K`/`S` Hilbert basis and derive reflexivity from it.  The
+checked file proves separation from that explicit basis; its identification
+with the literature's target logic is documented separately.
 -/
 
 def K (p q : Fml) : Fml := I p (I q p)

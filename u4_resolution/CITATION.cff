@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+message: "If you use this result or its verification package, please cite the corrected v2 record."
+title: "An Explicit Infinite Model Refuting Ulrich's u4 as a Single Axiom for Positive Implication"
+type: article
+version: 2.0.0
+date-released: 2026-08-21
+authors:
+  - family-names: Yoo
+    given-names: Byungwoong
+    affiliation: Independent Researcher
+    orcid: "https://orcid.org/0009-0002-1797-3100"
+doi: "10.5281/zenodo.22031656"
+repository-code: "https://github.com/ByungwoongYoo/ntg-optn-tbk1-tkm-triage/tree/u4-resolution-20260818/u4_resolution"
+url: "https://doi.org/10.5281/zenodo.22031656"
+license: CC-BY-4.0
+abstract: >-
+  An explicit infinite syntactic countermodel, formalized in Lean 4.33.0,
+  showing that Ulrich's u4 does not axiomatize positive implicational logic
+  under uniform substitution and modus ponens. External specialist and journal
+  review remain pending.
+identifiers:
+  - type: doi
+    value: "10.5281/zenodo.21987698"
+    description: "Concept DOI covering all versions"
+  - type: doi
+    value: "10.5281/zenodo.21987699"
+    description: "Historical v1 DOI"

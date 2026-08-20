@@ -1,4 +1,4 @@
-name: U4 strengthened independent verification 20260820
+name: U4 corrected v2 verification 20260821
 
 # Read-only verifier. This file is also the final-head trigger after legacy
 # self-report workflows have finished writing their historical log snapshot.
@@ -12,7 +12,15 @@ on:
       - 'u4_resolution/lean_check/**'
       - 'u4_resolution/u4_symbolic_checker.py'
       - 'u4_resolution/U4_FORMAL_SCOPE_20260820.md'
-      - 'u4_resolution/REPRODUCE_U4_STRENGTHENED_20260820.md'
+      - 'u4_resolution/REPRODUCE_U4_V2_20260821.md'
+      - 'u4_resolution/README.md'
+      - 'u4_resolution/RELEASE_NOTES_CORRECTED_V2_20260821.md'
+      - 'u4_resolution/AI_USE_STATEMENT.md'
+      - 'u4_resolution/LICENSE_SCOPE.md'
+      - 'u4_resolution/LICENSE_CODE_MIT.txt'
+      - 'u4_resolution/LICENSE_DOCUMENTATION_CC_BY_4.0.txt'
+      - 'u4_resolution/CITATION.cff'
+      - 'u4_resolution/zenodo-v2.json'
       - 'u4_resolution/preprint/**'
       - '.github/workflows/u4-strengthened-independent-check-20260820.yml'
   pull_request:
@@ -21,7 +29,15 @@ on:
       - 'u4_resolution/lean_check/**'
       - 'u4_resolution/u4_symbolic_checker.py'
       - 'u4_resolution/U4_FORMAL_SCOPE_20260820.md'
-      - 'u4_resolution/REPRODUCE_U4_STRENGTHENED_20260820.md'
+      - 'u4_resolution/REPRODUCE_U4_V2_20260821.md'
+      - 'u4_resolution/README.md'
+      - 'u4_resolution/RELEASE_NOTES_CORRECTED_V2_20260821.md'
+      - 'u4_resolution/AI_USE_STATEMENT.md'
+      - 'u4_resolution/LICENSE_SCOPE.md'
+      - 'u4_resolution/LICENSE_CODE_MIT.txt'
+      - 'u4_resolution/LICENSE_DOCUMENTATION_CC_BY_4.0.txt'
+      - 'u4_resolution/CITATION.cff'
+      - 'u4_resolution/zenodo-v2.json'
       - 'u4_resolution/preprint/**'
       - '.github/workflows/u4-strengthened-independent-check-20260820.yml'
 
@@ -82,7 +98,7 @@ jobs:
         id: nanoda
         continue-on-error: true
         run: |
-          mkdir -p artifact/u4-strengthened-20260820
+          mkdir -p artifact/u4-strengthened-v2-20260821
           set -o pipefail
           (
             set -euo pipefail
@@ -136,30 +152,30 @@ jobs:
           PY
             "$work_dir/nanoda/target/release/nanoda_bin" \
               "$work_dir/nanoda.json"
-          ) 2>&1 | tee artifact/u4-strengthened-20260820/NANODA.log
+          ) 2>&1 | tee artifact/u4-strengthened-v2-20260821/NANODA.log
 
       - name: Run direct compiler and symbolic cross-check
         id: direct
         if: always()
         continue-on-error: true
         run: |
-          mkdir -p artifact/u4-strengthened-20260820
+          mkdir -p artifact/u4-strengthened-v2-20260821
           set -o pipefail
           (
             cd u4_resolution/lean
             lean --version
             lake env lean U4Formal.lean
-          ) 2>&1 | tee artifact/u4-strengthened-20260820/LEAN_DIRECT.log
+          ) 2>&1 | tee artifact/u4-strengthened-v2-20260821/LEAN_DIRECT.log
           lean_status=${PIPESTATUS[0]}
-          printf '%s\n' "$lean_status" > artifact/u4-strengthened-20260820/LEAN_DIRECT_EXIT.txt
+          printf '%s\n' "$lean_status" > artifact/u4-strengthened-v2-20260821/LEAN_DIRECT_EXIT.txt
           if [ "$lean_status" -ne 0 ]; then
             exit "$lean_status"
           fi
           python3 u4_resolution/u4_symbolic_checker.py \
             --family 100 \
             --enumerate 12 \
-            --output artifact/u4-strengthened-20260820/U4_SYMBOLIC_CHECK.json \
-            2>&1 | tee artifact/u4-strengthened-20260820/U4_SYMBOLIC_CHECK.log
+            --output artifact/u4-strengthened-v2-20260821/U4_SYMBOLIC_CHECK.json \
+            2>&1 | tee artifact/u4-strengthened-v2-20260821/U4_SYMBOLIC_CHECK.log
 
       - name: Record verification metadata
         if: always()
@@ -170,7 +186,7 @@ jobs:
           AXIOM_AUDIT_STATUS: ${{ steps.lean.outputs['axiom-audit-status'] }}
           DIRECT_OUTCOME: ${{ steps.direct.outcome }}
         run: |
-          mkdir -p artifact/u4-strengthened-20260820
+          mkdir -p artifact/u4-strengthened-v2-20260821
           {
             printf 'commit=%s\n' "$GITHUB_SHA"
             printf 'lean_action=%s\n' "$LEAN_ACTION_OUTCOME"
@@ -178,26 +194,37 @@ jobs:
             printf 'nanoda=%s\n' "$NANODA_STATUS"
             printf 'axiom_audit=%s\n' "$AXIOM_AUDIT_STATUS"
             printf 'direct_and_symbolic=%s\n' "$DIRECT_OUTCOME"
-          } | tee artifact/u4-strengthened-20260820/VERIFICATION_STATUS.txt
-          cp u4_resolution/lean/U4Formal.lean artifact/u4-strengthened-20260820/
-          cp u4_resolution/lean/lakefile.lean artifact/u4-strengthened-20260820/
-          cp u4_resolution/lean/lake-manifest.json artifact/u4-strengthened-20260820/
-          cp u4_resolution/lean/lean-toolchain artifact/u4-strengthened-20260820/
-          cp u4_resolution/U4_FORMAL_SCOPE_20260820.md artifact/u4-strengthened-20260820/
-          cp u4_resolution/REPRODUCE_U4_STRENGTHENED_20260820.md artifact/u4-strengthened-20260820/
-          cp u4_resolution/preprint/U4_PREPRINT_STRENGTHENED_20260820.tex artifact/u4-strengthened-20260820/
-          cp u4_resolution/preprint/U4_PREPRINT_STRENGTHENED_20260820.pdf artifact/u4-strengthened-20260820/
-          find artifact/u4-strengthened-20260820 -type f -print0 \
-            | sort -z \
-            | xargs -0 sha256sum \
-            > artifact/u4-strengthened-20260820/SHA256SUMS.txt
+          } | tee artifact/u4-strengthened-v2-20260821/VERIFICATION_STATUS.txt
+          cp u4_resolution/lean/U4Formal.lean artifact/u4-strengthened-v2-20260821/
+          cp u4_resolution/lean/lakefile.lean artifact/u4-strengthened-v2-20260821/
+          cp u4_resolution/lean/lake-manifest.json artifact/u4-strengthened-v2-20260821/
+          cp u4_resolution/lean/lean-toolchain artifact/u4-strengthened-v2-20260821/
+          cp u4_resolution/U4_FORMAL_SCOPE_20260820.md artifact/u4-strengthened-v2-20260821/
+          cp u4_resolution/REPRODUCE_U4_V2_20260821.md artifact/u4-strengthened-v2-20260821/
+          cp u4_resolution/README.md artifact/u4-strengthened-v2-20260821/
+          cp u4_resolution/RELEASE_NOTES_CORRECTED_V2_20260821.md artifact/u4-strengthened-v2-20260821/
+          cp u4_resolution/AI_USE_STATEMENT.md artifact/u4-strengthened-v2-20260821/
+          cp u4_resolution/LICENSE_SCOPE.md artifact/u4-strengthened-v2-20260821/
+          cp u4_resolution/LICENSE_CODE_MIT.txt artifact/u4-strengthened-v2-20260821/
+          cp u4_resolution/LICENSE_DOCUMENTATION_CC_BY_4.0.txt artifact/u4-strengthened-v2-20260821/
+          cp u4_resolution/CITATION.cff artifact/u4-strengthened-v2-20260821/
+          cp u4_resolution/zenodo-v2.json artifact/u4-strengthened-v2-20260821/
+          cp u4_resolution/preprint/U4_PREPRINT_CORRECTED_V2_20260821.tex artifact/u4-strengthened-v2-20260821/
+          cp u4_resolution/preprint/U4_PREPRINT_CORRECTED_V2_20260821.pdf artifact/u4-strengthened-v2-20260821/
+          (
+            cd artifact/u4-strengthened-v2-20260821
+            find . -type f ! -name SHA256SUMS.txt -print0 \
+              | sort -z \
+              | xargs -0 sha256sum \
+              > SHA256SUMS.txt
+          )
 
       - name: Upload audit artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: u4-strengthened-independent-verification-20260820
-          path: artifact/u4-strengthened-20260820
+          name: u4-strengthened-v2-20260821
+          path: artifact/u4-strengthened-v2-20260821
           retention-days: 90
           if-no-files-found: error
 

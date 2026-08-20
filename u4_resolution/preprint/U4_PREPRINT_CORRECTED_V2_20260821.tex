@@ -4,6 +4,12 @@
 \usepackage{booktabs}
 \usepackage{microtype}
 \usepackage[hidelinks]{hyperref}
+\hypersetup{
+  pdftitle={An Explicit Infinite Model Refuting Ulrich's u4 as a Single Axiom for Positive Implication},
+  pdfauthor={Byungwoong Yoo},
+  pdfsubject={Machine-verified countermodel for Ulrich's u4},
+  pdfkeywords={positive implication, single axiom, Lean 4, countermodel, Ulrich u4}
+}
 
 \newtheorem{theorem}{Theorem}
 \newtheorem{lemma}[theorem]{Lemma}
@@ -14,9 +20,15 @@
 \title{An Explicit Infinite Model Refuting Ulrich's \texttt{u4}\\
 as a Single Axiom for Positive Implication}
 \author{Byungwoong Yoo\\Independent Researcher}
-\date{Strengthened verification candidate -- not for release until all gates pass\\
-Lean 4.33, leanchecker, nanoda, axiom-audit, and symbolic-check suite\\
-20 August 2026}
+\date{Corrected strengthened release v2\\
+Lean 4.33.0, leanchecker, nanoda, axiom-audit, and symbolic-check suite\\
+Proof-source commit \texttt{fec164ed763794330d57f76ddd1b0c390f22db09}\\
+\href{https://github.com/ByungwoongYoo/ntg-optn-tbk1-tkm-triage/actions/runs/32384585278}
+{All-green GitHub Actions run 32384585278}\\
+Verification snapshot: 20 August 2026 UTC (21 August 2026 KST)\\
+Reserved corrected-v2 DOI: \href{https://doi.org/10.5281/zenodo.22031656}
+{\texttt{10.5281/zenodo.22031656}}\\
+Corrected v2 publication: 21 August 2026 KST}
 
 \begin{document}
 \maketitle
@@ -34,10 +46,11 @@ falsifying reflexivity $q\Imp q$.  The model is the union of the substitution
 instances of a recursively defined family of formula schemes.  The decisive
 countermodel property, uniform-substitution closure, the induced proof system,
 and an internal separation from the standard positive-implication basis are
-formalized in Lean 4.33.0.  The strengthened release is gated on the Lean
-kernel, \texttt{leanchecker}, the independent Rust checker \texttt{nanoda}, a
-compiled-environment axiom audit, and a separate Python symbolic checker.  No
-release claim is made for a commit unless every recorded gate succeeds.
+formalized in Lean 4.33.0.  At the proof-source commit identified above, the
+Lean kernel, \texttt{leanchecker}, the independently implemented Rust checker
+\texttt{nanoda}, a compiled-environment axiom audit, and a separate Python
+symbolic checker all succeeded.  These are machine-verification results within
+the project; external specialist and journal review remain pending.
 \end{abstract}
 
 \section{Background}
@@ -98,7 +111,7 @@ T_n=D_n\Imp(A_n\Imp r_n).
 For a formula scheme $S$, let $\Inst(S)$ denote the set of all finite
 substitution instances of $S$.
 
-\section{The interlocking property}
+\section{\hspace{0.35em}The interlocking property}
 
 For finite formulas $P,Q$, let $E(P,Q)$ mean that no substitution $\sigma$
 and finite formula $W$ satisfy
@@ -269,7 +282,7 @@ Y=C\bigl(\alpha(B_n\Imp r_n),
 which is an instance of $T_{n+1}$.  Thus $Y\in\mathcal P$.
 \end{proof}
 
-\section{Failure of reflexivity}
+\section{\hspace{0.35em}Failure of reflexivity}
 
 \begin{lemma}\label{lem:refl}
 No formula $Q\Imp Q$ belongs to $\mathcal P$.
@@ -315,7 +328,7 @@ results established by Fitelson and Peltier, the minimum length of a single
 axiom for positive implication is 17 symbols.
 \end{corollary}
 
-\section{Formal certificate and release gate}
+\section{Formal certificate and verified release}
 
 The evidence bundle includes \texttt{lean/U4Formal.lean}.  It defines
 the free algebra of finite implicational formulas, the exact formula $\Phi$,
@@ -337,10 +350,12 @@ theorem U4Formal.u4_not_axiomatizes_positive_implication :
 \end{verbatim}
 The source scan forbids \texttt{sorry}, \texttt{admit}, custom
 \texttt{axiom}, and \texttt{unsafe}; the compiled-environment audit is the
-decisive check against hidden trust escapes.  The CI artifact records the exact
+check of the declared axiom-dependency boundary.  The CI artifact records the exact
 Git commit, all checker outcomes, direct compiler output, source files, and
-SHA-256 hashes.  This manuscript must be distributed only with the all-green
-artifact for the identical commit.
+SHA-256 hashes.  Run 32384585278 passed every gate at commit
+\texttt{fec164ed763794330d57f76ddd1b0c390f22db09}.  The same run reports that
+\texttt{nanoda} checked 96,602 declarations with no typechecker errors; its one
+reported diagnostic concerned pretty-printing axioms and not type checking.
 
 \section{Executable cross-checks}
 
@@ -351,12 +366,12 @@ The release workflow performs the following mutually reinforcing checks.
 \toprule
 Check & Range & Result\\
 \midrule
-Lean build and direct compilation & Lean 4.33.0 & required\\
-Lean environment recheck & \texttt{leanchecker} & required\\
-Independent Rust type check & \texttt{nanoda}, no \texttt{sorryAx} & required\\
-Compiled axiom audit & standard allowlist only & required\\
-Python recurrence/interlocking/major obstruction & $T_1,\ldots,T_{100}$ & required\\
-Python exhaustive binary-tree enumeration & through 12 leaves & required\\
+Lean build and direct compilation & Lean 4.33.0 & passed\\
+Lean environment recheck & \texttt{leanchecker} & passed\\
+Separately implemented Rust type check & \texttt{nanoda}, no \texttt{sorryAx} use & passed\\
+Compiled axiom audit & standard allowlist only & passed\\
+Python recurrence/interlocking/major obstruction & $T_1,\ldots,T_{100}$ & passed\\
+Python exhaustive binary-tree enumeration & through 12 leaves & passed\\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -367,28 +382,41 @@ replace, the all-$n$ proof above.
 
 \section{Verification status and claim boundary}
 
-The official 2026 source reported \texttt{u4} as open.  Exact-formula and
-keyword searches located no later indexed resolution.  This does not rule out
-unpublished or non-indexed prior work.
+As of 21 August 2026, the official 2026 source cited below reported
+\texttt{u4} as open.  This release makes no claim that all later, unpublished,
+or non-indexed work has been identified.
 
-The earlier public deposit records a Lean 4.30.0 kernel check of the core
-countermodel.  The strengthened release adds explicit substitution and
-derivability, an internal $K/S$ separation theorem, and multiple independent
-compiled checks.  The mathematical exposition, the connection to the prior
-reduction, external specialist review, journal peer review, and worldwide
-priority remain separate questions.  After every strengthened gate succeeds,
-the defensible description is:
+The public identifiers are:
+\begin{center}
+\begin{tabular}{@{}ll@{}}
+Corrected v2 (reserved) &
+\href{https://doi.org/10.5281/zenodo.22031656}{\texttt{10.5281/zenodo.22031656}}\\
+All-version concept &
+\href{https://doi.org/10.5281/zenodo.21987698}{\texttt{10.5281/zenodo.21987698}}\\
+Historical v1 &
+\href{https://doi.org/10.5281/zenodo.21987699}{\texttt{10.5281/zenodo.21987699}}\\
+\end{tabular}
+\end{center}
+The v1 record contains a Lean 4.30.0 kernel check of the core countermodel.
+This corrected
+strengthened release adds explicit substitution and derivability, an internal
+$K/S$ separation theorem, and multiple independently implemented compiled
+checks.  The mathematical exposition, the connection to the prior reduction,
+external specialist review, journal peer review, and worldwide priority remain
+separate questions.  The defensible description is:
 
 \begin{quote}
-Lean-checked explicit infinite countermodel, with independent environment and
-type-checker audits, showing that Ulrich's \texttt{u4} is not a single axiom;
-external specialist review and comparative priority audit remain pending.
+Lean-checked explicit infinite countermodel, supported by project-run checks
+using separately implemented environment and type checkers, showing that
+Ulrich's \texttt{u4} is not a single axiom.  No independent third-party
+specialist or journal review has yet occurred, and comparative priority review
+remains pending.
 \end{quote}
 
 \paragraph{AI-use disclosure.}
-GPT-5.6 Pro substantially assisted with proof exploration, adversarial
-checking, independent program drafting, literature-search assistance, and
-manuscript preparation.  The human author, Byungwoong Yoo, finalized the
+OpenAI GPT-5-class systems, including Codex, substantially assisted with proof
+exploration, adversarial checking, program drafting, literature-search
+assistance, and manuscript preparation.  The human author, Byungwoong Yoo, finalized the
 mathematical argument and the submitted package, reviewed the claim and
 evidence, and assumes full responsibility for the accuracy and final wording.
 Verification and replay details are documented separately in the supplied logs
