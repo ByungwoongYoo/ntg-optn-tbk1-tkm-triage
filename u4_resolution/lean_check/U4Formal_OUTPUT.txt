@@ -1,36 +1,52 @@
-U4Formal.lean:84:14: warning: This simp argument is unused:
+U4Formal.lean:86:14: warning: This simp argument is unused:
   C
 
 Hint: Omit it from the simp argument list.
-  simp [C̵,̵ ̵Fml.size] at hs
+  [apply] simp [Fml.size] at hs
 
 Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
-U4Formal.lean:95:52: warning: unused variable `hcd`
+U4Formal.lean:97:52: warning: Variable name `hcd` is not explicitly referenced.
+
+Hint: The binding can be removed (if unused) or named `_` (if used implicitly). Alternatively, prefix the name with `_` to silence this warning:
+  [apply] _hcd
 
 Note: This linter can be disabled with `set_option linter.unusedVariables false`
-U4Formal.lean:122:12: warning: This simp argument is unused:
+U4Formal.lean:124:12: warning: This simp argument is unused:
   Phi
 
 Hint: Omit it from the simp argument list.
-  simp [P̵h̵i̵,̵ ̵C, Fml.size] at hsa hsy hsz
+  [apply] simp [C, Fml.size] at hsa hsy hsz
 
 Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
-U4Formal.lean:122:17: warning: This simp argument is unused:
+U4Formal.lean:124:17: warning: This simp argument is unused:
   C
 
 Hint: Omit it from the simp argument list.
-  simp [Phi, C̵,̵ ̵Fml.size] at hsa hsy hsz
+  [apply] simp [Phi, Fml.size] at hsa hsy hsz
 
 Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
-U4Formal.lean:144:8: warning: This simp argument is unused:
+U4Formal.lean:146:8: warning: This simp argument is unused:
   C
 
 Hint: Omit it from the simp argument list.
-  simp [C̵,̵ ̵Fml.size] at hsy hsz
+  [apply] simp [Fml.size] at hsy hsz
 
 Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
-explicitU4Countermodel : U4Countermodel
-u4_countermodel_exists :
+U4Formal.lean:241:7: warning: Local variable 'x' resembles constructor 'U4Formal.Sym.x' - write '.x' (with a dot) or 'U4Formal.Sym.x' to use the constructor.
+
+Note: This linter can be disabled with `set_option linter.constructorNameAsVariable false`
+U4Formal.explicitU4Countermodel : U4Countermodel
+U4Formal.u4_countermodel_exists :
   ∃ pred,
     (∀ (x y z u : Fml), pred (Phi x y z u)) ∧
       (∀ (X Y : Fml), pred X → pred (I X Y) → pred Y) ∧ ∀ (q : Fml), ¬pred (I q q)
+U4Formal.P_subst_closed {f : Fml} (hf : P f) (s : Substitution) : P (applySubst s f)
+U4Formal.U4Derivable.sound {f : Fml} (h : U4Derivable f) : P f
+U4Formal.u4_not_derives_reflexivity (q : Fml) : ¬U4Derivable (I q q)
+U4Formal.u4_fails_single_axiom_test (q : Fml) : ¬U4Derivable (I q q)
+U4Formal.positive_derives_reflexivity (q : Fml) : PositiveDerivable (I q q)
+U4Formal.positive_reflexivity_not_u4 (q : Fml) : PositiveDerivable (I q q) ∧ ¬U4Derivable (I q q)
+U4Formal.u4_not_axiomatizes_positive_implication : ∃ f, PositiveDerivable f ∧ ¬U4Derivable f
+'U4Formal.u4_countermodel_exists' depends on axioms: [propext, Quot.sound]
+'U4Formal.U4Derivable.sound' depends on axioms: [propext, Quot.sound]
+'U4Formal.u4_not_axiomatizes_positive_implication' depends on axioms: [propext, Quot.sound]
