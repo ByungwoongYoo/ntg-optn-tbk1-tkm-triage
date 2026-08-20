@@ -1,0 +1,10 @@
+{
+  "genome_fraction_gain_minimum_percentage_points": 0.5,
+  "mean_genome_recovery_gain_minimum_percentage_points": 1.0,
+  "low_abundance_gain_minimum_percentage_points": 2.0,
+  "relative_cross_binid_chimera_increase_maximum": 0.1,
+  "valid_longitudinal_contribution_minimum_percentage_points": 0.5,
+  "paired_bootstrap_95_ci_lower_bound_must_exceed": 0.0,
+  "pseudo_novel_all_tiers_must_be_positive": true,
+  "thresholds_locked": true
+}
