@@ -1,0 +1,2 @@
+sample_id	short_r1	short_r2	long_reads	short_r1_sha256	short_r2_sha256	long_reads_sha256
+0	/private/path/sample_0_R1.fastq.gz	/private/path/sample_0_R2.fastq.gz	/private/path/sample_0_long.fastq.gz	<sha256>	<sha256>	<sha256>
