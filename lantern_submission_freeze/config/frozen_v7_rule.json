@@ -13,7 +13,7 @@
     "min_length": 500
   },
   "development_samples": [0, 1],
-  "development_winner_file_sha256": "d753cc23a12475791c5ac7b4f34768dd6be2d8da1ca1a565f113b4147f4506bb",
+  "development_winner_file_sha256": "fecae2983740ac8026d99a6b4a92f9900c5969a6298ca9eb51137635bbf75e30",
   "extension_rule": {
     "alignment_identity": 0.97,
     "alignment_min_bp": 500,
