@@ -170,4 +170,4 @@ The free term algebra equipped with the predicate \(\mathcal P\) satisfies every
 
 Since reflexivity is a theorem of positive implicational logic, `u4` is not a single axiom.
 
-This model is infinite: its true formulas are precisely the substitution instances of the right-comb schemes \(T_1,T_2,\ldots\). The construction explains why finite-matrix searches can fail even though `u4` is not a single axiom.
+This model is infinite: its true formulas are precisely the substitution instances of the right-comb schemes \(T_1,T_2,\ldots\). The infinite construction is compatible with the previous failure to find small finite matrices, but it does not establish that no finite countermodel exists.

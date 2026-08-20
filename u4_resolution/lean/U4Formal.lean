@@ -1,5 +1,7 @@
 import Lean.Elab.Tactic.Omega
 
+namespace U4Formal
+
 /-!
 Kernel-checked explicit infinite model for Ulrich's u4.
 The syntax is the free algebra of finite implicational formulas.
@@ -218,5 +220,134 @@ theorem u4_countermodel_exists :
       (∀ q, ¬ pred (I q q)) := by
   exact ⟨P, P_phi, fun X Y => P_mp, P_no_refl⟩
 
+/-!
+## Direct correspondence with the original Hilbert-style problem
+
+The countermodel theorem above is already enough semantically, but the following
+definitions close the presentation gap that a reviewer could reasonably question:
+
+* substitutions are explicit endomorphisms of the free formula algebra;
+* the designated predicate is proved closed under every substitution;
+* derivability contains exactly arbitrary `u4` instances, modus ponens, and an
+  explicit substitution rule; and
+* every derivable formula is designated in the countermodel.
+
+Consequently no reflexive formula can be derived in the original system.
+-/
+
+abbrev Substitution := Sym → Fml
+
+def applySubst (s : Substitution) : Fml → Fml
+  | .v x => s x
+  | .arr p q => I (applySubst s p) (applySubst s q)
+
+@[simp] theorem applySubst_arr (s : Substitution) (p q : Fml) :
+    applySubst s (I p q) = I (applySubst s p) (applySubst s q) := rfl
+
+@[simp] theorem applySubst_C (s : Substitution) (p q r : Fml) :
+    applySubst s (C p q r) =
+      C (applySubst s p) (applySubst s q) (applySubst s r) := rfl
+
+@[simp] theorem applySubst_Phi (s : Substitution) (x y z u : Fml) :
+    applySubst s (Phi x y z u) =
+      Phi (applySubst s x) (applySubst s y) (applySubst s z) (applySubst s u) := rfl
+
+namespace Pair
+
+theorem subst_closed {a b : Fml} (h : Pair a b) (s : Substitution) :
+    Pair (applySubst s a) (applySubst s b) := by
+  induction h with
+  | base a b c =>
+      simpa using Pair.base (applySubst s a) (applySubst s b) (applySubst s c)
+  | step h r ih =>
+      simpa using Pair.step ih (applySubst s r)
+
+end Pair
+
+theorem P_subst_closed {f : Fml} (hf : P f) (s : Substitution) :
+    P (applySubst s f) := by
+  rcases hf with hphi | hc
+  · rcases hphi with ⟨x, y, z, u, rfl⟩
+    simpa using P_phi (applySubst s x) (applySubst s y)
+      (applySubst s z) (applySubst s u)
+  · rcases hc with ⟨a, b, r, hab, rfl⟩
+    simpa using P_C (Pair.subst_closed hab s) (applySubst s r)
+
+inductive U4Derivable : Fml → Prop where
+  | u4 (x y z u : Fml) : U4Derivable (Phi x y z u)
+  | mp {X Y : Fml} : U4Derivable X → U4Derivable (I X Y) → U4Derivable Y
+  | subst {f : Fml} : U4Derivable f → (s : Substitution) →
+      U4Derivable (applySubst s f)
+
+theorem U4Derivable.sound {f : Fml} (h : U4Derivable f) : P f := by
+  induction h with
+  | u4 x y z u => exact P_phi x y z u
+  | mp hX hXY ihX ihXY => exact P_mp ihX ihXY
+  | subst hf s ih => exact P_subst_closed ih s
+
+theorem u4_not_derives_reflexivity (q : Fml) : ¬ U4Derivable (I q q) := by
+  intro h
+  exact P_no_refl q h.sound
+
+theorem u4_fails_single_axiom_test : ∀ q : Fml, ¬ U4Derivable (I q q) := by
+  exact u4_not_derives_reflexivity
+
+/-!
+## Separation from positive implicational logic
+
+The countermodel already refutes the candidate, because reflexivity is a
+theorem of positive implicational logic.  For a fully internalized comparison,
+we also define the standard `K`/`S` Hilbert basis and derive reflexivity from it.
+Thus the final separation theorem has no informal premise about the target
+logic left outside the checked file.
+-/
+
+def K (p q : Fml) : Fml := I p (I q p)
+
+def S (p q r : Fml) : Fml :=
+  I (I p (I q r)) (I (I p q) (I p r))
+
+inductive PositiveDerivable : Fml → Prop where
+  | k (p q : Fml) : PositiveDerivable (K p q)
+  | s (p q r : Fml) : PositiveDerivable (S p q r)
+  | mp {X Y : Fml} :
+      PositiveDerivable X → PositiveDerivable (I X Y) → PositiveDerivable Y
+  | subst {f : Fml} : PositiveDerivable f → (s : Substitution) →
+      PositiveDerivable (applySubst s f)
+
+theorem positive_derives_reflexivity (q : Fml) :
+    PositiveDerivable (I q q) := by
+  have hs : PositiveDerivable (S q (I q q) q) :=
+    PositiveDerivable.s q (I q q) q
+  have hk₁ : PositiveDerivable (K q (I q q)) :=
+    PositiveDerivable.k q (I q q)
+  have hk₂ : PositiveDerivable (K q q) :=
+    PositiveDerivable.k q q
+  have hstep : PositiveDerivable (I (K q q) (I q q)) :=
+    PositiveDerivable.mp hk₁ hs
+  exact PositiveDerivable.mp hk₂ hstep
+
+theorem positive_reflexivity_not_u4 (q : Fml) :
+    PositiveDerivable (I q q) ∧ ¬ U4Derivable (I q q) := by
+  exact ⟨positive_derives_reflexivity q, u4_not_derives_reflexivity q⟩
+
+theorem u4_not_axiomatizes_positive_implication :
+    ∃ f : Fml, PositiveDerivable f ∧ ¬ U4Derivable f := by
+  exact ⟨I (Fml.v Sym.x) (Fml.v Sym.x),
+    positive_reflexivity_not_u4 (Fml.v Sym.x)⟩
+
 #check explicitU4Countermodel
 #check u4_countermodel_exists
+#check P_subst_closed
+#check U4Derivable.sound
+#check u4_not_derives_reflexivity
+#check u4_fails_single_axiom_test
+#check positive_derives_reflexivity
+#check positive_reflexivity_not_u4
+#check u4_not_axiomatizes_positive_implication
+
+#print axioms u4_countermodel_exists
+#print axioms U4Derivable.sound
+#print axioms u4_not_axiomatizes_positive_implication
+
+end U4Formal

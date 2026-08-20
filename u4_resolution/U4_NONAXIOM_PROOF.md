@@ -290,8 +290,8 @@ Any derivation from substitution instances of `u4` by modus ponens unfolds to a 
 
 ## Consequence
 
-Fitelson and Peltier (2026) eliminated Ulrich's other three 15-symbol candidates and stated that the shortest single axioms for positive implication have length 17 if and only if `u4` is not a single axiom. The theorem above therefore yields the consequence that the minimum length is **17 symbols**, subject to independent review of this new argument.
+Fitelson and Peltier (2026) eliminated Ulrich's other three 15-symbol candidates and stated that the shortest single axioms for positive implication have length 17 if and only if `u4` is not a single axiom. Combining their classification with the theorem above yields the consequence that the minimum length is **17 symbols**. The Lean development directly verifies the `u4` separation; the minimum-length conclusion additionally depends on their published elimination and classification results.
 
 ## Claim boundary
 
-This document gives a self-contained finite-type/unification proof. Before a priority or publication claim is made, the argument should be independently checked by specialists in condensed detachment, simple-type unification, and positive implicational logic, and the prior literature should be searched for an equivalent unpublished or published argument.
+This document gives a self-contained finite-type/unification proof. A public timestamp for this result has been established. Academic acceptance and any comparative priority claim remain subject to independent technical review, peer review, and a search for equivalent prior published or publicly timestamped work.

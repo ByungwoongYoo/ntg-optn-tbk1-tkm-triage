@@ -1,0 +1,151 @@
+name: U4 strengthened independent verification 20260820
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [u4-resolution-20260818]
+    paths:
+      - 'u4_resolution/lean/**'
+      - 'u4_resolution/u4_symbolic_checker.py'
+      - 'u4_resolution/U4_FORMAL_SCOPE_20260820.md'
+      - 'u4_resolution/REPRODUCE_U4_STRENGTHENED_20260820.md'
+      - 'u4_resolution/preprint/**'
+      - '.github/workflows/u4-strengthened-independent-check-20260820.yml'
+  pull_request:
+    paths:
+      - 'u4_resolution/lean/**'
+      - 'u4_resolution/u4_symbolic_checker.py'
+      - 'u4_resolution/U4_FORMAL_SCOPE_20260820.md'
+      - 'u4_resolution/REPRODUCE_U4_STRENGTHENED_20260820.md'
+      - 'u4_resolution/preprint/**'
+      - '.github/workflows/u4-strengthened-independent-check-20260820.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      LEAN_NUM_THREADS: '1'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reject proof placeholders and custom trust escapes
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          import re
+          import sys
+
+          forbidden = re.compile(r'\b(sorry|admit|axiom|unsafe)\b')
+          failures = []
+          for path in pathlib.Path('u4_resolution/lean').glob('*.lean'):
+              text = path.read_text(encoding='utf-8')
+              text = re.sub(r'/-.*?-/', '', text, flags=re.S)
+              text = re.sub(r'--.*$', '', text, flags=re.M)
+              for match in forbidden.finditer(text):
+                  failures.append(f'{path}:{match.group(1)}')
+          if failures:
+              print('\n'.join(failures))
+              sys.exit(1)
+          print('No sorry, admit, axiom, or unsafe declarations found.')
+          PY
+
+      - name: Build and independently check the Lean environment
+        id: lean
+        continue-on-error: true
+        uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: u4_resolution/lean
+          auto-config: false
+          build: true
+          build-args: '--wfail'
+          test: false
+          use-mathlib-cache: false
+          use-github-cache: false
+          leanchecker: true
+          nanoda: true
+          nanoda-allow-sorry: false
+          axiom-audit: true
+          axiom-audit-allow: 'propext,Classical.choice,Quot.sound'
+          axiom-audit-root: U4Formal
+
+      - name: Run direct compiler and symbolic cross-check
+        id: direct
+        if: always()
+        continue-on-error: true
+        run: |
+          mkdir -p artifact/u4-strengthened-20260820
+          set -o pipefail
+          (
+            cd u4_resolution/lean
+            lean --version
+            lake env lean U4Formal.lean
+          ) 2>&1 | tee artifact/u4-strengthened-20260820/LEAN_DIRECT.log
+          lean_status=${PIPESTATUS[0]}
+          printf '%s\n' "$lean_status" > artifact/u4-strengthened-20260820/LEAN_DIRECT_EXIT.txt
+          if [ "$lean_status" -ne 0 ]; then
+            exit "$lean_status"
+          fi
+          python3 u4_resolution/u4_symbolic_checker.py \
+            --family 100 \
+            --enumerate 12 \
+            --output artifact/u4-strengthened-20260820/U4_SYMBOLIC_CHECK.json \
+            2>&1 | tee artifact/u4-strengthened-20260820/U4_SYMBOLIC_CHECK.log
+
+      - name: Record verification metadata
+        if: always()
+        env:
+          LEAN_ACTION_OUTCOME: ${{ steps.lean.outcome }}
+          BUILD_STATUS: ${{ steps.lean.outputs['build-status'] }}
+          NANODA_STATUS: ${{ steps.lean.outputs['nanoda-status'] }}
+          AXIOM_AUDIT_STATUS: ${{ steps.lean.outputs['axiom-audit-status'] }}
+          DIRECT_OUTCOME: ${{ steps.direct.outcome }}
+        run: |
+          mkdir -p artifact/u4-strengthened-20260820
+          {
+            printf 'commit=%s\n' "$GITHUB_SHA"
+            printf 'lean_action=%s\n' "$LEAN_ACTION_OUTCOME"
+            printf 'build=%s\n' "$BUILD_STATUS"
+            printf 'nanoda=%s\n' "$NANODA_STATUS"
+            printf 'axiom_audit=%s\n' "$AXIOM_AUDIT_STATUS"
+            printf 'direct_and_symbolic=%s\n' "$DIRECT_OUTCOME"
+          } | tee artifact/u4-strengthened-20260820/VERIFICATION_STATUS.txt
+          cp u4_resolution/lean/U4Formal.lean artifact/u4-strengthened-20260820/
+          cp u4_resolution/lean/lakefile.lean artifact/u4-strengthened-20260820/
+          cp u4_resolution/lean/lean-toolchain artifact/u4-strengthened-20260820/
+          cp u4_resolution/U4_FORMAL_SCOPE_20260820.md artifact/u4-strengthened-20260820/
+          cp u4_resolution/REPRODUCE_U4_STRENGTHENED_20260820.md artifact/u4-strengthened-20260820/
+          cp u4_resolution/preprint/U4_PREPRINT_STRENGTHENED_20260820.tex artifact/u4-strengthened-20260820/
+          cp u4_resolution/preprint/U4_PREPRINT_STRENGTHENED_20260820.pdf artifact/u4-strengthened-20260820/
+          find artifact/u4-strengthened-20260820 -type f -print0 \
+            | sort -z \
+            | xargs -0 sha256sum \
+            > artifact/u4-strengthened-20260820/SHA256SUMS.txt
+
+      - name: Upload audit artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: u4-strengthened-independent-verification-20260820
+          path: artifact/u4-strengthened-20260820
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Enforce every verification gate
+        if: always()
+        env:
+          LEAN_ACTION_OUTCOME: ${{ steps.lean.outcome }}
+          BUILD_STATUS: ${{ steps.lean.outputs['build-status'] }}
+          NANODA_STATUS: ${{ steps.lean.outputs['nanoda-status'] }}
+          AXIOM_AUDIT_STATUS: ${{ steps.lean.outputs['axiom-audit-status'] }}
+          DIRECT_OUTCOME: ${{ steps.direct.outcome }}
+        run: |
+          test "$LEAN_ACTION_OUTCOME" = success
+          test "$BUILD_STATUS" = SUCCESS
+          test "$NANODA_STATUS" = SUCCESS
+          test "$AXIOM_AUDIT_STATUS" = SUCCESS
+          test "$DIRECT_OUTCOME" = success

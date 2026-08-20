@@ -1,0 +1,436 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{booktabs}
+\usepackage{microtype}
+\usepackage[hidelinks]{hyperref}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\newcommand{\Imp}{\mathbin{\to}}
+\newcommand{\Inst}{\operatorname{Inst}}
+
+\title{An Explicit Infinite Model Refuting Ulrich's \texttt{u4}\\
+as a Single Axiom for Positive Implication}
+\author{Byungwoong Yoo\\Independent Researcher}
+\date{Strengthened verification candidate -- not for release until all gates pass\\
+Lean 4.33, leanchecker, nanoda, axiom-audit, and symbolic-check suite\\
+20 August 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Fitelson and Peltier (2026) eliminated three of Ulrich's four remaining
+15-symbol candidates for a single axiom of positive implicational logic,
+leaving
+\[
+((x\Imp y)\Imp z)\Imp((y\Imp(z\Imp u))\Imp(y\Imp u))
+\]
+as an open case.  We construct an explicit infinite model satisfying every
+substitution instance of this formula and closed under modus ponens, while
+falsifying reflexivity $q\Imp q$.  The model is the union of the substitution
+instances of a recursively defined family of formula schemes.  The decisive
+countermodel property, uniform-substitution closure, the induced proof system,
+and an internal separation from the standard positive-implication basis are
+formalized in Lean 4.33.0.  The strengthened release is gated on the Lean
+kernel, \texttt{leanchecker}, the independent Rust checker \texttt{nanoda}, a
+compiled-environment axiom audit, and a separate Python symbolic checker.  No
+release claim is made for a commit unless every recorded gate succeeds.
+\end{abstract}
+
+\section{Background}
+
+Carew Meredith found single axioms of length 17 for positive implication.
+Dolph Ulrich reduced the possibility of a shorter axiom to four formulas of
+length 15.  Fitelson and Peltier used saturation-based theorem proving to
+eliminate the first three and reported that the fourth candidate,
+\begin{equation}\label{eq:u4}
+\Phi=((x\Imp y)\Imp z)\Imp((y\Imp(z\Imp u))\Imp(y\Imp u)),
+\end{equation}
+remained open.  They further established that the shortest single axioms
+have length 17 if and only if $\Phi$ is not a single axiom.
+
+The proof below is semantic.  Its domain is the free algebra of finite
+implicational formulas.  The theorem predicate is a particular substitution-
+closed set that is also closed under modus ponens.
+
+\section{Recursive schemes}
+
+Write
+\[
+C(A,B,R):=(A\Imp(B\Imp R))\Imp(A\Imp R),
+\]
+so that
+\[
+\Phi=((x\Imp y)\Imp z)\Imp C(y,z,u).
+\]
+
+Choose pairwise distinct variables
+\[
+a,b,c,r_2,r_3,\ldots
+\]
+and define
+\[
+T_1=\Phi,
+\]
+\[
+A_2=a,\qquad B_2=C(b,a,c),\qquad T_2=C(A_2,B_2,r_2).
+\]
+For $n\ge2$, recursively set
+\[
+A_{n+1}=B_n\Imp r_n,\qquad
+B_{n+1}=A_n\Imp r_n,
+\]
+\[
+T_{n+1}=C(A_{n+1},B_{n+1},r_{n+1}).
+\]
+For $n\ge2$, put
+\[
+D_n=A_n\Imp(B_n\Imp r_n),
+\]
+so that
+\[
+T_n=D_n\Imp(A_n\Imp r_n).
+\]
+
+For a formula scheme $S$, let $\Inst(S)$ denote the set of all finite
+substitution instances of $S$.
+
+\section{The interlocking property}
+
+For finite formulas $P,Q$, let $E(P,Q)$ mean that no substitution $\sigma$
+and finite formula $W$ satisfy
+\[
+\sigma(P)=\sigma(Q)\Imp W.
+\]
+
+\begin{lemma}[Interlocking]\label{lem:interlocking}
+For every $n\ge2$,
+\[
+E(A_n,B_n)\qquad\text{and}\qquad E(B_n,A_n).
+\]
+\end{lemma}
+
+\begin{proof}
+At $n=2$,
+\[
+A_2=a,\qquad
+B_2=((b\Imp(a\Imp c))\Imp(b\Imp c)).
+\]
+If $\sigma(a)=\sigma(B_2)\Imp W$, then the finite formula
+$\sigma(a)$ occurs as a proper subformula of its own right-hand side.
+This is impossible.  Conversely, if $\sigma(B_2)=\sigma(a)\Imp W$, injectivity
+of implication forces
+\[
+\sigma(b\Imp(a\Imp c))=\sigma(a),
+\]
+which again makes $\sigma(a)$ a proper subformula of itself.
+
+Assume both assertions at $n$.  Since
+\[
+A_{n+1}=B_n\Imp r_n,\qquad
+B_{n+1}=A_n\Imp r_n,
+\]
+an equality
+\[
+\sigma(A_{n+1})=\sigma(B_{n+1})\Imp W
+\]
+would imply
+\[
+\sigma(B_n)=\sigma(A_n)\Imp\sigma(r_n),
+\]
+contradicting $E(B_n,A_n)$.  The converse direction is symmetric.
+\end{proof}
+
+\section{The major-premise obstruction}
+
+\begin{lemma}\label{lem:major}
+For every $m\ge2$ and $n\ge1$, the schemes $D_m$ and $T_n$
+have no common substitution instance.
+\end{lemma}
+
+\begin{proof}
+First let $n\ge2$, and suppose
+\[
+\sigma(D_m)=\tau(T_n).
+\]
+Expanding both sides and using injectivity of implication gives
+\[
+\sigma(A_m)=\tau(A_n)\Imp(\tau(B_n)\Imp\tau(r_n))
+\]
+and
+\[
+\sigma(B_m)=\tau(A_n).
+\]
+Thus
+\[
+\sigma(A_m)=\sigma(B_m)\Imp(\tau(B_n)\Imp\tau(r_n)),
+\]
+contrary to Lemma~\ref{lem:interlocking}.
+
+Now let $n=1$.  If $m\ge3$, then
+\[
+A_m=B_{m-1}\Imp r_{m-1},\qquad
+B_m=A_{m-1}\Imp r_{m-1}.
+\]
+Matching $D_m$ with $T_1$ forces both
+\[
+\sigma(r_{m-1})=\tau(z)
+\quad\text{and}\quad
+\sigma(r_{m-1})=\tau(z\Imp u),
+\]
+hence $\tau(z)=\tau(z)\Imp\tau(u)$, impossible for a finite formula.
+
+For $m=2$, a common instance of
+\[
+D_2=a\Imp(C(b,a,c)\Imp r_2)
+\]
+and $T_1$ would imply
+\[
+\sigma(a)=\tau((x\Imp y)\Imp z)
+\]
+and
+\[
+\sigma(C(b,a,c))=\tau(y\Imp(z\Imp u)).
+\]
+The second equality yields
+\[
+\tau(y)=\sigma(b\Imp(a\Imp c)),\quad
+\tau(z)=\sigma(b),\quad
+\tau(u)=\sigma(c).
+\]
+Substitution into the first equality makes $\sigma(a)$ contain itself
+as a proper subformula, a contradiction.
+\end{proof}
+
+\section{The infinite model}
+
+Define
+\[
+\mathcal P=\bigcup_{n\ge1}\Inst(T_n).
+\]
+Interpret the unary theorem predicate $p$ on the free algebra of finite
+implicational formulas by
+\[
+p(F)\quad\Longleftrightarrow\quad F\in\mathcal P.
+\]
+
+Every instance of $\Phi=T_1$ belongs to $\mathcal P$.  It remains to prove
+closure under modus ponens.
+
+\begin{lemma}\label{lem:mp}
+If $X\in\mathcal P$ and $X\Imp Y\in\mathcal P$, then $Y\in\mathcal P$.
+\end{lemma}
+
+\begin{proof}
+Choose $n,m\ge1$ and substitutions $\alpha,\beta$ with
+\[
+X=\alpha(T_n),\qquad X\Imp Y=\beta(T_m).
+\]
+If $m\ge2$, the antecedent of $\beta(T_m)$ is $\beta(D_m)$.
+Then $X$ would be a common instance of $D_m$ and $T_n$, contrary to
+Lemma~\ref{lem:major}.  Hence $m=1$, so
+\[
+X=\beta((x\Imp y)\Imp z),\qquad Y=\beta(C(y,z,u)).
+\]
+
+If $n=1$, rename the variables of the minor copy of $T_1$ as
+$x',y',z',u'$.  Comparison of
+\[
+\alpha(T_1)=\beta((x\Imp y)\Imp z)
+\]
+gives
+\[
+\beta(y)=\alpha(z'),\qquad
+\beta(z)=\alpha(C(y',z',u')).
+\]
+Therefore
+\[
+Y=C\bigl(\alpha(z'),\alpha(C(y',z',u')),\beta(u)\bigr),
+\]
+an instance of $T_2=C(a,C(b,a,c),r_2)$.
+
+If $n\ge2$, comparison of
+\[
+\alpha(T_n)=\beta((x\Imp y)\Imp z)
+\]
+gives
+\[
+\beta(y)=\alpha(B_n\Imp r_n),\qquad
+\beta(z)=\alpha(A_n\Imp r_n).
+\]
+Hence
+\[
+Y=C\bigl(\alpha(B_n\Imp r_n),
+         \alpha(A_n\Imp r_n),\beta(u)\bigr),
+\]
+which is an instance of $T_{n+1}$.  Thus $Y\in\mathcal P$.
+\end{proof}
+
+\section{Failure of reflexivity}
+
+\begin{lemma}\label{lem:refl}
+No formula $Q\Imp Q$ belongs to $\mathcal P$.
+\end{lemma}
+
+\begin{proof}
+For $n\ge2$, an instance of
+\[
+T_n=(A_n\Imp(B_n\Imp r_n))\Imp(A_n\Imp r_n)
+\]
+could equal $Q\Imp Q$ only if
+\[
+\sigma(B_n\Imp r_n)=\sigma(r_n).
+\]
+This would make the finite formula $\sigma(r_n)$ contain itself as a
+proper subformula.
+
+For $n=1$, equality of the antecedent and consequent of an instance of
+$T_1$ forces
+\[
+\sigma(y)=\sigma(z\Imp u),\qquad
+\sigma(z)=\sigma(y\Imp u),
+\]
+a contradiction by strict size increase in both directions.
+\end{proof}
+
+\begin{theorem}\label{thm:main}
+Ulrich's formula \eqref{eq:u4} is not a single axiom for positive
+implicational logic under substitution and modus ponens.
+\end{theorem}
+
+\begin{proof}
+The interpretation above satisfies every substitution instance of $\Phi$,
+and Lemma~\ref{lem:mp} proves that it satisfies modus ponens.  Lemma~
+\ref{lem:refl} shows that it falsifies reflexivity $Q\Imp Q$, which is a
+theorem of positive implication.  Therefore reflexivity is not derivable
+from $\Phi$, so $\Phi$ is not a single axiom.
+\end{proof}
+
+\begin{corollary}
+Combining Theorem~\ref{thm:main} with the elimination and classification
+results established by Fitelson and Peltier, the minimum length of a single
+axiom for positive implication is 17 symbols.
+\end{corollary}
+
+\section{Formal certificate and release gate}
+
+The evidence bundle includes \texttt{lean/U4Formal.lean}.  It defines
+the free algebra of finite implicational formulas, the exact formula $\Phi$,
+and an explicit predicate $P$.  The Lean kernel-checked theorem is
+\begin{verbatim}
+theorem U4Formal.u4_countermodel_exists :
+    Exists fun pred : Fml -> Prop =>
+      (forall x y z u, pred (Phi x y z u)) /\
+      (forall X Y, pred X -> pred (I X Y) -> pred Y) /\
+      (forall q, Not (pred (I q q)))
+\end{verbatim}
+The strengthened file additionally formalizes arbitrary uniform substitution,
+proves that every syntactic \texttt{u4} derivation is sound in the model, and
+derives reflexivity from the standard $K$ and $S$ schemes.  Its final theorem
+exhibits a positive-implication theorem that is not derivable from \texttt{u4}:
+\begin{verbatim}
+theorem U4Formal.u4_not_axiomatizes_positive_implication :
+    Exists fun f : Fml => PositiveDerivable f /\ Not (U4Derivable f)
+\end{verbatim}
+The source scan forbids \texttt{sorry}, \texttt{admit}, custom
+\texttt{axiom}, and \texttt{unsafe}; the compiled-environment audit is the
+decisive check against hidden trust escapes.  The CI artifact records the exact
+Git commit, all checker outcomes, direct compiler output, source files, and
+SHA-256 hashes.  This manuscript must be distributed only with the all-green
+artifact for the identical commit.
+
+\section{Executable cross-checks}
+
+The release workflow performs the following mutually reinforcing checks.
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Check & Range & Result\\
+\midrule
+Lean build and direct compilation & Lean 4.33.0 & required\\
+Lean environment recheck & \texttt{leanchecker} & required\\
+Independent Rust type check & \texttt{nanoda}, no \texttt{sorryAx} & required\\
+Compiled axiom audit & standard allowlist only & required\\
+Python recurrence/interlocking/major obstruction & $T_1,\ldots,T_{100}$ & required\\
+Python exhaustive binary-tree enumeration & through 12 leaves & required\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+At 12 leaves there are $C_{11}=58{,}786$ binary application-tree shapes.
+Exactly one was typable: the right comb.  These checks support, but do not
+replace, the all-$n$ proof above.
+
+\section{Verification status and claim boundary}
+
+The official 2026 source reported \texttt{u4} as open.  Exact-formula and
+keyword searches located no later indexed resolution.  This does not rule out
+unpublished or non-indexed prior work.
+
+The earlier public deposit records a Lean 4.30.0 kernel check of the core
+countermodel.  The strengthened release adds explicit substitution and
+derivability, an internal $K/S$ separation theorem, and multiple independent
+compiled checks.  The mathematical exposition, the connection to the prior
+reduction, external specialist review, journal peer review, and worldwide
+priority remain separate questions.  After every strengthened gate succeeds,
+the defensible description is:
+
+\begin{quote}
+Lean-checked explicit infinite countermodel, with independent environment and
+type-checker audits, showing that Ulrich's \texttt{u4} is not a single axiom;
+external specialist review and comparative priority audit remain pending.
+\end{quote}
+
+\paragraph{AI-use disclosure.}
+GPT-5.6 Pro substantially assisted with proof exploration, adversarial
+checking, independent program drafting, literature-search assistance, and
+manuscript preparation.  The human author, Byungwoong Yoo, finalized the
+mathematical argument and the submitted package, reviewed the claim and
+evidence, and assumes full responsibility for the accuracy and final wording.
+Verification and replay details are documented separately in the supplied logs
+and checkers.
+
+\begin{thebibliography}{9}
+
+\bibitem{FitelsonPeltier2026}
+B. Fitelson and N. Peltier,
+``Applying Saturation-Based Theorem Proving to Open Problems in Positive
+Implicational Logic,''
+\emph{Journal of Automated Reasoning}, vol. 70, article 5, 2026.
+\href{https://doi.org/10.1007/s10817-026-09752-1}
+{doi:10.1007/s10817-026-09752-1}.
+
+\bibitem{HindleyMeredith1990}
+J. R. Hindley and D. Meredith,
+``Principal Type-Schemes and Condensed Detachment,''
+\emph{Journal of Symbolic Logic}, vol. 55, no. 1, pp. 90--105, 1990.
+\href{https://doi.org/10.2307/2274956}{doi:10.2307/2274956}.
+
+\bibitem{Kalman1983}
+J. A. Kalman,
+``Condensed Detachment as a Rule of Inference,''
+\emph{Studia Logica}, vol. 42, no. 4, pp. 443--451, 1983.
+\href{https://doi.org/10.1007/BF01371632}{doi:10.1007/BF01371632}.
+
+\bibitem{Ulrich1999}
+D. Ulrich,
+``New Single Axioms for Positive Implication,''
+\emph{Bulletin of the Section of Logic}, vol. 28, pp. 39--42, 1999.
+
+\bibitem{Ulrich2001}
+D. Ulrich,
+``A Legacy Recalled and a Tradition Continued,''
+\emph{Journal of Automated Reasoning}, vol. 27, no. 2, pp. 97--122, 2001.
+
+\bibitem{Meredith1953}
+C. A. Meredith,
+``A Single Axiom of Positive Logic,''
+\emph{Journal of Computing Systems}, vol. 1, no. 3, pp. 169--170, 1953.
+
+\end{thebibliography}
+
+\end{document}
