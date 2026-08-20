@@ -1,0 +1,85 @@
+name: Repair and dispatch CAMI III LANTERN v4
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cami3-lantern-v4-repair.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Patch fail-fast artifact discovery without changing frozen science
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          path=Path('.github/workflows/cami3-lantern-hybrid-v4-development.yml')
+          text=path.read_text()
+          replacements={
+            "find inputs/hybrid_raw -type f -path '*/assembly/out/contigs.fasta' | head -1":"find inputs/hybrid_raw -type f -path '*/assembly/out/contigs.fasta' -print -quit",
+            "find inputs/megahit_raw -type f -path '*/assembly/out/final.contigs.fa' | head -1":"find inputs/megahit_raw -type f -path '*/assembly/out/final.contigs.fa' -print -quit",
+            "find inputs/metaspades_short_raw -type f -path '*/assembly/out/contigs.fasta' | head -1":"find inputs/metaspades_short_raw -type f -path '*/assembly/out/contigs.fasta' -print -quit",
+            "find inputs/flye_pair_raw -type f -path '*/assembly/out/assembly.fasta' | head -1":"find inputs/flye_pair_raw -type f -path '*/assembly/out/assembly.fasta' -print -quit",
+            "find inputs/flye_single_raw -type f -path '*/multimodal_flye_long_s0/assembly/out/assembly.fasta' | head -1":"find inputs/flye_single_raw -type f -path '*flye_long_s0*/*assembly/out/assembly.fasta' -print -quit",
+            "find inputs/flye_single_raw -type f -path '*/multimodal_flye_long_s1/assembly/out/assembly.fasta' | head -1":"find inputs/flye_single_raw -type f -path '*flye_long_s1*/*assembly/out/assembly.fasta' -print -quit",
+            "find inputs/read_artifacts -type f -name \"S${s}_R1.fastq.gz\" | head -1":"find inputs/read_artifacts -type f -name \"S${s}_R1.fastq.gz\" -print -quit",
+          }
+          missing=[]
+          for old,new in replacements.items():
+              if old not in text:
+                  missing.append(old)
+              text=text.replace(old,new)
+          if missing:
+              raise SystemExit(f'expected repair anchors missing: {missing}')
+          marker='''          printf 'backbone=%s\\nmegahit=%s\\nmetaspades_short=%s\\nflye_pair=%s\\nflye_s0=%s\\nflye_s1=%s\\n' \\
+            "$backbone" "$megahit" "$metashort" "$flyepair" "$flyes0" "$flyes1" \\
+            > "$ROOT/provenance/LOCATED_ASSEMBLY_PATHS.txt"\n'''
+          anchor='''          for f in "$backbone" "$megahit" "$metashort" "$flyepair" "$flyes0" "$flyes1"; do test -s "$f"; done\n'''
+          if marker not in text:
+              if anchor not in text:
+                  raise SystemExit('assembly validation anchor missing')
+              text=text.replace(anchor,marker+anchor)
+          path.write_text(text)
+          PY
+          git diff --check
+          git diff -- .github/workflows/cami3-lantern-hybrid-v4-development.yml
+
+      - name: Commit repaired execution wrapper
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
+        run: |
+          set -euo pipefail
+          git config user.name 'LANTERN execution bot'
+          git config user.email 'yoonge3@gmail.com'
+          git add .github/workflows/cami3-lantern-hybrid-v4-development.yml
+          if git diff --cached --quiet; then
+            echo 'repair already present'
+          else
+            git commit -m 'Fix v4 artifact discovery under pipefail'
+            git push origin "HEAD:${BRANCH}"
+          fi
+
+      - name: Dispatch corrected v4 workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh workflow run cami3-lantern-hybrid-v4-development.yml --repo "$REPO" --ref "$REF"
+          sleep 15
+          gh run list --repo "$REPO" --workflow cami3-lantern-hybrid-v4-development.yml \
+            --branch "$REF" --limit 3 --json databaseId,status,conclusion,url,headSha,createdAt \
+            | tee V4_REPAIR_DISPATCH_RUNS.json
