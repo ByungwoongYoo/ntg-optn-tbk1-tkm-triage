@@ -1,0 +1,145 @@
+{
+  "schema": "b2-z100-public-artifact-index-v2",
+  "title": "Separate-Implementation Verification",
+  "publication_record": {
+    "doi": "10.5281/zenodo.22026665",
+    "url": "https://zenodo.org/records/22026665",
+    "physical_file_count": 13,
+    "physical_scope": "Three PUBLIC_FIXED compact ZIPs, nine FINAL_FIXED byte-preserving transport parts, and P2624_FINAL_FIXED_TRANSPORT_README.txt.",
+    "exclusions": [
+      "The 219,202,341-byte canonical raw-evidence ZIP is in the separate record 10.5281/zenodo.21988177.",
+      "The 93,453,983-byte FINAL_FIXED logical ZIP is reconstructed from the nine parts and is not itself a physical file in this record.",
+      "P2624_FINAL_FIXED_QA_REPORT_20260820.json is a Git-branch QA record and is not counted among the 13 physical Zenodo files."
+    ]
+  },
+  "raw_evidence_record": {
+    "doi": "10.5281/zenodo.21988177",
+    "url": "https://zenodo.org/records/21988177",
+    "remote_filename": "B2_Z100_RAW_EVIDENCE_RELEASE_20260818.zip",
+    "local_alias": "B2_Z100_FULL_RAW_EVIDENCE_20260818_REISSUED.zip",
+    "bytes": 219202341,
+    "sha256": "254031fc2fab17027e389900ca63e704d170eba6ad6861e235db3fe9be46727a",
+    "note": "The alias identifies the same verified bytes in this workspace; the remote canonical filename is authoritative for the old Zenodo record."
+  },
+  "distribution_boundary": "Binary archives are not committed to this Git branch. Record 22026665 carries 13 physical files; the canonical raw ZIP remains only in record 21988177.",
+  "artifacts": [
+    {
+      "name": "B2_Z100_RAW_EVIDENCE_RELEASE_20260818.zip",
+      "local_alias": "B2_Z100_FULL_RAW_EVIDENCE_20260818_REISSUED.zip",
+      "role": "canonical raw evidence corpus",
+      "bytes": 219202341,
+      "sha256": "254031fc2fab17027e389900ca63e704d170eba6ad6861e235db3fe9be46727a",
+      "zenodo_doi": "10.5281/zenodo.21988177",
+      "physical_in_named_record": true,
+      "included_in_publication_record_22026665": false,
+      "internal_manifest_sha256": "dade214232ffdc2ce3386dcb68ac0e8325004b5345c256e853301e3e76ccdca5",
+      "internal_manifest_file_count": 4155
+    },
+    {
+      "name": "B2_Z100_FINAL_PROOF_AUDIT_PUBLIC_FIXED_20260820.zip",
+      "role": "compact corrected proof-audit packet",
+      "bytes": 115896,
+      "sha256": "ae781ccd6d191e1e1a4e66fbe383a864aa7b65a049bf93cf1a335db57136620f",
+      "zenodo_doi": "10.5281/zenodo.22026665",
+      "physical_in_named_record": true,
+      "internal_manifest_sha256": "8a138bced85debac924b5cdf8db4520a27de54a8897e768d068cb392be6e8511",
+      "internal_manifest_file_count": 66
+    },
+    {
+      "name": "B2_Z100_PUBLIC_AUDIT_AUXILIARIES_PUBLIC_FIXED_20260820.zip",
+      "role": "public-status and audit auxiliaries",
+      "bytes": 88271,
+      "sha256": "47f37758c1f8bd3e7b40efabf2d788113b96b2968ad469e87c3818b02502f60c",
+      "zenodo_doi": "10.5281/zenodo.22026665",
+      "physical_in_named_record": true,
+      "internal_manifest_sha256": "4d8b180231f570b120094de00b46d33dd517ac82455335020658b03b0f16fcc3",
+      "internal_manifest_file_count": 47
+    },
+    {
+      "name": "B2_Z100_FRESH_REPLAY_AUDIT_BUNDLE_PUBLIC_FIXED_20260820.zip",
+      "role": "same-project fresh-replay audit bundle with privacy exclusion",
+      "bytes": 1087657,
+      "sha256": "052357754e9a04ddf6983f24b59f6575114f371e850cedb3c918e6d842bcf9fb",
+      "zenodo_doi": "10.5281/zenodo.22026665",
+      "physical_in_named_record": true,
+      "internal_manifest_sha256": "95d4129fd1851f34b8d139460b957ed586df7f64e8b30b94cf095251c3c14857",
+      "internal_manifest_file_count": 30,
+      "evidence_boundary": "Same-project fresh replay; not an independently administered replay of the canonical raw corpus."
+    },
+    {
+      "name": "P2624_independent_certified_reconstruction_FINAL_FIXED_20260820.zip",
+      "role": "separate-implementation reconstruction of the seven public static lift-tree certificates",
+      "bytes": 93453983,
+      "sha256": "83d80155ef4b2dba5a4def970d13317413b763b3447c00a931f4c624b9e45cb5",
+      "zenodo_doi": "10.5281/zenodo.22026665",
+      "physical_in_named_record": false,
+      "physical_representation": "nine byte-preserving .part files listed below",
+      "internal_manifest_sha256": "a1e96097c48dbc3f5515685a3f09eb4566abb9a3bffc93ea2ee18b7ced87e40d",
+      "internal_manifest_file_count": 65,
+      "transport_part_count": 9,
+      "transport_total_bytes": 93453983,
+      "transport_parts": [
+        {
+          "name": "P2624_independent_certified_reconstruction_FINAL_FIXED_20260820.zip.00.part",
+          "bytes": 10485760,
+          "sha256": "a7e774e1d9a496aa940bc1e5d85c10c9d89dea6f5b07c5245637392959cade57"
+        },
+        {
+          "name": "P2624_independent_certified_reconstruction_FINAL_FIXED_20260820.zip.01.part",
+          "bytes": 10485760,
+          "sha256": "0112e827f76389b9ab5b9ef2a567e91dff634fb2b5096683907a406d2d7aa500"
+        },
+        {
+          "name": "P2624_independent_certified_reconstruction_FINAL_FIXED_20260820.zip.02.part",
+          "bytes": 10485760,
+          "sha256": "6f11df8fe8e2599b41077acd07fbdb79d6065fffd8b42985a13e466175edbed4"
+        },
+        {
+          "name": "P2624_independent_certified_reconstruction_FINAL_FIXED_20260820.zip.03.part",
+          "bytes": 10485760,
+          "sha256": "65b96e6c0b3fd09087c9a915a9229d94eeeeef50f6c16f3e2e71e909bd851bfe"
+        },
+        {
+          "name": "P2624_independent_certified_reconstruction_FINAL_FIXED_20260820.zip.04.part",
+          "bytes": 10485760,
+          "sha256": "ead1cbd52ccb65f6e8ff73660a245a248efee8613094478ec99786a44b1e64a3"
+        },
+        {
+          "name": "P2624_independent_certified_reconstruction_FINAL_FIXED_20260820.zip.05.part",
+          "bytes": 10485760,
+          "sha256": "adf6033d99928fd831fb2b626798e558ee6e07e61032b33947c04b5c4f7e4959"
+        },
+        {
+          "name": "P2624_independent_certified_reconstruction_FINAL_FIXED_20260820.zip.06.part",
+          "bytes": 10485760,
+          "sha256": "d4870a40483010613d5ef91161bfbb3c8c52e5e50c83e65dda08b27eed4f41c2"
+        },
+        {
+          "name": "P2624_independent_certified_reconstruction_FINAL_FIXED_20260820.zip.07.part",
+          "bytes": 10485760,
+          "sha256": "be00304e1ed0d9beb9ed46b8e101b7b50f7a8049fcbcd6563478f78644ab1bcb"
+        },
+        {
+          "name": "P2624_independent_certified_reconstruction_FINAL_FIXED_20260820.zip.08.part",
+          "bytes": 9567903,
+          "sha256": "b16114d5d2e974b3f2eeb49ab1a19006236e560a977219bc6f5801ba04a3ad88"
+        }
+      ],
+      "transport_readme": {
+        "name": "P2624_FINAL_FIXED_TRANSPORT_README.txt",
+        "bytes": 4291,
+        "sha256": "78e449aea9e605d1afbbfa973cde19ef7f2ae370b19cd176b76792114afe8906",
+        "repository_path": "release/P2624_FINAL_FIXED_TRANSPORT_README.txt"
+      },
+      "transport_reassembly": "Bytewise concatenation of .00.part through .08.part in numeric suffix order; verify 93,453,983 bytes and the logical-ZIP SHA-256.",
+      "evidence_boundary": "All seven reconstructed tree hashes match the per-file R6090 values; this is a new separate implementation, not the unavailable original ZIP container."
+    }
+  ],
+  "repository_qa": {
+    "name": "P2624_FINAL_FIXED_QA_REPORT_20260820.json",
+    "bytes": 5021,
+    "sha256": "58c66d37ffb2dea0efe800b21a00acda7f029fea83f5c1e4864ad7e31b981559",
+    "repository_path": "qa/P2624_FINAL_FIXED_QA_REPORT_20260820.json",
+    "included_in_publication_record_22026665": false
+  }
+}

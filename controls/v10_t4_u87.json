@@ -1,0 +1,23 @@
+{
+  "problem": "14-element B_2[2] subset of Z_100",
+  "normalization": "unit difference mapped to {0,1}; third and fourth selected elements fixed; reflection enforces third-1 <= wrap",
+  "third": 4,
+  "fourth": 87,
+  "fifth_range": [88, 88],
+  "expected_fifth_branches": 1,
+  "observed_fifth_branches": 1,
+  "completed_exhaustively": true,
+  "timed_out": false,
+  "witness_found": false,
+  "witness_verified": false,
+  "aggregate_nodes_including_fourth_root": 2,
+  "aggregate_prunes": 1,
+  "aggregate_quotient_prunes": 0,
+  "aggregate_lower_bound_prunes": 0,
+  "wall_seconds": 0.000298112,
+  "coverage": "For fixed normalized {0,1,third,fourth}, the original fourth-root DFS considers every fifth selected element from fourth+1 through 92-third. The disjoint fifth-element branches use the identical exact recursion and pruning rules, so their union is the full fourth-element branch.",
+  "witness": [],
+  "branches": [
+    {"fifth":88,"completed":true,"timed":false,"found":false,"verified":false,"nodes":1,"prunes":1,"qprunes":0,"lbprunes":0,"wall_seconds":0.000204834}
+  ]
+}

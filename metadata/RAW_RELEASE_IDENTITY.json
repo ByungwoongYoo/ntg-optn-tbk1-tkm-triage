@@ -1,0 +1,63 @@
+{
+  "schema": "b2-z100-raw-release-identity-v2",
+  "audited_on": "2026-08-20",
+  "package_name": "B2_Z100_RAW_EVIDENCE_RELEASE_20260818",
+  "published_canonical_raw_record": {
+    "doi": "10.5281/zenodo.21988177",
+    "url": "https://zenodo.org/records/21988177",
+    "remote_filename": "B2_Z100_RAW_EVIDENCE_RELEASE_20260818.zip",
+    "local_alias": "B2_Z100_FULL_RAW_EVIDENCE_20260818_REISSUED.zip",
+    "bytes": 219202341,
+    "sha256": "254031fc2fab17027e389900ca63e704d170eba6ad6861e235db3fe9be46727a",
+    "status": "published_verified_clean_container",
+    "included_in_doi_10_5281_zenodo_22026665": false
+  },
+  "public_claim_status": "candidate computational resolution with distinct third-party support; official P2624 status Open pending packet review",
+  "established_public_bound": {
+    "lower": 13,
+    "upper": 14,
+    "candidate_size_14_resolved": false,
+    "source": "https://www.theoremdb.org/records/R47/"
+  },
+  "historical_corrupted_source_container": {
+    "filename": "B2_Z100_RAW_EVIDENCE_RELEASE_20260818.zip",
+    "bytes": 333280842,
+    "sha256": "cc3104b4273ff71456f5dd4f77c14c82b317ae3e2c4b13e72166a998a4f74094",
+    "status": "corrupted_by_exact_duplicate_suffix_append",
+    "publishable": false
+  },
+  "recoverable_canonical_prefix": {
+    "bytes": 219202341,
+    "sha256": "254031fc2fab17027e389900ca63e704d170eba6ad6861e235db3fe9be46727a",
+    "first_eocd_offset": 219202319,
+    "zip_integrity_test": "pass",
+    "purpose": "audit recovery identity and source of the clean bytes published under DOI 10.5281/zenodo.21988177"
+  },
+  "duplicate_suffix": {
+    "bytes": 114078501,
+    "appended_at_offset": 219202341,
+    "exact_copy_of_source_interval": {
+      "start_in_canonical_prefix": 105123840,
+      "end_exclusive_in_canonical_prefix": 219202341
+    },
+    "contains_unknown_foreign_data": false
+  },
+  "authoritative_internal_manifest": {
+    "path": "manifest/RELEASE_MANIFEST.json",
+    "sha256": "dade214232ffdc2ce3386dcb68ac0e8325004b5345c256e853301e3e76ccdca5",
+    "hashed_file_count": 4155,
+    "total_uncompressed_bytes": 518219226,
+    "audit_path_size_hash_mismatches": 0
+  },
+  "container_entry_count": 4157,
+  "external_audit_boundary": {
+    "records": ["R6088", "R6089", "R6090"],
+    "distinct_package_sha256": "facbdfec87f5bfb302f197af5c13cce6e984444bd8270adce250de5e8fab8a35",
+    "public_source_locator": null,
+    "mapped_to_this_raw_release": false
+  },
+  "publication_action": "completed: clean 219202341-byte container published under DOI 10.5281/zenodo.21988177; kept separate from DOI 10.5281/zenodo.22026665",
+  "must_not_use_as_final_release_sha256": [
+    "cc3104b4273ff71456f5dd4f77c14c82b317ae3e2c4b13e72166a998a4f74094"
+  ]
+}

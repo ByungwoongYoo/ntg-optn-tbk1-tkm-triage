@@ -1,0 +1,22 @@
+name: B2 Z100 fresh DRAT clean-room replay
+on:
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned drat-trim
+        run: |
+          git clone https://github.com/marijnheule/drat-trim.git drat-trim
+          git -C drat-trim checkout 2e3b2dc0ecf938addbd779d42877b6ed69d9a985
+          make -C drat-trim -j"$(nproc)"
+      - name: Replay all stored proofs
+        run: |
+          for g in 4 5 6 7; do
+            d=$(find evidence/g4_g7_drat/g${g} -mindepth 1 -maxdepth 1 -type d -print -quit)
+            ./drat-trim/drat-trim "$d/gap${g}.cnf" "$d/gap${g}.drat" \
+              > "g${g}.fresh.log" 2>&1
+            grep -q '^s VERIFIED' "g${g}.fresh.log"
+          done

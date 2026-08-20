@@ -1,0 +1,23 @@
+{
+  "problem": "14-element B_2[2] subset of Z_100",
+  "normalization": "minimum cyclic gap g mapped to {0,g}; third selected element fixed; reflection enforces third-g <= wrap",
+  "gap": 3,
+  "third": 35,
+  "fourth_range": [38, 38],
+  "expected_fourth_branches": 1,
+  "observed_fourth_branches": 1,
+  "completed_exhaustively": true,
+  "timed_out": false,
+  "witness_found": false,
+  "witness_verified": false,
+  "aggregate_nodes_including_third_root": 2,
+  "aggregate_prunes": 1,
+  "aggregate_quotient_prunes": 0,
+  "aggregate_lower_bound_prunes": 0,
+  "wall_seconds": 0.000589896,
+  "coverage": "For normalized minimum gap g and fixed third t, the fourth selected element ranges from t+g through 100-(t-g)-10g. Every later consecutive gap is at least g and the final wrap is at least t-g by reflection. The disjoint fourth-element branches therefore cover the full normalized t case.",
+  "witness": [],
+  "branches": [
+    {"fourth":38,"completed":true,"timed":false,"found":false,"verified":false,"nodes":1,"prunes":1,"qprunes":0,"lbprunes":0,"wall_seconds":0.000393864}
+  ]
+}

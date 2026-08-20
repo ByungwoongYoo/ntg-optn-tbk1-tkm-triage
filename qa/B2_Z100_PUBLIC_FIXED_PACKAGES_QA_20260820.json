@@ -1,0 +1,169 @@
+{
+  "schema": "b2-z100-public-fixed-package-qa-v1",
+  "status": "PASS",
+  "scope_note": "This report governs the three PUBLIC_FIXED compact packages. The current reconstruction is FINAL_FIXED and is governed separately by P2624_FINAL_FIXED_QA_REPORT_20260820.json.",
+  "packages": {
+    "B2_Z100_FINAL_PROOF_AUDIT_PUBLIC_FIXED_20260820.zip": {
+      "bytes": 115896,
+      "sha256": "ae781ccd6d191e1e1a4e66fbe383a864aa7b65a049bf93cf1a335db57136620f",
+      "deterministic_double_build": "PASS",
+      "outer_zip": {
+        "zip_entries": 85,
+        "crc": "PASS",
+        "safe_paths": "PASS",
+        "fixed_timestamps": "PASS"
+      },
+      "manifest": {
+        "manifest_sha256": "8a138bced85debac924b5cdf8db4520a27de54a8897e768d068cb392be6e8511",
+        "file_count": 66,
+        "total_bytes": 356433,
+        "pii_email_matches": 0,
+        "placeholder_matches": 0,
+        "secret_matches": 0
+      },
+      "syntax": {
+        "counts": {
+          "json": 18,
+          "python": 7,
+          "yaml": 7,
+          "shell": 3,
+          "cpp": 3,
+          "csv_tsv": 5,
+          "dockerfile": 1
+        },
+        "compiler_commands": 6,
+        "status": "PASS"
+      },
+      "semantics": {
+        "status": "compact-ready/raw-separate boundary present"
+      },
+      "compact_verifier": {
+        "command": [
+          "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+          "/workspace/scratch/a808bcba97f5/b2_z100_public_fixed_build_20260820/qa_extract/B2_Z100_FINAL_PROOF_AUDIT_PUBLIC_FIXED_20260820/tools/verify_compact_packet.py",
+          "/workspace/scratch/a808bcba97f5/b2_z100_public_fixed_build_20260820/qa_extract/B2_Z100_FINAL_PROOF_AUDIT_PUBLIC_FIXED_20260820"
+        ],
+        "returncode": 0,
+        "stdout": "{\n  \"schema\": \"b2-z100-compact-packet-verification-v1\",\n  \"status\": \"PASS\",\n  \"package_name\": \"B2_Z100_FINAL_PROOF_AUDIT_PUBLIC_FIXED_20260820\",\n  \"file_count\": 66,\n  \"manifest_sha256\": \"8a138bced85debac924b5cdf8db4520a27de54a8897e768d068cb392be6e8511\",\n  \"errors\": []\n}",
+        "stderr": ""
+      },
+      "corrected_result_check": {
+        "command": [
+          "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+          "/workspace/scratch/a808bcba97f5/b2_z100_public_fixed_build_20260820/qa_extract/B2_Z100_FINAL_PROOF_AUDIT_PUBLIC_FIXED_20260820/verification/verify_corrected_result.py"
+        ],
+        "returncode": 0,
+        "stdout": "{\n  \"schema\": \"b2-z100-corrected-result-check-v1\",\n  \"status\": \"PASS\",\n  \"claim_file\": \"claim/B2_Z100_FINAL_RESULTS_CORRECTED_20260820.json\",\n  \"witness_cardinality\": 13,\n  \"max_ordered_difference_multiplicity\": 2,\n  \"mod10_supports_checked\": 67,\n  \"normalized_third_branches_recorded\": 44,\n  \"distinct_third_party_audit_records\": 3,\n  \"scope\": \"elementary checks plus internal consistency of recorded run map; no solver replay\"\n}",
+        "stderr": ""
+      }
+    },
+    "B2_Z100_FRESH_REPLAY_AUDIT_BUNDLE_PUBLIC_FIXED_20260820.zip": {
+      "bytes": 1087657,
+      "sha256": "052357754e9a04ddf6983f24b59f6575114f371e850cedb3c918e6d842bcf9fb",
+      "deterministic_double_build": "PASS",
+      "outer_zip": {
+        "zip_entries": 37,
+        "crc": "PASS",
+        "safe_paths": "PASS",
+        "fixed_timestamps": "PASS"
+      },
+      "manifest": {
+        "manifest_sha256": "95d4129fd1851f34b8d139460b957ed586df7f64e8b30b94cf095251c3c14857",
+        "file_count": 30,
+        "total_bytes": 1946550,
+        "pii_email_matches": 0,
+        "placeholder_matches": 0,
+        "secret_matches": 0
+      },
+      "syntax": {
+        "counts": {
+          "json": 6,
+          "python": 1,
+          "yaml": 2,
+          "shell": 0,
+          "cpp": 2,
+          "csv_tsv": 2,
+          "dockerfile": 0
+        },
+        "compiler_commands": 2,
+        "status": "PASS"
+      },
+      "semantics": {
+        "status": "same-project/not-external boundary present"
+      },
+      "compact_verifier": null,
+      "corrected_result_check": null
+    },
+    "B2_Z100_PUBLIC_AUDIT_AUXILIARIES_PUBLIC_FIXED_20260820.zip": {
+      "bytes": 88271,
+      "sha256": "47f37758c1f8bd3e7b40efabf2d788113b96b2968ad469e87c3818b02502f60c",
+      "deterministic_double_build": "PASS",
+      "outer_zip": {
+        "zip_entries": 63,
+        "crc": "PASS",
+        "safe_paths": "PASS",
+        "fixed_timestamps": "PASS"
+      },
+      "manifest": {
+        "manifest_sha256": "4d8b180231f570b120094de00b46d33dd517ac82455335020658b03b0f16fcc3",
+        "file_count": 47,
+        "total_bytes": 292277,
+        "pii_email_matches": 0,
+        "placeholder_matches": 0,
+        "secret_matches": 0
+      },
+      "syntax": {
+        "counts": {
+          "json": 11,
+          "python": 7,
+          "yaml": 7,
+          "shell": 3,
+          "cpp": 3,
+          "csv_tsv": 2,
+          "dockerfile": 1
+        },
+        "compiler_commands": 6,
+        "status": "PASS"
+      },
+      "semantics": {
+        "status": "drafts/placeholders/blocking-checklist excluded"
+      },
+      "compact_verifier": {
+        "command": [
+          "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+          "/workspace/scratch/a808bcba97f5/b2_z100_public_fixed_build_20260820/qa_extract/B2_Z100_PUBLIC_AUDIT_AUXILIARIES_PUBLIC_FIXED_20260820/tools/verify_compact_packet.py",
+          "/workspace/scratch/a808bcba97f5/b2_z100_public_fixed_build_20260820/qa_extract/B2_Z100_PUBLIC_AUDIT_AUXILIARIES_PUBLIC_FIXED_20260820"
+        ],
+        "returncode": 0,
+        "stdout": "{\n  \"schema\": \"b2-z100-compact-packet-verification-v1\",\n  \"status\": \"PASS\",\n  \"package_name\": \"B2_Z100_PUBLIC_AUDIT_AUXILIARIES_PUBLIC_FIXED_20260820\",\n  \"file_count\": 47,\n  \"manifest_sha256\": \"4d8b180231f570b120094de00b46d33dd517ac82455335020658b03b0f16fcc3\",\n  \"errors\": []\n}",
+        "stderr": ""
+      },
+      "corrected_result_check": {
+        "command": [
+          "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
+          "/workspace/scratch/a808bcba97f5/b2_z100_public_fixed_build_20260820/qa_extract/B2_Z100_PUBLIC_AUDIT_AUXILIARIES_PUBLIC_FIXED_20260820/verification/verify_corrected_result.py"
+        ],
+        "returncode": 0,
+        "stdout": "{\n  \"schema\": \"b2-z100-corrected-result-check-v1\",\n  \"status\": \"PASS\",\n  \"claim_file\": \"claim/B2_Z100_FINAL_RESULTS_CORRECTED_20260820.json\",\n  \"witness_cardinality\": 13,\n  \"max_ordered_difference_multiplicity\": 2,\n  \"mod10_supports_checked\": 67,\n  \"normalized_third_branches_recorded\": 44,\n  \"distinct_third_party_audit_records\": 3,\n  \"scope\": \"elementary checks plus internal consistency of recorded run map; no solver replay\"\n}",
+        "stderr": ""
+      }
+    }
+  },
+  "preservation": {
+    "B2_Z100_PUBLIC_AUDIT_AUXILIARIES_20260818.zip": {
+      "bytes": 105994,
+      "sha256": "eb5bfb6d99be0c873e3c5c776df157db1a73c4a6a00f09c6ddfc4580b633c2c2",
+      "status": "UNCHANGED"
+    },
+    "B2_Z100_FINAL_PROOF_AUDIT_20260818.zip": {
+      "bytes": 109735,
+      "sha256": "0c2ab74b4c5d9848e05860168208578a356231a51652d85f99841e9d96cce1ca",
+      "status": "UNCHANGED"
+    },
+    "B2_Z100_FRESH_REPLAY_AUDIT_BUNDLE_20260820.zip": {
+      "bytes": 1085134,
+      "sha256": "2a1849d10735c60d03c38c99a2107d25992938d174daf5fe605f218e96cbd995",
+      "status": "UNCHANGED"
+    }
+  }
+}

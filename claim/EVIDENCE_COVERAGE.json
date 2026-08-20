@@ -1,0 +1,36 @@
+{
+  "final_evidence": {
+    "g1_v10_t2_t4": {
+      "final_subbranches": 255,
+      "control_artifacts": 1,
+      "path": "evidence/g1/v10_final_t2_t4"
+    },
+    "g1_v8_t5_t45": {
+      "final_branches": 41,
+      "paths": [
+        "evidence/g1/v8_head_t2_t10",
+        "evidence/g1/v8_tail_t11_t45"
+      ]
+    },
+    "g2_g3_v9": {
+      "branches": 67,
+      "role": "redundant exact cross-check",
+      "path": "evidence/g2_g3/v9"
+    },
+    "g4_g7_drat": {
+      "gaps": [
+        4,
+        5,
+        6,
+        7
+      ],
+      "role": "redundant proof-producing SAT cross-check",
+      "path": "evidence/g4_g7_drat"
+    }
+  },
+  "excluded_as_final_evidence": [
+    "b2-gap1-v7-status-collector timeout summary",
+    "v8 t=2,3,4 as substitutes for final v10 t=2,3,4",
+    "any timeout or unchecked solver status"
+  ]
+}

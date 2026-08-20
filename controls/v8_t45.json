@@ -1,0 +1,22 @@
+{
+  "problem": "14-element B_2[2] subset of Z_100",
+  "normalization": "unit difference mapped to {0,1}; third selected element fixed; reflection enforces third-1 <= wrap",
+  "third": 45,
+  "fourth_range": [46, 46],
+  "expected_fourth_branches": 1,
+  "observed_fourth_branches": 1,
+  "completed_exhaustively": true,
+  "timed_out": false,
+  "witness_found": false,
+  "witness_verified": false,
+  "aggregate_nodes_including_third_root": 2,
+  "aggregate_prunes": 1,
+  "aggregate_quotient_prunes": 0,
+  "aggregate_lower_bound_prunes": 0,
+  "wall_seconds": 0.00016136,
+  "coverage": "At depth 3 the original exact DFS considers every fourth selected element u from third+1 through 91-third. Each branch below fixes exactly one such u and then executes the identical exact recursion and pruning rules. Their disjoint union is the complete normalized third-element branch.",
+  "witness": [],
+  "branches": [
+    {"fourth":46,"completed":true,"timed":false,"found":false,"verified":false,"nodes":1,"prunes":1,"qprunes":0,"lbprunes":0,"wall_seconds":4.9753e-05}
+  ]
+}

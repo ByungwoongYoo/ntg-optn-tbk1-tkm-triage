@@ -1,0 +1,15 @@
+{
+  "id": 9291987535,
+  "name": "b2-gap23-v9-result-collector-20260817",
+  "api_size": 3092,
+  "api_digest": "sha256:4188055162c8c95ce579ebf23ceedf80e55fee0228acab733bb049bf0f340ba8",
+  "archive_bytes": 3092,
+  "archive_sha256": "4188055162c8c95ce579ebf23ceedf80e55fee0228acab733bb049bf0f340ba8",
+  "workflow_run": {
+    "id": 32041212984,
+    "repository_id": 1252147322,
+    "head_repository_id": 1252147322,
+    "head_branch": "crossdomain-open-problem-tournament-20260817",
+    "head_sha": "42b99bb384b7db7449798ce679a3aac33c4c20ea"
+  }
+}

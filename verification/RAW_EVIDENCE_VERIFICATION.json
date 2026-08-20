@@ -1,0 +1,532 @@
+{
+  "status": "PASS",
+  "root": "/mnt/data/B2_Z100_RAW_EVIDENCE_RELEASE_20260818",
+  "elapsed_seconds": 0.909,
+  "summary": {
+    "github_artifacts": 373,
+    "g1_v10_final_subbranches": 255,
+    "g1_v8_final_branches": 41,
+    "g1_normalized_branches": 44,
+    "g2_g3_v9_branches": 67,
+    "drat_cases": [
+      {
+        "gap": 4,
+        "cnf_bytes": 661997,
+        "drat_bytes": 502355512,
+        "cnf_sha256": "5c1efeaddd51df5dc07f4c15f78f20c4543b1b933929d8661e0d5582a10aeb6d",
+        "drat_sha256": "a6eb59128c9d108135c65151839906bdf6f5030a3d7cceb446318ff337ff6207",
+        "variables": 19105,
+        "clauses": 45814,
+        "original_drat_trim_verified": true,
+        "fresh_drat_trim_verified": true
+      },
+      {
+        "gap": 5,
+        "cnf_bytes": 662981,
+        "drat_bytes": 2156527,
+        "cnf_sha256": "9646fdcb5d74e9b26cc533c98ace2f285de72ed37d1716f958ebc3f56d842fef",
+        "drat_sha256": "ae70fff4e1c35245cc01fb2260fac59f6d9ba99157ec74ae484311e64f445a12",
+        "variables": 19105,
+        "clauses": 45914,
+        "original_drat_trim_verified": true,
+        "fresh_drat_trim_verified": true
+      },
+      {
+        "gap": 6,
+        "cnf_bytes": 663965,
+        "drat_bytes": 159037,
+        "cnf_sha256": "07420503c58ee845b43042e7be67b9ac7232f2c5482d69b5ccf8e478e267f71c",
+        "drat_sha256": "88249fdb9732c9df34505b6a4b9fdd9a3228f4f726c90ee29c58761b4460c774",
+        "variables": 19105,
+        "clauses": 46014,
+        "original_drat_trim_verified": true,
+        "fresh_drat_trim_verified": true
+      },
+      {
+        "gap": 7,
+        "cnf_bytes": 664949,
+        "drat_bytes": 140423,
+        "cnf_sha256": "b37175e05f8ba30e6f4adb7e3511ed665b1629b79bb4ac66e17a58a534f4b3e5",
+        "drat_sha256": "70368f8e82e1c132bc51271fee35cb1b43c64a0ca1be7c8eb6e28c9dcb6fdcae",
+        "variables": 19105,
+        "clauses": 46114,
+        "original_drat_trim_verified": true,
+        "fresh_drat_trim_verified": true
+      }
+    ],
+    "witness_13": [
+      0,
+      5,
+      7,
+      31,
+      58,
+      61,
+      62,
+      63,
+      72,
+      80,
+      84,
+      91,
+      97
+    ]
+  },
+  "checks": [
+    {
+      "check": "required:evidence/g1/v10_final_t2_t4",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "required:evidence/g1/v8_head_t2_t10",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "required:evidence/g1/v8_tail_t11_t45",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "required:evidence/g2_g3/v9",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "required:evidence/g4_g7_drat",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "required:manifest/ARTIFACT_INDEX.json",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "required:repository_snapshot/crossdomain/b2_gap1_v_split_v10.cpp",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "required:repository_snapshot/crossdomain/b2_gap1_u_split_v8.cpp",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "required:repository_snapshot/crossdomain/b2_gap_g_u_split_v9.cpp",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "artifact_index_count",
+      "status": "PASS",
+      "detail": 373
+    },
+    {
+      "check": "artifact_name_uniqueness",
+      "status": "PASS",
+      "detail": 373
+    },
+    {
+      "check": "artifact_metadata_count",
+      "status": "PASS",
+      "detail": 373
+    },
+    {
+      "check": "artifact_metadata_matches_index",
+      "status": "PASS",
+      "detail": []
+    },
+    {
+      "check": "github_api_digest_matches_downloaded_archive",
+      "status": "PASS",
+      "detail": []
+    },
+    {
+      "check": "artifact_category_counts",
+      "status": "PASS",
+      "detail": {
+        "g1_v10": 256,
+        "g1_v8": 44,
+        "g23_v9": 67,
+        "collectors": 2,
+        "drat": 4
+      }
+    },
+    {
+      "check": "artifact_internal_hashes",
+      "status": "PASS",
+      "detail": {
+        "checked": 3332,
+        "errors": []
+      }
+    },
+    {
+      "check": "historical_self_hash_lines_skipped",
+      "status": "WARN",
+      "detail": "370 artifact-local files hashed themselves while being written; the corrected release manifest supersedes those self-lines."
+    },
+    {
+      "check": "g1_v10_raw_artifacts",
+      "status": "PASS",
+      "detail": []
+    },
+    {
+      "check": "g1_v10_coverage",
+      "status": "PASS",
+      "detail": {
+        "final_subbranches": 255,
+        "control": [
+          [
+            7,
+            8
+          ]
+        ]
+      }
+    },
+    {
+      "check": "g1_v8_raw_artifacts",
+      "status": "PASS",
+      "detail": []
+    },
+    {
+      "check": "g1_v8_final_coverage",
+      "status": "PASS",
+      "detail": [
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45
+      ]
+    },
+    {
+      "check": "g1_v8_t10_regression_node_count",
+      "status": "PASS",
+      "detail": 537251446
+    },
+    {
+      "check": "g1_v8_t2_t4_historical_superseded",
+      "status": "WARN",
+      "detail": {
+        "2": {
+          "status": "EXHAUSTED_NO_WITNESS",
+          "completed": true,
+          "timed_out": false
+        },
+        "3": {
+          "status": "INCOMPLETE_TIMEOUT",
+          "completed": false,
+          "timed_out": true
+        },
+        "4": {
+          "status": "EXHAUSTED_NO_WITNESS",
+          "completed": true,
+          "timed_out": false
+        }
+      }
+    },
+    {
+      "check": "g1_all_44_normalized_third_branches",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "g2_g3_v9_raw_artifacts",
+      "status": "PASS",
+      "detail": []
+    },
+    {
+      "check": "g2_g3_v9_coverage",
+      "status": "PASS",
+      "detail": 67
+    },
+    {
+      "check": "valid_13_set",
+      "status": "PASS",
+      "detail": {
+        "set": [
+          0,
+          5,
+          7,
+          31,
+          58,
+          61,
+          62,
+          63,
+          72,
+          80,
+          84,
+          91,
+          97
+        ],
+        "max_ordered_difference_multiplicity": 2
+      }
+    },
+    {
+      "check": "unit_difference_mod10_classification",
+      "status": "PASS",
+      "detail": {
+        "patterns": 67,
+        "bad": []
+      }
+    },
+    {
+      "check": "unit_difference_capacity_inequalities",
+      "status": "PASS",
+      "detail": {
+        "required": 182,
+        "even_capacity": 98,
+        "multiple_of_5_capacity": 38
+      }
+    },
+    {
+      "check": "g4_g7_actual_cnf_drat_and_logs",
+      "status": "PASS",
+      "detail": []
+    },
+    {
+      "check": "g4_g7_fresh_replay_count",
+      "status": "PASS",
+      "detail": [
+        {
+          "gap": 4,
+          "cnf_bytes": 661997,
+          "drat_bytes": 502355512,
+          "cnf_sha256": "5c1efeaddd51df5dc07f4c15f78f20c4543b1b933929d8661e0d5582a10aeb6d",
+          "drat_sha256": "a6eb59128c9d108135c65151839906bdf6f5030a3d7cceb446318ff337ff6207",
+          "variables": 19105,
+          "clauses": 45814,
+          "original_drat_trim_verified": true,
+          "fresh_drat_trim_verified": true
+        },
+        {
+          "gap": 5,
+          "cnf_bytes": 662981,
+          "drat_bytes": 2156527,
+          "cnf_sha256": "9646fdcb5d74e9b26cc533c98ace2f285de72ed37d1716f958ebc3f56d842fef",
+          "drat_sha256": "ae70fff4e1c35245cc01fb2260fac59f6d9ba99157ec74ae484311e64f445a12",
+          "variables": 19105,
+          "clauses": 45914,
+          "original_drat_trim_verified": true,
+          "fresh_drat_trim_verified": true
+        },
+        {
+          "gap": 6,
+          "cnf_bytes": 663965,
+          "drat_bytes": 159037,
+          "cnf_sha256": "07420503c58ee845b43042e7be67b9ac7232f2c5482d69b5ccf8e478e267f71c",
+          "drat_sha256": "88249fdb9732c9df34505b6a4b9fdd9a3228f4f726c90ee29c58761b4460c774",
+          "variables": 19105,
+          "clauses": 46014,
+          "original_drat_trim_verified": true,
+          "fresh_drat_trim_verified": true
+        },
+        {
+          "gap": 7,
+          "cnf_bytes": 664949,
+          "drat_bytes": 140423,
+          "cnf_sha256": "b37175e05f8ba30e6f4adb7e3511ed665b1629b79bb4ac66e17a58a534f4b3e5",
+          "drat_sha256": "70368f8e82e1c132bc51271fee35cb1b43c64a0ca1be7c8eb6e28c9dcb6fdcae",
+          "variables": 19105,
+          "clauses": 46114,
+          "original_drat_trim_verified": true,
+          "fresh_drat_trim_verified": true
+        }
+      ]
+    },
+    {
+      "check": "provenance:g1_v10_32040699080/RUN.json",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "provenance:g1_v10_32040699080/JOBS.json",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "provenance:g1_v10_32040699080/WORKFLOW_AT_RUN.yml",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "provenance:g1_v8_head_32038183046/RUN.json",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "provenance:g1_v8_head_32038183046/JOBS.json",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "provenance:g1_v8_head_32038183046/WORKFLOW_AT_RUN.yml",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "provenance:g1_v8_tail_32038657803/RUN.json",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "provenance:g1_v8_tail_32038657803/JOBS.json",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "provenance:g1_v8_tail_32038657803/WORKFLOW_AT_RUN.yml",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "provenance:g23_v9_32040180627/RUN.json",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "provenance:g23_v9_32040180627/JOBS.json",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "provenance:g23_v9_32040180627/WORKFLOW_AT_RUN.yml",
+      "status": "PASS",
+      "detail": null
+    },
+    {
+      "check": "historical_preupload_manifest_not_authoritative",
+      "status": "WARN",
+      "detail": {
+        "listed": 4132,
+        "missing_after_actions_upload": 25,
+        "missing_examples": [
+          "repository_snapshot/.github/workflows/b2-cube-status-collector-20260817.yml",
+          "repository_snapshot/.github/workflows/b2-gap-cases-v2.yml",
+          "repository_snapshot/.github/workflows/b2-gap-dfs-v5.yml",
+          "repository_snapshot/.github/workflows/b2-gap-dfs-v6.yml",
+          "repository_snapshot/.github/workflows/b2-gap-sat-v4.yml",
+          "repository_snapshot/.github/workflows/b2-gap-vector-v3.yml",
+          "repository_snapshot/.github/workflows/b2-gap1-branches-v7.yml",
+          "repository_snapshot/.github/workflows/b2-gap1-existing-aggregate-20260817.yml",
+          "repository_snapshot/.github/workflows/b2-gap1-u-split-v8-20260817.yml",
+          "repository_snapshot/.github/workflows/b2-gap1-u-split-v8-control-tail-20260817.yml",
+          "repository_snapshot/.github/workflows/b2-gap1-v-split-v10-20260817.yml",
+          "repository_snapshot/.github/workflows/b2-gap1-v10-result-collector-20260817.yml",
+          "repository_snapshot/.github/workflows/b2-gap1-v7-status-collector-20260817.yml",
+          "repository_snapshot/.github/workflows/b2-gap23-u-split-v9-20260817.yml",
+          "repository_snapshot/.github/workflows/b2-gap23-v9-result-collector-20260817.yml",
+          "repository_snapshot/.github/workflows/b2-gap4-drat-proof-v1.yml",
+          "repository_snapshot/.github/workflows/b2-gap567-drat-20260817.yml",
+          "repository_snapshot/.github/workflows/b2-hard-gap-reflected-cubes-20260817.yml",
+          "repository_snapshot/.github/workflows/b2-missing-gap-drat-20260817.yml",
+          "repository_snapshot/.github/workflows/b2-neighborhood-exact-rerun-20260817.yml",
+          "repository_snapshot/.github/workflows/b2-z100-fast.yml",
+          "repository_snapshot/.github/workflows/b2-z100-final-proof-bundle-20260817.yml",
+          "repository_snapshot/.github/workflows/b2-z100-final-record-check-20260817.yml",
+          "repository_snapshot/.github/workflows/b2-z100-probe.yml",
+          "repository_snapshot/.github/workflows/b2-z100-raw-evidence-package-20260818.yml"
+        ],
+        "explanation": "actions/upload-artifact omitted hidden .github paths. Exact WORKFLOW_AT_RUN snapshots and the corrected release manifest supersede it."
+      }
+    }
+  ],
+  "warnings": [
+    {
+      "check": "historical_self_hash_lines_skipped",
+      "detail": "370 artifact-local files hashed themselves while being written; the corrected release manifest supersedes those self-lines."
+    },
+    {
+      "check": "g1_v8_t2_t4_historical_superseded",
+      "detail": {
+        "2": {
+          "status": "EXHAUSTED_NO_WITNESS",
+          "completed": true,
+          "timed_out": false
+        },
+        "3": {
+          "status": "INCOMPLETE_TIMEOUT",
+          "completed": false,
+          "timed_out": true
+        },
+        "4": {
+          "status": "EXHAUSTED_NO_WITNESS",
+          "completed": true,
+          "timed_out": false
+        }
+      }
+    },
+    {
+      "check": "historical_preupload_manifest_not_authoritative",
+      "detail": {
+        "listed": 4132,
+        "missing_after_actions_upload": 25,
+        "missing_examples": [
+          "repository_snapshot/.github/workflows/b2-cube-status-collector-20260817.yml",
+          "repository_snapshot/.github/workflows/b2-gap-cases-v2.yml",
+          "repository_snapshot/.github/workflows/b2-gap-dfs-v5.yml",
+          "repository_snapshot/.github/workflows/b2-gap-dfs-v6.yml",
+          "repository_snapshot/.github/workflows/b2-gap-sat-v4.yml",
+          "repository_snapshot/.github/workflows/b2-gap-vector-v3.yml",
+          "repository_snapshot/.github/workflows/b2-gap1-branches-v7.yml",
+          "repository_snapshot/.github/workflows/b2-gap1-existing-aggregate-20260817.yml",
+          "repository_snapshot/.github/workflows/b2-gap1-u-split-v8-20260817.yml",
+          "repository_snapshot/.github/workflows/b2-gap1-u-split-v8-control-tail-20260817.yml",
+          "repository_snapshot/.github/workflows/b2-gap1-v-split-v10-20260817.yml",
+          "repository_snapshot/.github/workflows/b2-gap1-v10-result-collector-20260817.yml",
+          "repository_snapshot/.github/workflows/b2-gap1-v7-status-collector-20260817.yml",
+          "repository_snapshot/.github/workflows/b2-gap23-u-split-v9-20260817.yml",
+          "repository_snapshot/.github/workflows/b2-gap23-v9-result-collector-20260817.yml",
+          "repository_snapshot/.github/workflows/b2-gap4-drat-proof-v1.yml",
+          "repository_snapshot/.github/workflows/b2-gap567-drat-20260817.yml",
+          "repository_snapshot/.github/workflows/b2-hard-gap-reflected-cubes-20260817.yml",
+          "repository_snapshot/.github/workflows/b2-missing-gap-drat-20260817.yml",
+          "repository_snapshot/.github/workflows/b2-neighborhood-exact-rerun-20260817.yml",
+          "repository_snapshot/.github/workflows/b2-z100-fast.yml",
+          "repository_snapshot/.github/workflows/b2-z100-final-proof-bundle-20260817.yml",
+          "repository_snapshot/.github/workflows/b2-z100-final-record-check-20260817.yml",
+          "repository_snapshot/.github/workflows/b2-z100-probe.yml",
+          "repository_snapshot/.github/workflows/b2-z100-raw-evidence-package-20260818.yml"
+        ],
+        "explanation": "actions/upload-artifact omitted hidden .github paths. Exact WORKFLOW_AT_RUN snapshots and the corrected release manifest supersede it."
+      }
+    }
+  ],
+  "failures": []
+}

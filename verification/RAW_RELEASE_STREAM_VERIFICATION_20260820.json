@@ -1,0 +1,21 @@
+{
+  "schema": "b2-z100-release-zip-verification-v1",
+  "zip_path": "B2_Z100_FULL_RAW_EVIDENCE_20260818_REISSUED.zip",
+  "zip_path_role": "local alias",
+  "canonical_remote_filename": "B2_Z100_RAW_EVIDENCE_RELEASE_20260818.zip",
+  "zenodo_doi": "10.5281/zenodo.21988177",
+  "included_in_doi_10_5281_zenodo_22026665": false,
+  "zip_bytes": 219202341,
+  "zip_sha256": "254031fc2fab17027e389900ca63e704d170eba6ad6861e235db3fe9be46727a",
+  "eocd_offset": 219202319,
+  "logical_zip_end": 219202341,
+  "package_root": "B2_Z100_RAW_EVIDENCE_RELEASE_20260818",
+  "zip_entry_count": 4157,
+  "manifest_file_count": 4155,
+  "manifest_total_uncompressed_bytes": 518219226,
+  "release_manifest_sha256": "dade214232ffdc2ce3386dcb68ac0e8325004b5345c256e853301e3e76ccdca5",
+  "manifest_content_mismatch_count": 0,
+  "status": "PASS",
+  "errors": [],
+  "warnings": []
+}

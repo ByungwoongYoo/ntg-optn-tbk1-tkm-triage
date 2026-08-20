@@ -1,0 +1,74 @@
+{
+  "schema": "p2624-final-fixed-publication-qa-v1",
+  "date": "2026-08-20",
+  "status": "PASS",
+  "source_fixes": [
+    {
+      "file": "p2624_certified_reconstruction/EXACT_RECONSTRUCTION_RESULTS.md",
+      "fix": "Machine-readable result now points to included RECONSTRUCTION_RESULT.json"
+    },
+    {
+      "file": "p2624_certified_reconstruction/README.md",
+      "fix": "Build instructions now create bin with mkdir -p bin before compilation"
+    }
+  ],
+  "logical_zip": {
+    "path": "/workspace/scratch/a808bcba97f5/P2624_independent_certified_reconstruction_FINAL_FIXED_20260820.zip",
+    "bytes": 93453983,
+    "sha256": "83d80155ef4b2dba5a4def970d13317413b763b3447c00a931f4c624b9e45cb5",
+    "members": 66,
+    "manifest_entries": 65,
+    "deterministic_rebuild_byte_identical": true,
+    "zip_crc_test": "PASS",
+    "extracted_manifest_verification": "PASS"
+  },
+  "certificate_verification": {
+    "r6090_component_sha256_matches": "7/7",
+    "profiles": [
+      {"profile": "p0", "configs": 39, "nodes": 24179709, "sha256": "47e81059799697f75ae9c5b206b568624d8b4ed3c0c7fc5da3f90cf0023b0818", "checker": "PASS"},
+      {"profile": "p1", "configs": 133, "nodes": 55614223, "sha256": "4a84bbd6ba01bd9da3dcdd4847266e889c957f347f8db522888ca43592b70d86", "checker": "PASS"},
+      {"profile": "p2", "configs": 344, "nodes": 86217164, "sha256": "d14623c5c2d24ed22f9e30ba5c1b14c1a4b8b00a22bc7cbe96e2cdcb84137619", "checker": "PASS"},
+      {"profile": "p3d", "configs": 387, "nodes": 77335947, "sha256": "914eb8acf9102535cccc2a393f2a6c8e7f6d999d3c42505256e1761ef93d15ad", "checker": "PASS"},
+      {"profile": "p3t", "configs": 49, "nodes": 10177494, "sha256": "87debd245ce0fac5c5f0402771a3fcdf6d228b47ff5072d30ec8a9c8ff585269", "checker": "PASS"},
+      {"profile": "p4d", "configs": 228, "nodes": 27482183, "sha256": "19be40eb47c28ec128529b8655843b9ad9e2e77560e229756083a2029b483c26", "checker": "PASS"},
+      {"profile": "p4td", "configs": 161, "nodes": 18897016, "sha256": "debafa58f28c4d070459c87f91b90fe680a1839c7efadacf3423e41592c53094", "checker": "PASS"}
+    ],
+    "totals": {"configs": 1341, "nodes": 299903736},
+    "quotient_verifier": {"raw_vectors": 204360, "affine_orbits": 1341, "status": "PASS"},
+    "lower_bound_witness": {"size": 13, "ordered_pairs": 156, "maximum_nonzero_multiplicity": 2, "status": "PASS"},
+    "negative_control": {"mutation": "p3t reserved proof bit set", "checker_exit_code": 1, "message": "NOT VERIFIED: reserved proof bits are nonzero", "status": "PASS_REJECTED"}
+  },
+  "transport": {
+    "readme": {
+      "path": "/workspace/scratch/a808bcba97f5/zenodo_split10_final_fixed/P2624_FINAL_FIXED_TRANSPORT_README.txt",
+      "bytes": 4291,
+      "sha256": "78e449aea9e605d1afbbfa973cde19ef7f2ae370b19cd176b76792114afe8906"
+    },
+    "reassembly_matches_logical_zip": true,
+    "parts": [
+      {"suffix": "00", "bytes": 10485760, "sha256": "a7e774e1d9a496aa940bc1e5d85c10c9d89dea6f5b07c5245637392959cade57"},
+      {"suffix": "01", "bytes": 10485760, "sha256": "0112e827f76389b9ab5b9ef2a567e91dff634fb2b5096683907a406d2d7aa500"},
+      {"suffix": "02", "bytes": 10485760, "sha256": "6f11df8fe8e2599b41077acd07fbdb79d6065fffd8b42985a13e466175edbed4"},
+      {"suffix": "03", "bytes": 10485760, "sha256": "65b96e6c0b3fd09087c9a915a9229d94eeeeef50f6c16f3e2e71e909bd851bfe"},
+      {"suffix": "04", "bytes": 10485760, "sha256": "ead1cbd52ccb65f6e8ff73660a245a248efee8613094478ec99786a44b1e64a3"},
+      {"suffix": "05", "bytes": 10485760, "sha256": "adf6033d99928fd831fb2b626798e558ee6e07e61032b33947c04b5c4f7e4959"},
+      {"suffix": "06", "bytes": 10485760, "sha256": "d4870a40483010613d5ef91161bfbb3c8c52e5e50c83e65dda08b27eed4f41c2"},
+      {"suffix": "07", "bytes": 10485760, "sha256": "be00304e1ed0d9beb9ed46b8e101b7b50f7a8049fcbcd6563478f78644ab1bcb"},
+      {"suffix": "08", "bytes": 9567903, "sha256": "b16114d5d2e974b3f2eeb49ab1a19006236e560a977219bc6f5801ba04a3ad88"}
+    ]
+  },
+  "compact_packages": [
+    {"path": "/workspace/scratch/a808bcba97f5/b2_z100_reconstructed/B2_Z100_FINAL_PROOF_AUDIT_PUBLIC_FIXED_20260820.zip", "bytes": 115896, "sha256": "ae781ccd6d191e1e1a4e66fbe383a864aa7b65a049bf93cf1a335db57136620f"},
+    {"path": "/workspace/scratch/a808bcba97f5/b2_z100_reconstructed/B2_Z100_PUBLIC_AUDIT_AUXILIARIES_PUBLIC_FIXED_20260820.zip", "bytes": 88271, "sha256": "47f37758c1f8bd3e7b40efabf2d788113b96b2968ad469e87c3818b02502f60c"},
+    {"path": "/workspace/scratch/a808bcba97f5/b2_z100_reconstructed/B2_Z100_FRESH_REPLAY_AUDIT_BUNDLE_PUBLIC_FIXED_20260820.zip", "bytes": 1087657, "sha256": "052357754e9a04ddf6983f24b59f6575114f371e850cedb3c918e6d842bcf9fb"}
+  ],
+  "publication_qa": {
+    "privacy_secret_absolute_path_scan": "PASS_NO_MATCH",
+    "license_files_present": true,
+    "license_scope_present": true,
+    "third_party_provenance_boundary_present": true,
+    "original_unavailable_archive_identity_disclaimer_present": true,
+    "external_third_party_certification_claimed": false
+  },
+  "reserved_zenodo_doi": "10.5281/zenodo.22026665"
+}

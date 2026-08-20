@@ -1,0 +1,47 @@
+name: B2 Z100 gap4 DRAT certificate pipeline v1
+on:
+  workflow_dispatch:
+jobs:
+  proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install python-sat
+      - name: Generate exact gap4 CNF
+        run: |
+          mkdir -p artifact/b2_gap4_drat
+          python - <<'PY'
+          import sys
+          sys.path.insert(0,'.')
+          from crossdomain.b2_gap_sat_v4 import build
+          cnf,_,_=build(4)
+          cnf.to_file('artifact/b2_gap4_drat/gap4.cnf')
+          print('vars',cnf.nv,'clauses',len(cnf.clauses))
+          PY
+      - name: Build CaDiCaL and DRAT-trim
+        run: |
+          git clone https://github.com/arminbiere/cadical.git /tmp/cadical
+          git -C /tmp/cadical checkout c60730422e758ef1cebe7aeddf2dda31c996bf04
+          cd /tmp/cadical && ./configure && make -j2
+          git clone https://github.com/marijnheule/drat-trim.git /tmp/drat-trim
+          git -C /tmp/drat-trim checkout 2e3b2dc0ecf938addbd779d42877b6ed69d9a985
+          make -C /tmp/drat-trim -j2
+      - name: Generate and verify proof
+        run: |
+          set +e
+          /tmp/cadical/build/cadical artifact/b2_gap4_drat/gap4.cnf \
+            artifact/b2_gap4_drat/gap4.drat > artifact/b2_gap4_drat/cadical.log 2>&1
+          rc=$?
+          set -e
+          echo "$rc" > artifact/b2_gap4_drat/cadical_exit_code.txt
+          test "$rc" -eq 20
+          /tmp/drat-trim/drat-trim artifact/b2_gap4_drat/gap4.cnf \
+            artifact/b2_gap4_drat/gap4.drat > artifact/b2_gap4_drat/drat_check.log 2>&1
+          grep -q 'VERIFIED' artifact/b2_gap4_drat/drat_check.log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: b2-gap4-drat-certificate-v1
+          path: artifact/b2_gap4_drat

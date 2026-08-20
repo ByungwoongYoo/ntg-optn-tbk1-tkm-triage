@@ -1,0 +1,30 @@
+{
+  "schema": "b2-z100-fresh-replay-bundle-source-identities-v1",
+  "full_exact_replay": {
+    "github_run_id": 32100985982,
+    "github_artifact_id": 9312169839,
+    "source_commit": "57486d19ef1088f755c5129131e187b5e2f5cb4b",
+    "included_path": "artifacts/github_artifact_9312169839_full_exact_replay.zip",
+    "bytes": 1541986,
+    "sha256": "8baab190689ed862cd87323e9fd72d6772cc62f22b1b54be2ca08d5b497879bf",
+    "email_matches": 0
+  },
+  "internal_audit_original": {
+    "github_artifact_id": 9330620059,
+    "bytes": 99081,
+    "sha256": "79a787967a6c421e86f51248816705de7fc4abdf15598cd050c700cea9d441a0",
+    "included": false,
+    "reason": "personal email in REPLAY_RUN_API.json"
+  },
+  "excluded_member": {
+    "path": "REPLAY_RUN_API.json",
+    "bytes": 14193,
+    "sha256": "0a6a0f4f48870d7b3d9f9f6dec07f777e35656f16bc7ed71516ce7c1845a0753"
+  },
+  "local_recheck": {
+    "json_path": "local_recheck/LOCAL_RECHECK_FINAL_PROOF_AUDIT_20260820.json",
+    "json_sha256": "28cfa84aefbf0d36702a9f67dff2763403f877e4e6670cbaed5d80d7a941eda7",
+    "csv_path": "local_recheck/LOCAL_RECHECK_WITNESS_DIFFERENCE_COUNTS_20260820.csv",
+    "csv_sha256": "9098afc9c18c69b520b3571cf875bba8810692f7430a2200ca936e9005f989a7"
+  }
+}

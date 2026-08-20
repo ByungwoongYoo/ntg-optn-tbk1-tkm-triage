@@ -1,0 +1,48 @@
+{
+  "package_name": "B2_Z100_RAW_EVIDENCE_RELEASE_20260818",
+  "underlying_github_raw_artifact": {
+    "run_id": 32087886076,
+    "artifact_id": 9307336189,
+    "artifact_name": "B2-Z100-RAW-EVIDENCE-20260818",
+    "artifact_sha256": "0e02012ff461a57bc646c080bd30b94951babd92977ed501f0ec803a02a19a9c",
+    "builder_commit": "b6e63ec224a5a0ab8c0c6f4ba7de5f3d0920ceda",
+    "conclusion": "success"
+  },
+  "fresh_drat_clean_room_replay": {
+    "run_id": 32088250471,
+    "artifact_id": 9307667752,
+    "artifact_sha256": "c3f13e0192564f8fa216a934075aa3f7638e4653f57dec324c4752b2073407a4",
+    "commit": "5b318319f6aab73365ab2abcf0e5316139dfba82",
+    "conclusion": "success"
+  },
+  "exact_search_runs": {
+    "g1_t2_t4_v10": 32040699080,
+    "g1_v8_head": 32038183046,
+    "g1_v8_tail": 32038657803,
+    "g2_g3_v9": 32040180627
+  },
+  "drat_artifacts": {
+    "g4": {
+      "run_id": 32003781736,
+      "artifact_id": 9279813096
+    },
+    "g5": {
+      "run_id": 32037160625,
+      "artifact_id": 9291076270
+    },
+    "g6": {
+      "run_id": 32037160625,
+      "artifact_id": 9291072827
+    },
+    "g7": {
+      "run_id": 32037160625,
+      "artifact_id": 9291073263
+    }
+  },
+  "signature_status": {
+    "github_artifact_digests": true,
+    "human_gpg_signature": false,
+    "sigstore_signature": false,
+    "note": "No human GPG or Sigstore signature is claimed."
+  }
+}

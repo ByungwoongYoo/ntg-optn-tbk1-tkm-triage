@@ -1,0 +1,37 @@
+{
+  "title": "Separate-Implementation Verification",
+  "upload_type": "dataset",
+  "publication_date": "2026-08-20",
+  "creators": [
+    {
+      "name": "Yoo, Byungwoong",
+      "affiliation": "Independent Researcher"
+    }
+  ],
+  "description": "Separate-implementation verification materials supporting a candidate exclusion of 14-element B_2[2] subsets of Z/100Z. This record contains exactly 13 physical files: three PUBLIC_FIXED compact audit ZIPs, nine FINAL_FIXED byte-preserving transport parts, and P2624_FINAL_FIXED_TRANSPORT_README.txt. Concatenating the nine parts yields the logical 93,453,983-byte P2624_independent_certified_reconstruction_FINAL_FIXED_20260820.zip (SHA-256 83d80155ef4b2dba5a4def970d13317413b763b3447c00a931f4c624b9e45cb5), which is not itself a physical record file. The separate implementation regenerates all seven static lift-tree certificate files with the node counts and per-file SHA-256 values reported by TheoremDB R6090; it is not the unavailable original ZIP. The 219,202,341-byte canonical raw corpus is not in this record and remains at DOI 10.5281/zenodo.21988177. The fresh exact replay remains same-project, and TheoremDB P2624 remains Open with official bound 13 <= M <= 14.",
+  "keywords": [
+    "additive combinatorics",
+    "B_2[2] set",
+    "generalized Sidon set",
+    "cyclic group",
+    "Z/100Z",
+    "exhaustive computation",
+    "DRAT proof",
+    "reproducible research"
+  ],
+  "access_right": "open",
+  "license": "cc-by-4.0",
+  "related_identifiers": [
+    {
+      "identifier": "https://www.theoremdb.org/statements/b2-two-set-z100/",
+      "relation": "issupplementto",
+      "resource_type": "other"
+    },
+    {
+      "identifier": "https://github.com/ByungwoongYoo/ntg-optn-tbk1-tkm-triage/tree/b2-z100-certified-resolution-20260820",
+      "relation": "issupplementto",
+      "resource_type": "software"
+    }
+  ],
+  "notes": "Reserved DOI 10.5281/zenodo.22026665; future record URL https://zenodo.org/records/22026665. File-scope licensing applies: author-generated code, scripts, and workflows are MIT; author-generated documentation, data, logs, tables, and manifests are CC BY 4.0; third-party materials remain under their original licenses. Reassemble FINAL_FIXED .00.part through .08.part in numeric suffix order and verify whole-ZIP SHA-256 83d80155ef4b2dba5a4def970d13317413b763b3447c00a931f4c624b9e45cb5; exact part identities are in P2624_FINAL_FIXED_TRANSPORT_README.txt. The canonical raw ZIP is a separate old-record file named B2_Z100_RAW_EVIDENCE_RELEASE_20260818.zip at DOI 10.5281/zenodo.21988177 and is not part of these 13 files. Do not call the same-project fresh replay external or state that P2624 is officially resolved."
+}

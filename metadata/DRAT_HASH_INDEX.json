@@ -1,0 +1,64 @@
+{
+  "schema": "b2-z100-drat-hash-index-v1",
+  "audited_on": "2026-08-20",
+  "role": "redundant proof-producing SAT cross-check for gaps 4 through 7",
+  "status_boundary": "Stored original and project-managed fresh logs report VERIFIED. TheoremDB R6088-R6090 record a distinct third-party certified-package audit, but it is not a replay of these DRAT objects. An independently administered replay of this corpus is still required before calling this corpus externally reproduced.",
+  "cases": [
+    {
+      "gap": 4,
+      "variables": 19105,
+      "clauses": 45814,
+      "cnf_path": "evidence/g4_g7_drat/g4/b2-gap4-drat-certificate-v1/gap4.cnf",
+      "cnf_bytes": 661997,
+      "cnf_sha256": "5c1efeaddd51df5dc07f4c15f78f20c4543b1b933929d8661e0d5582a10aeb6d",
+      "drat_path": "evidence/g4_g7_drat/g4/b2-gap4-drat-certificate-v1/gap4.drat",
+      "drat_bytes": 502355512,
+      "drat_sha256": "a6eb59128c9d108135c65151839906bdf6f5030a3d7cceb446318ff337ff6207",
+      "original_drat_check_log_sha256": "3a20138e109ea7fff70586387e6ebf1d5348321406a991204792a85d34560c40",
+      "fresh_drat_check_log_sha256": "44bc58e11058067e3c6e0cff05454fb17851bd7cbd8273bc9431eb0de2bdbe1e",
+      "cadical_exit_code": 20
+    },
+    {
+      "gap": 5,
+      "variables": 19105,
+      "clauses": 45914,
+      "cnf_path": "evidence/g4_g7_drat/g5/b2-gap5-drat-20260817/gap5.cnf",
+      "cnf_bytes": 662981,
+      "cnf_sha256": "9646fdcb5d74e9b26cc533c98ace2f285de72ed37d1716f958ebc3f56d842fef",
+      "drat_path": "evidence/g4_g7_drat/g5/b2-gap5-drat-20260817/gap5.drat",
+      "drat_bytes": 2156527,
+      "drat_sha256": "ae70fff4e1c35245cc01fb2260fac59f6d9ba99157ec74ae484311e64f445a12",
+      "original_drat_check_log_sha256": "e79dd2d65bcf961e94225910a39c079c782573c8760024ba44cfe11a35ad81e2",
+      "fresh_drat_check_log_sha256": "57a1d39c63c4c423dcc8711eac6aa7447a5d690bd1d37b69633636bcf37a4864",
+      "cadical_exit_code": 20
+    },
+    {
+      "gap": 6,
+      "variables": 19105,
+      "clauses": 46014,
+      "cnf_path": "evidence/g4_g7_drat/g6/b2-gap6-drat-20260817/gap6.cnf",
+      "cnf_bytes": 663965,
+      "cnf_sha256": "07420503c58ee845b43042e7be67b9ac7232f2c5482d69b5ccf8e478e267f71c",
+      "drat_path": "evidence/g4_g7_drat/g6/b2-gap6-drat-20260817/gap6.drat",
+      "drat_bytes": 159037,
+      "drat_sha256": "88249fdb9732c9df34505b6a4b9fdd9a3228f4f726c90ee29c58761b4460c774",
+      "original_drat_check_log_sha256": "7ef2500ef8a83d5de987f47aa581653cfe01faa5d1ab8daeab7552ce73ae8047",
+      "fresh_drat_check_log_sha256": "5c96f54a8159cad9618bc0ca582cdd8fe7f66fe619567298595fabd56430f9c8",
+      "cadical_exit_code": 20
+    },
+    {
+      "gap": 7,
+      "variables": 19105,
+      "clauses": 46114,
+      "cnf_path": "evidence/g4_g7_drat/g7/b2-gap7-drat-20260817/gap7.cnf",
+      "cnf_bytes": 664949,
+      "cnf_sha256": "b37175e05f8ba30e6f4adb7e3511ed665b1629b79bb4ac66e17a58a534f4b3e5",
+      "drat_path": "evidence/g4_g7_drat/g7/b2-gap7-drat-20260817/gap7.drat",
+      "drat_bytes": 140423,
+      "drat_sha256": "70368f8e82e1c132bc51271fee35cb1b43c64a0ca1be7c8eb6e28c9dcb6fdcae",
+      "original_drat_check_log_sha256": "1d467d032e9663e557c11986f698c987ebbb9b5b93cf97f376baf1941b82b5b3",
+      "fresh_drat_check_log_sha256": "1d467d032e9663e557c11986f698c987ebbb9b5b93cf97f376baf1941b82b5b3",
+      "cadical_exit_code": 20
+    }
+  ]
+}

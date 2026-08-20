@@ -1,0 +1,68 @@
+{
+  "aggregate_manifest_entries_checked": 2961,
+  "binary_hash_counts": {
+    "v10": 1,
+    "v8": 1
+  },
+  "branch_rows": 12650,
+  "claim_boundary": "This establishes an internally audited frozen-source computational proof candidate for M=13. The complete search was freshly replayed by the same research project; independent external reproduction, peer review, and formal proof-assistant verification remain pending.",
+  "errors": [],
+  "exact_value": "M=13",
+  "inner_manifest_entries_checked": 1480,
+  "lower_bound": "M>=13",
+  "mathematical_self_checks": {
+    "normalized_thirds": [
+      2,
+      45
+    ],
+    "ordered_circular_equivalence_small_instances": true,
+    "parity_feasible_even_counts": [
+      5,
+      6,
+      7,
+      8,
+      9
+    ],
+    "unit_difference_mod10_support_check": true,
+    "v10_descriptor_count": 255,
+    "v8_descriptor_count": 41
+  },
+  "result_files": 296,
+  "schema": "b2-z100-fresh-replay-proof-audit-v6",
+  "source_sha256": {
+    "v10": "3000f45f9a699445f736815a01bde93dd174353e69c0892c2e3fd9578f3988a1",
+    "v8": "93cf177dcfe3f92e24c5f5750af97a73e90cd17673a154188ee7333c466c1d13"
+  },
+  "status": "COMPUTATIONAL_PROOF_CANDIDATE_FOR_M_13_PENDING_INDEPENDENT_EXTERNAL_REVIEW",
+  "timeouts": 0,
+  "total_nodes": 13668473356,
+  "upper_bound": "M<=13",
+  "v10_descriptors": 255,
+  "v10_nodes": 5880602065,
+  "v8_descriptors": 41,
+  "v8_nodes": 7787871291,
+  "verified_14_set_counterexamples": 0,
+  "witness": {
+    "distinct": 13,
+    "max_multiplicity": 2,
+    "ordered_pairs": 156,
+    "set": [
+      0,
+      5,
+      7,
+      31,
+      58,
+      61,
+      62,
+      63,
+      72,
+      80,
+      84,
+      91,
+      97
+    ],
+    "size": 13,
+    "valid": true
+  },
+  "witness_valid": true
+}

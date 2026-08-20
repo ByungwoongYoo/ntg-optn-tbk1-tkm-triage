@@ -1,0 +1,87 @@
+{
+  "schema": "b2-z100-sanitized-run-provenance-v1",
+  "generated_on": "2026-08-20",
+  "privacy_note": "Actor identities, email addresses, repository coordinates, API URLs, and account metadata are intentionally omitted.",
+  "exact_search_runs": [
+    {
+      "role": "g1 final hard branches t=2,3,4; v10 fifth-element split",
+      "run_id": 32040699080,
+      "workflow_id": 336292050,
+      "workflow_source": "b2-gap1-v-split-v10-20260817.yml",
+      "packaged_workflow_snapshot": "workflows/g1_v10_run_32040699080.yml",
+      "commit": "932d192b0d40d92712393a81ebb79a1c4b129179",
+      "conclusion": "success",
+      "created_utc": "2026-08-17T14:55:37Z",
+      "updated_utc": "2026-08-17T15:08:56Z"
+    },
+    {
+      "role": "g1 v8 head branches including final t=5 through 10",
+      "run_id": 32038183046,
+      "workflow_id": 336270862,
+      "workflow_source": "b2-gap1-u-split-v8-20260817.yml",
+      "packaged_workflow_snapshot": "workflows/g1_v8_head_run_32038183046.yml",
+      "commit": "f8889215df301273f1332df236a02560bc6212a9",
+      "conclusion": "success",
+      "created_utc": "2026-08-17T14:11:48Z",
+      "updated_utc": "2026-08-17T15:04:38Z"
+    },
+    {
+      "role": "g1 v8 tail final t=11 through 45",
+      "run_id": 32038657803,
+      "workflow_id": 336274703,
+      "workflow_source": "b2-gap1-u-split-v8-control-tail-20260817.yml",
+      "packaged_workflow_snapshot": "workflows/g1_v8_tail_run_32038657803.yml",
+      "commit": "4e3f30223ba4964705458cc62764dd7c246b72b9",
+      "conclusion": "success",
+      "created_utc": "2026-08-17T14:19:49Z",
+      "updated_utc": "2026-08-17T14:30:42Z"
+    },
+    {
+      "role": "redundant exact cross-check g=2,3; v9",
+      "run_id": 32040180627,
+      "workflow_id": 336287424,
+      "workflow_source": "b2-gap23-u-split-v9-20260817.yml",
+      "packaged_workflow_snapshot": "workflows/g2_g3_v9_run_32040180627.yml",
+      "commit": "d91f7d7b7aeab81573a049d8b3129fe0975666a5",
+      "conclusion": "success",
+      "created_utc": "2026-08-17T14:46:09Z",
+      "updated_utc": "2026-08-17T14:57:33Z"
+    }
+  ],
+  "drat_generation_runs": [
+    {
+      "gaps": [4],
+      "run_id": 32003781736,
+      "commit": "6ab9f5a33f22099a3420f705783e01261c25b62a",
+      "workflow_snapshot": "workflows/g4_drat_proof.yml",
+      "artifact_id": 9279813096,
+      "artifact_sha256": "86f58a1ca990320bf481573792bb8ecc9bf6a00cbeef13be07c128d704a77c57"
+    },
+    {
+      "gaps": [5, 6, 7],
+      "run_id": 32037160625,
+      "commit": "0794743f4b7dff86b51315b6e54926674ecb251a",
+      "workflow_snapshot": "workflows/g5_g6_g7_drat_proofs.yml",
+      "artifacts": [
+        {"gap": 5, "artifact_id": 9291076270, "artifact_sha256": "46fd03006cfcebb83ad4a3176c9475a76605c37a8758a3d8995aeb38006d4dfe"},
+        {"gap": 6, "artifact_id": 9291072827, "artifact_sha256": "95296d20bc5040d63848f8ed65a842b37a1fc34c7290d16241caa1b57e7699c8"},
+        {"gap": 7, "artifact_id": 9291073263, "artifact_sha256": "b500008e756a213ee771d697f11b45eb820ceb1b111c2224e6b3b290a4bfa332"}
+      ]
+    }
+  ],
+  "raw_package_builder": {
+    "run_id": 32087886076,
+    "artifact_id": 9307336189,
+    "artifact_sha256": "0e02012ff461a57bc646c080bd30b94951babd92977ed501f0ec803a02a19a9c",
+    "commit": "b6e63ec224a5a0ab8c0c6f4ba7de5f3d0920ceda",
+    "conclusion": "success"
+  },
+  "fresh_drat_replay": {
+    "run_id": 32088250471,
+    "artifact_id": 9307667752,
+    "artifact_sha256": "c3f13e0192564f8fa216a934075aa3f7638e4653f57dec324c4752b2073407a4",
+    "commit": "5b318319f6aab73365ab2abcf0e5316139dfba82",
+    "conclusion": "success"
+  },
+  "superseded_provenance_warning": "Any document that names run 32004571194 as the final g1 tail dependency is stale. The final v8 tail dependency is run 32038657803."
+}

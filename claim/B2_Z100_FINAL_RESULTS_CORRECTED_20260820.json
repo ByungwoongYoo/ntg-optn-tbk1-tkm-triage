@@ -1,0 +1,140 @@
+{
+  "schema_version": "2.1",
+  "record_type": "corrected_computational_result_synopsis",
+  "correction_date": "2026-08-20",
+  "supersedes_for_current_claim_use": [
+    "repository_snapshot/crossdomain/B2_Z100_FINAL_RESULTS_20260817.json",
+    "repository_snapshot/crossdomain/B2_Z100_FINAL_RESOLUTION_20260817.md"
+  ],
+  "problem": {
+    "reference": "b2-two-set-z100",
+    "catalog_id_observed": 2624,
+    "title": "Existence of a fourteen-point two-fold difference packing modulo 100",
+    "official_problem_url": "https://theoremdb.org/statements/b2-two-set-z100/"
+  },
+  "answer": "NO",
+  "maximum_size": 13,
+  "status": "CANDIDATE_COMPUTATIONAL_RESOLUTION_WITH_DISTINCT_THIRD_PARTY_SUPPORT_PENDING_PACKET_REVIEW",
+  "evidence_grade": "executable",
+  "independent_third_party_reproduction_of_this_raw_corpus": false,
+  "official_public_status": {
+    "status": "Open",
+    "established_bound": "13 <= M <= 14",
+    "work_items": 17,
+    "packet_items": 5,
+    "recent_work_items": 12
+  },
+  "distinct_external_audit": {
+    "records": ["R6088", "R6089", "R6090"],
+    "contributor": "Jordan Boisclair",
+    "package_name": "P2624_certified_resolution.zip",
+    "package_sha256": "facbdfec87f5bfb302f197af5c13cce6e984444bd8270adce250de5e8fab8a35",
+    "quotient_occupancy_types": 7,
+    "admissible_raw_occupancy_vectors": 204360,
+    "affine_orbits": 1341,
+    "proof_tree_nodes": 299903736,
+    "corrupt_byte_rejection_recorded": true,
+    "source_url": null,
+    "source_locator": null,
+    "badge": "Needs packet proposal",
+    "same_artifact_as_this_raw_corpus": "UNESTABLISHED",
+    "scope_note": "The records describe an independent audit of a different, currently unavailable certified package; they do not establish an independent replay of this canonical raw corpus."
+  },
+  "peer_reviewed": false,
+  "formally_verified": false,
+  "lower_bound": {
+    "witness": [0, 5, 7, 31, 58, 61, 62, 63, 72, 80, 84, 91, 97],
+    "cardinality": 13,
+    "max_nonzero_ordered_difference_multiplicity": 2,
+    "machine_checked": true
+  },
+  "upper_bound_reduction": {
+    "unit_difference_lemma": true,
+    "normalization": "Every hypothetical 14-set is affinely equivalent to one containing {0,1}.",
+    "normalized_third_range": [2, 45],
+    "normalized_third_branches": 44,
+    "all_final_branches_completed": true,
+    "final_timeouts": 0,
+    "final_incomplete_branches": 0,
+    "final_witnesses": 0
+  },
+  "final_exact_search_dependencies": {
+    "g1_t2_t4_v10": {
+      "run_id": 32040699080,
+      "solver": "b2_gap1_v_split_v10.cpp",
+      "final_subbranches": 255,
+      "regression_control": {
+        "third": 7,
+        "fourth": 8,
+        "count": 1
+      }
+    },
+    "g1_t5_t10_v8": {
+      "run_id": 32038183046,
+      "solver": "b2_gap1_u_split_v8.cpp",
+      "third_range": [5, 10],
+      "final_branches": 6
+    },
+    "g1_t11_t45_v8": {
+      "run_id": 32038657803,
+      "solver": "b2_gap1_u_split_v8.cpp",
+      "third_range": [11, 45],
+      "final_branches": 35,
+      "correction": "This final v8 tail run replaces the stale v7 run 32004571194 in historical synopsis files."
+    }
+  },
+  "redundant_checks": {
+    "g2_g3_v9": {
+      "run_id": 32040180627,
+      "solver": "b2_gap_g_u_split_v9.cpp",
+      "branches": 67,
+      "all_completed_without_witness": true
+    },
+    "g4_g7_drat": {
+      "cases": [4, 5, 6, 7],
+      "cadical_unsat_exit_code": 20,
+      "actual_cnf_and_drat_preserved": true,
+      "original_drat_trim_logs_verified": true,
+      "fresh_archived_drat_trim_logs_verified": true,
+      "drat_trim_commit": "2e3b2dc0ecf938addbd779d42877b6ed69d9a985"
+    }
+  },
+  "collector_artifacts": {
+    "g1_v10": {
+      "run_id": 32041254402,
+      "artifact_id": 9292041311,
+      "digest": "sha256:65db7de24a569e7f0a3947240e89fffec9e1fe9ac29e338fee135c8fcd60ae50"
+    },
+    "g2_g3_v9": {
+      "run_id": 32041212984,
+      "artifact_id": 9291987535,
+      "digest": "sha256:4188055162c8c95ce579ebf23ceedf80e55fee0228acab733bb049bf0f340ba8"
+    }
+  },
+  "historical_exclusions": [
+    {
+      "item": "run 32004571194",
+      "reason": "stale v7 tail record; not the final t=11,...,45 dependency"
+    },
+    {
+      "item": "v8 t=2,3,4",
+      "reason": "superseded by final v10; historical v8 t=3 timed out"
+    },
+    {
+      "item": "b2-gap1-v7-status-collector timeout summary",
+      "reason": "historical timeout summary; not final evidence"
+    },
+    {
+      "item": "any timeout, missing output, or unchecked status",
+      "reason": "never admissible as proof of nonexistence"
+    }
+  ],
+  "canonical_raw_release": {
+    "bytes": 219202341,
+    "sha256": "254031fc2fab17027e389900ca63e704d170eba6ad6861e235db3fe9be46727a",
+    "release_manifest_sha256": "dade214232ffdc2ce3386dcb68ac0e8325004b5345c256e853301e3e76ccdca5",
+    "manifest_file_count": 4155,
+    "manifest_uncompressed_bytes": 518219226
+  },
+  "claim_boundary": "The mathematical conclusion is supported internally by an elementary affine reduction plus exhaustive exact computation. TheoremDB records distinct third-party support from R6088-R6090, but their facb...a35 package has no public locator and has not been mapped to this raw corpus. Independent replay of this raw corpus, priority, journal acceptance, and complete formal verification remain unestablished; P2624 remains Open with official bound 13 <= M <= 14."
+}
