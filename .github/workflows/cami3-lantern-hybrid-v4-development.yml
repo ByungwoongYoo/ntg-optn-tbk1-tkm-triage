@@ -184,13 +184,13 @@ jobs:
           done
 
           cat > "$ROOT/inputs/source_manifest.tsv" <<'EOF'
-source_id	assembler	scope	mode
-megahit_short_pair	megahit	longitudinal	short
-metaspades_short_pair	metaspades	longitudinal	short
-flye_long_pair	flye	longitudinal	long
-flye_long_s0	flye	timepoint_support	long
-flye_long_s1	flye	timepoint_support	long
-EOF
+          source_id	assembler	scope	mode
+          megahit_short_pair	megahit	longitudinal	short
+          metaspades_short_pair	metaspades	longitudinal	short
+          flye_long_pair	flye	longitudinal	long
+          flye_long_s0	flye	timepoint_support	long
+          flye_long_s1	flye	timepoint_support	long
+          EOF
 
           git rev-parse HEAD > "$ROOT/provenance/GIT_HEAD.txt"
           uname -a > "$ROOT/provenance/UNAME.txt"
@@ -443,10 +443,10 @@ EOF
           set -euo pipefail
           ROOT=v4_hybrid_development
           winner=$(python - <<'PY'
-import json
-x=json.load(open('v4_hybrid_development/decision/V4_DEVELOPMENT_FREEZE.json'))
-print(x.get('winner_name',''))
-PY
+          import json
+          x=json.load(open('v4_hybrid_development/decision/V4_DEVELOPMENT_FREEZE.json'))
+          print(x.get('winner_name',''))
+          PY
           )
           if [[ -n "$winner" ]]; then
             for ablation in no_long no_consensus; do
@@ -467,19 +467,19 @@ PY
           ROOT=v4_hybrid_development
           mkdir -p "$ROOT/failure_audit"
           python - <<'PY'
-import json
-from pathlib import Path
-root=Path('v4_hybrid_development'); errors=[]
-freeze=root/'provenance/V4_TRUTH_BLIND_FREEZE.json'; decision=root/'decision/V4_DEVELOPMENT_FREEZE.json'
-if not freeze.is_file(): errors.append('truth-blind freeze missing')
-if not decision.is_file(): errors.append('development decision missing')
-if freeze.is_file() and json.loads(freeze.read_text()).get('truth_accessed') is not False: errors.append('freeze boundary invalid')
-if decision.is_file():
-    d=json.loads(decision.read_text())
-    if d.get('winner_name') and not (root/'decision/FROZEN_V4_WINNER_CONFIG.json').is_file(): errors.append('winner config missing')
-audit={'status':'PASS' if not errors else 'INCOMPLETE','errors':errors,'claim_boundary':'Public Toy development audit only; no active CAMI challenge data or rank.'}
-(root/'INDEPENDENT_AUDIT.json').write_text(json.dumps(audit,indent=2)+'\n')
-PY
+          import json
+          from pathlib import Path
+          root=Path('v4_hybrid_development'); errors=[]
+          freeze=root/'provenance/V4_TRUTH_BLIND_FREEZE.json'; decision=root/'decision/V4_DEVELOPMENT_FREEZE.json'
+          if not freeze.is_file(): errors.append('truth-blind freeze missing')
+          if not decision.is_file(): errors.append('development decision missing')
+          if freeze.is_file() and json.loads(freeze.read_text()).get('truth_accessed') is not False: errors.append('freeze boundary invalid')
+          if decision.is_file():
+              d=json.loads(decision.read_text())
+              if d.get('winner_name') and not (root/'decision/FROZEN_V4_WINNER_CONFIG.json').is_file(): errors.append('winner config missing')
+          audit={'status':'PASS' if not errors else 'INCOMPLETE','errors':errors,'claim_boundary':'Public Toy development audit only; no active CAMI challenge data or rank.'}
+          (root/'INDEPENDENT_AUDIT.json').write_text(json.dumps(audit,indent=2)+'\n')
+          PY
           rm -rf "$ROOT/truth_download" "$ROOT/truth/references" "$ROOT/inputs" "$ROOT/evidence" "$ROOT/candidates/prepared"
           rm -f "$ROOT/truth/combined_truth.fasta" "$ROOT/truth/toy_truth.mmi" "$ROOT/pseudo_novel/truth_genomes.msh" "$ROOT/pseudo_novel/truth_genome_distances.tsv"
           find "$ROOT/variants" -type f -name 'LANTERN_BACKBONE_AUGMENTED.fasta' -delete 2>/dev/null || true
