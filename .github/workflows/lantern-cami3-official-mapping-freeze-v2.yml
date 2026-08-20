@@ -1,0 +1,106 @@
+name: LANTERN corrected mapping and submission freeze v2
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'lantern_submission/**'
+      - 'lantern_v6/**'
+      - 'lantern_v7/**'
+      - 'lantern_cami3/README.md'
+      - 'lantern_cami3/scripts/**'
+      - '.github/workflows/lantern-cami3-official-mapping-freeze-v2.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate-package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: lantern-freeze-test
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11.15 minimap2=2.31 seqkit=2.13.0
+          cache-downloads: true
+          post-cleanup: all
+      - name: Validate corrected Toy mapping
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          python lantern_v7/infer_longitudinal_pairs.py --mapping lantern_submission/configs/toy_official_mapping.tsv --expected-individuals 10 --expected-timepoints 2 --out validation/mapping
+          python - <<'PY'
+          import json
+          x=json.load(open('validation/mapping/MAPPING_FREEZE.json'))
+          expected=[['0','1'],['2','7'],['3','5'],['4','8'],['6','19'],['9','12'],['10','15'],['11','13'],['14','16'],['17','18']]
+          assert [g['samples'] for g in x['groups']]==expected
+          assert not x['sequential_pairing_used'] and not x['similarity_pairing_used']
+          PY
+      - name: Static code and FASTA validator smoke tests
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mkdir -p validation/synthetic
+          python -m py_compile \
+            lantern_v6/prepare_extension_candidates.py \
+            lantern_v6/extension_union.py \
+            lantern_v7/infer_longitudinal_pairs.py \
+            lantern_submission/scripts/validate_inputs.py \
+            lantern_submission/scripts/build_execution_plan.py \
+            lantern_submission/scripts/combine_submission_fastas.py \
+            lantern_cami3/scripts/verify_cami_assembly.py
+          python lantern_v6/extension_union.py --help >/dev/null
+          python - <<'PY'
+          import random
+          from pathlib import Path
+          r=random.Random(20260820)
+          dna=''.join(r.choice('ACGT') for _ in range(1800))
+          Path('validation/synthetic/source.fa').write_text('>candidate\n'+dna+'\n')
+          Path('validation/synthetic/valid.fa').write_text('>contig_1\n'+dna+'\n')
+          Path('validation/synthetic/invalid.fa').write_text('>bad\nACGTacgt\n')
+          PY
+          python lantern_v6/prepare_extension_candidates.py --source x=validation/synthetic/source.fa --min-length 500 --out validation/synthetic/candidates
+          test -s validation/synthetic/candidates/extension_candidates.fasta
+          python lantern_cami3/scripts/verify_cami_assembly.py validation/synthetic/valid.fa --out validation/synthetic/VALIDATION.json
+          if python lantern_cami3/scripts/verify_cami_assembly.py validation/synthetic/invalid.fa --out validation/synthetic/INVALID_VALIDATION.json; then
+            echo 'validator incorrectly accepted lowercase sequence' >&2
+            exit 1
+          fi
+      - name: Build container
+        run: |
+          set -euo pipefail
+          docker build -f lantern_submission/Dockerfile -t lantern-cami3-v7-frozen:20260820 .
+          docker image inspect lantern-cami3-v7-frozen:20260820 --format '{{json .Id}}' > validation/CONTAINER_IMAGE_ID.json
+          docker run --rm -v "$PWD:/work" -w /work lantern-cami3-v7-frozen:20260820 python lantern_v7/infer_longitudinal_pairs.py --mapping lantern_submission/configs/toy_official_mapping.tsv --expected-individuals 10 --expected-timepoints 2 --out validation/container_mapping
+      - name: Build compact frozen package
+        run: |
+          set -euo pipefail
+          mkdir -p package/provenance
+          git rev-parse HEAD > package/provenance/GIT_HEAD.txt
+          cp -a lantern_submission package/
+          mkdir -p package/code
+          cp -a lantern_v6 package/code/
+          cp -a lantern_v7 package/code/
+          mkdir -p package/code/lantern_cami3
+          cp -a lantern_cami3/scripts package/code/lantern_cami3/
+          cp -a validation package/
+          find package -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > package/SHA256SUMS.txt
+          zip -qr LANTERN_CAMI3_SUBMISSION_READY_FREEZE_20260820.zip package
+          unzip -t LANTERN_CAMI3_SUBMISSION_READY_FREEZE_20260820.zip > LANTERN_CAMI3_SUBMISSION_READY_FREEZE_20260820_UNZIP_TEST.txt
+          sha256sum LANTERN_CAMI3_SUBMISSION_READY_FREEZE_20260820.zip > LANTERN_CAMI3_SUBMISSION_READY_FREEZE_20260820_SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LANTERN_CAMI3_SUBMISSION_READY_FREEZE_V2_20260820
+          path: |
+            LANTERN_CAMI3_SUBMISSION_READY_FREEZE_20260820.zip
+            LANTERN_CAMI3_SUBMISSION_READY_FREEZE_20260820_SHA256.txt
+            LANTERN_CAMI3_SUBMISSION_READY_FREEZE_20260820_UNZIP_TEST.txt
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0
