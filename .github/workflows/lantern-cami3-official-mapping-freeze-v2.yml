@@ -12,6 +12,10 @@ on:
       - '.github/workflows/lantern-cami3-official-mapping-freeze-v2.yml'
   workflow_dispatch:
 
+concurrency:
+  group: lantern-submission-package-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -204,7 +208,7 @@ jobs:
           set -euo pipefail
           mkdir -p validation/synthetic_reads validation/host_dry_run
           python - <<'PY'
-          import csv,gzip,hashlib,io
+          import csv,gzip,hashlib
           from pathlib import Path
           root=Path('validation/synthetic_reads').resolve()
           fields=['sample_id','short_r1','short_r2','long_reads','short_r1_sha256','short_r2_sha256','long_reads_sha256']
@@ -256,11 +260,11 @@ jobs:
               --expected-sample-ids "$(seq -s, 0 35)" --require-consecutive-timepoints \
               --out /tmp/container_mapping \
             > validation/CONTAINER_MAPPING.log
-          docker run --rm -v "$PWD:/work:ro" -w /opt/lantern \
+          docker run --rm -v "$PWD:$PWD:ro" -w /opt/lantern \
             lantern-cami3-v7-frozen:20260821 \
             bash lantern_submission/run_frozen_v7.sh \
-              --mapping /work/lantern_submission/configs/active_official_mapping.tsv \
-              --manifest /work/validation/synthetic_reads/input_manifest.tsv \
+              --mapping "$PWD/lantern_submission/configs/active_official_mapping.tsv" \
+              --manifest "$PWD/validation/synthetic_reads/input_manifest.tsv" \
               --out /tmp/container_dry_run \
               --threads 2 --memory-gb 4 \
               --expected-individuals 9 --expected-timepoints 4 --dry-run \
@@ -289,9 +293,10 @@ jobs:
           python lantern_submission/scripts/verify_package.py "$PACKAGE_NAME" \
             --out validation/PACKAGE_VERIFICATION.json
           unzip -t "$PACKAGE_NAME" > validation/PACKAGE_UNZIP_TEST.txt
-          unzip -Z1 "$PACKAGE_NAME" | grep -E '\.(fastq|fq)(\.gz)?$|\.bam$|\.cram$' && {
-            echo 'Restricted-data-like payload found in public package' >&2; exit 1;
-          } || true
+          if unzip -Z1 "$PACKAGE_NAME" | grep -Eq '\.(fastq|fq)(\.gz)?$|\.(bam|cram)$'; then
+            echo 'Restricted-data-like payload found in public package' >&2
+            exit 1
+          fi
           sha256sum "$PACKAGE_NAME" > LANTERN_CAMI3_SUBMISSION_PACKAGE_20260821_SHA256.txt
           stat --printf='%n\t%s\t%y\n' "$PACKAGE_NAME" > validation/PACKAGE_STAT.txt
           python - <<'PY'
