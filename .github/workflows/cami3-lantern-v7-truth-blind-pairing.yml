@@ -1,0 +1,176 @@
+name: CAMI III LANTERN v7 truth-blind sample pairing
+
+on:
+  pull_request:
+    branches: [lantern-v6-isolated-20260820]
+    paths:
+      - '.github/workflows/cami3-lantern-v7-truth-blind-pairing.yml'
+      - 'lantern_v7/infer_longitudinal_pairs.py'
+      - 'lantern_cami3/scripts/stream_downsample_cami_tar.py'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  FRACTION: '0.002'
+  SEED: '20260820'
+
+jobs:
+  sketch:
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        start_sample: [0, 2, 4, 6, 8, 10, 12, 14, 16, 18]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: lantern-v7-pairing
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            mash=2.3
+          cache-downloads: true
+          post-cleanup: all
+      - name: Stream two deterministic read subsets and make sample-level Mash sketches
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          start='${{ matrix.start_sample }}'
+          root="pairing_sketches/chunk_${start}"
+          mkdir -p "$root"/{sketches,provenance,logs}
+          for s in "$start" "$((start+1))"; do
+            work="$root/S${s}"
+            mkdir -p "$work"
+            url="https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_${s}_reads.tar.gz"
+            python lantern_cami3/scripts/stream_downsample_cami_tar.py \
+              --url "$url" --sample-id "S${s}" --mode short \
+              --fraction "$FRACTION" --seed "$SEED" --min-kept 10000 --out-dir "$work" \
+              > "$root/logs/S${s}_DOWNSAMPLE.log" 2>&1
+            gzip -t "$work/S${s}_R1.fastq.gz" "$work/S${s}_R2.fastq.gz"
+            gzip -cd "$work/S${s}_R1.fastq.gz" "$work/S${s}_R2.fastq.gz" > "$work/S${s}_combined.fastq"
+            mash sketch -r -k 21 -s 100000 -S "$SEED" -o "$root/sketches/S${s}" "$work/S${s}_combined.fastq" \
+              > "$root/logs/S${s}_MASH.stdout" 2> "$root/logs/S${s}_MASH.log"
+            test -s "$root/sketches/S${s}.msh"
+            cp "$work/S${s}_short_downsample.json" "$root/provenance/"
+            sha256sum "$root/sketches/S${s}.msh" >> "$root/provenance/SKETCH_SHA256.txt"
+            rm -rf "$work"
+          done
+          git rev-parse HEAD > "$root/provenance/GIT_HEAD.txt"
+          uname -a > "$root/provenance/UNAME.txt"
+          mash --version > "$root/provenance/MASH_VERSION.txt"
+          python --version > "$root/provenance/PYTHON_VERSION.txt"
+          printf 'fraction=%s\nseed=%s\ngold_accessed=false\n' "$FRACTION" "$SEED" > "$root/provenance/FROZEN_PARAMETERS.txt"
+          find "$root" -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > "$root/SHA256SUMS.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LANTERN_CAMI3_V7_PAIRING_SKETCHES_${{ matrix.start_sample }}_20260820
+          path: pairing_sketches/chunk_${{ matrix.start_sample }}
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
+
+  infer-and-freeze:
+    needs: sketch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: LANTERN_CAMI3_V7_PAIRING_SKETCHES_*_20260820
+          path: incoming
+          merge-multiple: true
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: lantern-v7-infer
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            mash=2.3
+          cache-downloads: true
+          post-cleanup: all
+      - name: Build complete truth-blind distance matrix and freeze exact pairing
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=pairing_result
+          mkdir -p "$root"/{sketches,provenance,postfreeze_audit}
+          find incoming -type f -name 'S*.msh' -exec cp {} "$root/sketches/" \;
+          n=$(find "$root/sketches" -type f -name 'S*.msh' | wc -l)
+          test "$n" -eq 20
+          mapfile -t sketches < <(find "$root/sketches" -type f -name 'S*.msh' | sort -V)
+          mash paste "$root/all_samples" "${sketches[@]}"
+          mash dist "$root/all_samples.msh" "$root/all_samples.msh" > "$root/ALL_SAMPLE_MASH_DISTANCES.tsv"
+          python lantern_v7/infer_longitudinal_pairs.py \
+            --mash-dist "$root/ALL_SAMPLE_MASH_DISTANCES.tsv" --expected-samples 20 \
+            --exclude-reserve-sample 0 --exclude-reserve-sample 1 \
+            --exclude-reserve-sample 10 --exclude-reserve-sample 11 \
+            --exclude-reserve-sample 14 --exclude-reserve-sample 15 \
+            --out "$root/frozen_pairing" > "$root/PAIRING_CONSOLE.log" 2>&1
+          test -s "$root/frozen_pairing/TRUTH_BLIND_PAIRING_FREEZE.json"
+          cp lantern_v7/infer_longitudinal_pairs.py "$root/provenance/"
+          git rev-parse HEAD > "$root/provenance/GIT_HEAD.txt"
+          uname -a > "$root/provenance/UNAME.txt"
+          mash --version > "$root/provenance/MASH_VERSION.txt"
+          python --version > "$root/provenance/PYTHON_VERSION.txt"
+          sha256sum "$root/ALL_SAMPLE_MASH_DISTANCES.tsv" "$root/frozen_pairing/TRUTH_BLIND_PAIRING_FREEZE.json" \
+            lantern_v7/infer_longitudinal_pairs.py > "$root/provenance/FREEZE_SHA256.txt"
+          rm -rf incoming "$root/sketches" "$root/all_samples.msh"
+
+      - name: Compare with prior GSA-overlap inference only after truth-blind freeze
+        uses: actions/download-artifact@v4
+        with:
+          name: CAMI3_TOY_SAMPLE_ASSIGNMENT_AUDIT_20260820
+          path: postfreeze_reference
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: '32310488140'
+      - name: Record post-freeze agreement without changing the pairing
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv,json
+          from pathlib import Path
+          frozen=json.loads(Path('pairing_result/frozen_pairing/TRUTH_BLIND_PAIRING_FREEZE.json').read_text())
+          reference=next(Path('postfreeze_reference').rglob('INFERRED_MAXIMUM_OVERLAP_MATCHING.csv'))
+          with reference.open(newline='') as f:
+              rows=list(csv.DictReader(f))
+          ref={tuple(sorted((int(r['sample_a']),int(r['sample_b'])))) for r in rows}
+          got={tuple(sorted(pair)) for pair in frozen['pairs']}
+          audit={
+            'status':'POSTFREEZE_COMPARISON_COMPLETE',
+            'truth_blind_pairs':sorted(map(list,got)),
+            'gsa_overlap_inferred_pairs':sorted(map(list,ref)),
+            'exact_pair_agreement_count':len(got&ref),
+            'exact_pair_agreement_fraction':len(got&ref)/len(got),
+            'reserved_pair_unchanged':frozen['reserved_untouched_pair'],
+            'pairing_was_modified_after_comparison':False,
+            'boundary':'GSA-overlap matching is itself an inference, not an official assignment, and was opened only after the read-only pairing was frozen.'
+          }
+          Path('pairing_result/postfreeze_audit/GSA_OVERLAP_COMPARISON.json').write_text(json.dumps(audit,indent=2,sort_keys=True)+'\n')
+          PY
+          rm -rf postfreeze_reference
+          find pairing_result -type f ! -name SHA256SUMS_ALL.txt -print0 | sort -z | xargs -0 sha256sum > pairing_result/SHA256SUMS_ALL.txt
+          du -ah pairing_result | sort -h > pairing_result/FILE_SIZES.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LANTERN_CAMI3_V7_TRUTH_BLIND_PAIRING_20260820
+          path: pairing_result
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
