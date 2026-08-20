@@ -1,0 +1,184 @@
+name: LANTERN global versus pair coassembly finalizer
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/lantern-global-coassembly-finalizer.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  RESEARCH_REF: 'lantern-v7-multi-angle-20260820'
+  UPSTREAM_RUN_ID: '32361079019'
+  SEED: '20260822'
+
+jobs:
+  finalize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RESEARCH_REF }}
+          fetch-depth: 1
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: LANTERN_GLOBAL_READS_S*_20260820
+          path: upstream/reads
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.UPSTREAM_RUN_ID }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: LANTERN_GLOBAL_global_metaspades_20260820
+          path: upstream/global_metaspades
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.UPSTREAM_RUN_ID }}
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: lantern-global-finalizer
+          condarc: |
+            channels: [conda-forge, bioconda]
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            megahit=1.2.9
+            minimap2=2.31
+            seqkit=2.13.0
+          cache-downloads: true
+          post-cleanup: all
+      - name: Materialize immutable inputs
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=global_coassembly_final
+          mkdir -p "$root"/{reads,assemblies,evaluation,truth_download,truth,decision,provenance,logs}
+          for s in $(seq 0 9); do
+            for k in R1 R2; do
+              src=$(find upstream/reads -type f -name "S${s}_${k}.fastq.gz" -print -quit)
+              test -s "$src"
+              cp "$src" "$root/reads/S${s}_${k}.fastq.gz"
+              gzip -t "$root/reads/S${s}_${k}.fastq.gz"
+            done
+          done
+          fasta=$(find upstream/global_metaspades -type f -name final_assembly.fasta -size +0c -print -quit)
+          test -s "$fasta"
+          cp "$fasta" "$root/assemblies/global_metaspades.fasta"
+          sha256sum "$root/reads"/*.fastq.gz "$root/assemblies/global_metaspades.fasta" > "$root/provenance/IMMUTABLE_INPUT_SHA256SUMS.txt"
+          printf 'upstream_run=%s\nsamples=0-9\nfraction=0.01\nseed=%s\ntruth_accessed=false\n' "$UPSTREAM_RUN_ID" "$SEED" > "$root/provenance/BOUNDARY.txt"
+          rm -rf upstream
+      - name: Repair and complete MEGAHIT global and pair assemblies
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=global_coassembly_final
+          build() {
+            local label="$1"; shift
+            local samples=("$@")
+            local r1="$root/reads/${label}_R1.fastq.gz" r2="$root/reads/${label}_R2.fastq.gz"
+            : > "$r1"; : > "$r2"
+            for s in "${samples[@]}"; do cat "$root/reads/S${s}_R1.fastq.gz" >> "$r1"; cat "$root/reads/S${s}_R2.fastq.gz" >> "$r2"; done
+            gzip -t "$r1" "$r2"
+            local out="$root/megahit_${label}"
+            rm -rf "$out"
+            /usr/bin/time -v timeout --signal=TERM --kill-after=120s 240m \
+              megahit -1 "$r1" -2 "$r2" -o "$out" --min-contig-len 500 -t 4 --memory 0.8 \
+              > "$root/logs/MEGAHIT_${label}.log" 2>&1
+            test -s "$out/final.contigs.fa"
+            cp "$out/final.contigs.fa" "$root/assemblies/${label}.fasta"
+            rm -rf "$out" "$r1" "$r2"
+          }
+          build global_megahit 0 1 2 3 4 5 6 7 8 9
+          build pair_0_1 0 1
+          build pair_2_3 2 3
+          build pair_4_5 4 5
+          build pair_6_7 6 7
+          build pair_8_9 8 9
+          python - "$root" <<'PY'
+          import hashlib,sys
+          from pathlib import Path
+          root=Path(sys.argv[1]);seen=set();out=root/'assemblies/pair_union_megahit.fasta'
+          def records(path):
+              name=None;parts=[]
+              for raw in path.open():
+                  line=raw.strip()
+                  if not line:continue
+                  if line.startswith('>'):
+                      if name is not None:yield name,''.join(parts)
+                      name=line[1:].split()[0];parts=[]
+                  else:parts.append(line)
+              if name is not None:yield name,''.join(parts)
+          with out.open('w') as fo:
+              for src in sorted(root.glob('assemblies/pair_*.fasta')):
+                  for _,seq in records(src):
+                      h=hashlib.sha256(seq.encode()).hexdigest()
+                      if h in seen:continue
+                      seen.add(h);fo.write(f'>PAIR_UNION_{h[:20].upper()}\n')
+                      for i in range(0,len(seq),80):fo.write(seq[i:i+80]+'\n')
+          PY
+          for f in "$root/assemblies"/*.fasta; do python lantern_cami3/scripts/verify_cami_assembly.py "$f" --out "${f}.validation.json"; done
+          seqkit stats -T "$root/assemblies"/*.fasta > "$root/provenance/ASSEMBLY_STATS.tsv"
+          rm -rf "$root/reads"
+      - name: Freeze assemblies before gold
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=global_coassembly_final
+          python - "$root" <<'PY'
+          import hashlib,json,sys,time
+          from pathlib import Path
+          root=Path(sys.argv[1]);paths=[root/'assemblies/global_metaspades.fasta',root/'assemblies/global_megahit.fasta',root/'assemblies/pair_union_megahit.fasta']
+          (root/'provenance/PRE_GOLD_FREEZE.json').write_text(json.dumps({'status':'GLOBAL_AND_PAIR_STRUCTURES_FROZEN','samples':list(range(10)),'truth_accessed':False,'freeze_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'files':[{'path':str(p),'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()} for p in paths]},indent=2)+'\n')
+          PY
+      - name: Open public gold and compare structures
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=global_coassembly_final;args=()
+          for s in $(seq 0 9); do
+            curl -fsSL --retry 8 --retry-all-errors "https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_${s}_gsa.tar.gz" -o "$root/truth_download/sample_${s}_gsa.tar.gz"
+            args+=(--gsa-tar "S${s}=$root/truth_download/sample_${s}_gsa.tar.gz")
+          done
+          python lantern_cami3/scripts/extract_gsa_truth.py "${args[@]}" --out "$root/truth" > "$root/logs/EXTRACT_TRUTH.log" 2>&1
+          minimap2 -I 4G -d "$root/truth/toy_truth.mmi" "$root/truth/combined_truth.fasta" > "$root/logs/TRUTH_INDEX.stdout" 2> "$root/logs/TRUTH_INDEX.log"
+          for method in global_metaspades global_megahit pair_union_megahit; do
+            dir="$root/evaluation/$method";mkdir -p "$dir"
+            minimap2 -x asm5 -c -N 100 -t 4 "$root/truth/toy_truth.mmi" "$root/assemblies/${method}.fasta" > "$dir/assembly_to_truth.paf" 2> "$dir/minimap2.log"
+            python lantern_cami3/scripts/evaluate_gold_coverage.py --paf "$dir/assembly_to_truth.paf" --truth-mapping "$root/truth/truth_mapping.tsv" --assembly-fasta "$root/assemblies/${method}.fasta" --min-identity 0.90 --min-alignment 500 --out "$dir" > "$dir/evaluate.log" 2>&1
+            rm -f "$dir/assembly_to_truth.paf"
+          done
+          python - "$root" <<'PY'
+          import json,sys
+          from pathlib import Path
+          root=Path(sys.argv[1]);methods=['global_metaspades','global_megahit','pair_union_megahit'];rows=[]
+          for m in methods:
+              x=json.loads((root/f'evaluation/{m}/GOLD_COVERAGE_SUMMARY.json').read_text());rows.append({'method':m,'genome_fraction_percent':x['genome_fraction_percent'],'mean_genome_recovery_percent':100*x['mean_genome_recovery'],'chimera_bp_fraction':x['cross_binid_chimeric_bp_fraction'],'assembly_bp':x['assembly_total_bp'],'contigs':x['assembly_contigs_total']})
+          best=max(rows,key=lambda r:(r['genome_fraction_percent'],r['mean_genome_recovery_percent'],-r['chimera_bp_fraction']))
+          obj={'status':'COMPLETE','methods':rows,'best_by_genome_fraction':best,'global_vs_pair_union_complete':True,'claim_boundary':'Public Toy low-depth structural pivot audit only; not a hidden CAMI result.'}
+          (root/'decision/GLOBAL_COASSEMBLY_DECISION.json').write_text(json.dumps(obj,indent=2)+'\n')
+          (root/'decision/GLOBAL_COASSEMBLY_DECISION.md').write_text('# Global coassembly pivot\n\n'+f"Best: **{best['method']}**; genome fraction {best['genome_fraction_percent']:.6f}%.\n")
+          PY
+      - name: Compact and upload audit
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          root=global_coassembly_final
+          rm -rf "$root/truth_download" "$root/truth/references" "$root/assemblies"
+          rm -f "$root/truth/combined_truth.fasta" "$root/truth/toy_truth.mmi"
+          find "$root" -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > "$root/SHA256SUMS.txt" || true
+          find "$root" -type f -printf '%P\t%s\n' | sort > "$root/CONTENTS.tsv" || true
+          du -sh "$root" > "$root/PACKAGE_SIZE.txt" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: LANTERN_GLOBAL_COASSEMBLY_FINAL_20260820
+          path: global_coassembly_final
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
