@@ -1,0 +1,60 @@
+{
+  "status": "FROZEN_CANDIDATE_PACKAGE",
+  "candidate": "LANTERN-v7-short-terminal-500-s1",
+  "freeze_date": "2026-08-20",
+  "algorithm_source_commit": "d2f44b529d2198784ce7666ba1c98ae44709f981",
+  "correction_package_commit": "recorded at package build in provenance/GIT_HEAD.txt",
+  "official_toy_mapping_pairs": [[0,1],[2,7],[3,5],[4,8],[6,19],[9,12],[10,15],[11,13],[14,16],[17,18]],
+  "sequential_pairing_allowed": false,
+  "similarity_inferred_pairing_allowed": false,
+  "public_toy_microtuning_stopped": true,
+  "parameters": {
+    "alignment_identity": 0.97,
+    "alignment_min_bp": 500,
+    "containment_fraction": 0.98,
+    "min_candidate_length": 500,
+    "min_source_count": 1,
+    "min_terminal_bp": 500,
+    "single_target_terminal": true,
+    "whole_max_aligned_fraction": 0.3
+  },
+  "software": {
+    "python": "3.11.15",
+    "megahit": "1.2.9",
+    "spades": "4.3.0",
+    "flye": "2.9.6",
+    "minimap2": "2.31",
+    "samtools": "1.24",
+    "mash": "2.3",
+    "seqkit": "2.13.0",
+    "pigz": "2.8"
+  },
+  "input_mapping_columns": ["individual_id", "sample_id", "timepoint"],
+  "input_manifest_columns": ["sample_id", "short_r1", "short_r2", "long_reads"],
+  "output": {
+    "format": "FASTA",
+    "alphabet": "uppercase ATCGN only",
+    "id_rule": "I<individual>|<source_record_id>",
+    "validator": "lantern_cami3/scripts/verify_cami_assembly.py"
+  },
+  "v7_cross_individual_artifact": {
+    "run_id": 32369519543,
+    "artifact_id": 9408725398,
+    "github_archive_digest": "ffeea8901c0c3b56bdcba82f0a8da0a5a32cb3ac5dcb2d1e245b9f7512c3d703",
+    "status": "PARTIAL",
+    "strict_success": false,
+    "corrected_classification": "cross-individual stress",
+    "gf_gain_pp": 0.19705271268690616,
+    "mean_gain_pp": 0.8235269478120657,
+    "low_abundance_gain_pp": 0.343797130120449,
+    "relative_chimera_change": -0.44187475457456615,
+    "cross_individual_coassembly_contribution_pp": 0.8173546210815257
+  },
+  "active_challenge": {
+    "reads_applied": false,
+    "portal_submitted": false,
+    "mapping_populated": false,
+    "reason": "active challenge paths/metadata and portal authorization are not present in this workspace"
+  },
+  "claim_boundary": "Submission candidate engineering freeze only; no positive assembler claim, hidden-CAMI result, competition rank, novel genome discovery or longitudinal validation claim from 18/19."
+}
