@@ -1,0 +1,159 @@
+{
+  "version": "LANTERN-v5-longread-grid-20260820",
+  "development_pair": [2, 3],
+  "untouched_validation_pair": [16, 17],
+  "final_replication_pair": [18, 19],
+  "read_input": {
+    "short_fraction": 0.12,
+    "long_fraction": 0.10,
+    "seed": 20260819
+  },
+  "backbones": [
+    "metamdbg_long_pair",
+    "myloasm_long_pair",
+    "metaspades_hybrid_pair"
+  ],
+  "auxiliary_sources": [
+    "megahit_short_pair",
+    "metaspades_short_pair",
+    "metaspades_hybrid_pair",
+    "metaviralspades_short_pair",
+    "metaplasmidspades_short_pair",
+    "flye_long_pair",
+    "metamdbg_long_pair",
+    "myloasm_long_pair"
+  ],
+  "variants": {
+    "balanced": {
+      "cluster_identity": 0.97,
+      "cluster_shorter_coverage": 0.85,
+      "maximum_n_fraction": 0.05,
+      "minimum_assembler_sources_for_consensus": 2,
+      "minimum_contig_length": 1000,
+      "minimum_rescue_timepoints": 2,
+      "minimum_unique_long_spans": 2,
+      "selection_score_minimum": 0.30,
+      "support_breadth": 0.50,
+      "support_depth": 0.75,
+      "truth_blind": true,
+      "version": "LANTERN-v5-balanced-20260820",
+      "weights": {
+        "length": 0.10,
+        "long_breadth": 0.14,
+        "long_spanning": 0.21,
+        "short_breadth": 0.10,
+        "source_consensus": 0.20,
+        "temporal_recurrence": 0.25
+      }
+    },
+    "long_precise": {
+      "cluster_identity": 0.97,
+      "cluster_shorter_coverage": 0.85,
+      "maximum_n_fraction": 0.03,
+      "minimum_assembler_sources_for_consensus": 2,
+      "minimum_contig_length": 1200,
+      "minimum_rescue_timepoints": 2,
+      "minimum_unique_long_spans": 3,
+      "selection_score_minimum": 0.35,
+      "support_breadth": 0.60,
+      "support_depth": 1.00,
+      "truth_blind": true,
+      "version": "LANTERN-v5-long-precise-20260820",
+      "weights": {
+        "length": 0.06,
+        "long_breadth": 0.22,
+        "long_spanning": 0.28,
+        "short_breadth": 0.07,
+        "source_consensus": 0.15,
+        "temporal_recurrence": 0.22
+      }
+    },
+    "consensus_temporal": {
+      "cluster_identity": 0.98,
+      "cluster_shorter_coverage": 0.90,
+      "maximum_n_fraction": 0.04,
+      "minimum_assembler_sources_for_consensus": 2,
+      "minimum_contig_length": 1000,
+      "minimum_rescue_timepoints": 2,
+      "minimum_unique_long_spans": 2,
+      "selection_score_minimum": 0.33,
+      "support_breadth": 0.50,
+      "support_depth": 0.75,
+      "truth_blind": true,
+      "version": "LANTERN-v5-consensus-temporal-20260820",
+      "weights": {
+        "length": 0.06,
+        "long_breadth": 0.10,
+        "long_spanning": 0.14,
+        "short_breadth": 0.08,
+        "source_consensus": 0.31,
+        "temporal_recurrence": 0.31
+      }
+    },
+    "low_abundance": {
+      "cluster_identity": 0.97,
+      "cluster_shorter_coverage": 0.85,
+      "maximum_n_fraction": 0.05,
+      "minimum_assembler_sources_for_consensus": 2,
+      "minimum_contig_length": 1000,
+      "minimum_rescue_timepoints": 2,
+      "minimum_unique_long_spans": 2,
+      "selection_score_minimum": 0.28,
+      "support_breadth": 0.35,
+      "support_depth": 0.50,
+      "truth_blind": true,
+      "version": "LANTERN-v5-low-abundance-20260820",
+      "weights": {
+        "length": 0.07,
+        "long_breadth": 0.17,
+        "long_spanning": 0.20,
+        "short_breadth": 0.08,
+        "source_consensus": 0.20,
+        "temporal_recurrence": 0.28
+      }
+    },
+    "ultra_strict": {
+      "cluster_identity": 0.99,
+      "cluster_shorter_coverage": 0.95,
+      "maximum_n_fraction": 0.02,
+      "minimum_assembler_sources_for_consensus": 3,
+      "minimum_contig_length": 1500,
+      "minimum_rescue_timepoints": 2,
+      "minimum_unique_long_spans": 4,
+      "selection_score_minimum": 0.42,
+      "support_breadth": 0.70,
+      "support_depth": 1.50,
+      "truth_blind": true,
+      "version": "LANTERN-v5-ultra-strict-20260820",
+      "weights": {
+        "length": 0.08,
+        "long_breadth": 0.20,
+        "long_spanning": 0.24,
+        "short_breadth": 0.08,
+        "source_consensus": 0.22,
+        "temporal_recurrence": 0.18
+      }
+    }
+  },
+  "development_selection_rule": {
+    "primary_objective": "maximum genome-fraction gain over the strongest eligible multimodal baseline",
+    "secondary_objective": "maximum paired mean per-genome recovery gain",
+    "tertiary_objective": "maximum low-abundance recovery gain",
+    "safety_constraints": {
+      "relative_cross_binid_chimera_increase_maximum": 0.10,
+      "alignment_to_unique_truth_ratio_increase_maximum": 0.10,
+      "longitudinal_ablation_drop_minimum_percentage_points": 0.00
+    },
+    "winner_count": 1,
+    "no_safe_winner_behavior": "do not promote v5 to untouched validation"
+  },
+  "strict_success_gates": {
+    "genome_fraction_gain_minimum_percentage_points": 0.5,
+    "mean_genome_recovery_gain_minimum_percentage_points": 1.0,
+    "relative_cross_binid_chimera_increase_maximum": 0.10,
+    "longitudinal_ablation_drop_minimum_percentage_points": 0.5,
+    "low_abundance_gain_minimum_percentage_points": 2.0,
+    "pseudo_novel_improvement_required_in_all_tiers": true
+  },
+  "claim_boundary": "Development-pair performance can select one frozen v5 method for untouched validation. It is not a CAMI III hidden-challenge result, rank, or novel-organism discovery."
+}
