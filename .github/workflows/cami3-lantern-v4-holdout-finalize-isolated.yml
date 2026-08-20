@@ -5,6 +5,10 @@ on:
     branches: [lantern-isolated-finalize-20260820]
     paths:
       - '.github/workflows/cami3-lantern-v4-holdout-finalize-isolated.yml'
+  pull_request:
+    branches: [cami3-lantern-20260819]
+    paths:
+      - '.github/workflows/cami3-lantern-v4-holdout-finalize-isolated.yml'
   workflow_dispatch:
 
 permissions:
