@@ -1,0 +1,342 @@
+name: CAMI III LANTERN frozen additive rule across corrected Toy pairs
+
+on:
+  pull_request:
+    branches: [cami3-lantern-20260819]
+    paths:
+      - '.github/workflows/cami3-lantern-additive-official-holdout.yml'
+      - 'lantern_cami3/scripts/aggregate_additive_official_holdout.py'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  SOURCE_RUN_ID: '32314301866'
+  DEVELOPMENT_RUN_ID: '32322092727'
+  DEVELOPMENT_ARTIFACT: 'LANTERN_CAMI3_ADDITIVE_RESCUE_DEVELOPMENT_20260820'
+
+jobs:
+  pair-audit:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pair_id: official_02_07
+            sample_a: 2
+            sample_b: 7
+            artifact: LANTERN_CAMI3_V3_HOLDOUT_official_02_07_20260820
+          - pair_id: official_03_05
+            sample_a: 3
+            sample_b: 5
+            artifact: LANTERN_CAMI3_V3_HOLDOUT_official_03_05_20260820
+          - pair_id: official_04_08
+            sample_a: 4
+            sample_b: 8
+            artifact: LANTERN_CAMI3_V3_HOLDOUT_official_04_08_20260820
+          - pair_id: official_06_19
+            sample_a: 6
+            sample_b: 19
+            artifact: LANTERN_CAMI3_V3_HOLDOUT_official_06_19_20260820
+          - pair_id: official_09_12
+            sample_a: 9
+            sample_b: 12
+            artifact: LANTERN_CAMI3_V3_HOLDOUT_official_09_12_20260820
+          - pair_id: official_10_15
+            sample_a: 10
+            sample_b: 15
+            artifact: LANTERN_CAMI3_V3_HOLDOUT_official_10_15_20260820
+          - pair_id: official_11_13
+            sample_a: 11
+            sample_b: 13
+            artifact: LANTERN_CAMI3_V3_HOLDOUT_official_11_13_20260820
+          - pair_id: official_14_16
+            sample_a: 14
+            sample_b: 16
+            artifact: LANTERN_CAMI3_V3_HOLDOUT_official_14_16_20260820
+          - pair_id: official_17_18
+            sample_a: 17
+            sample_b: 18
+            artifact: LANTERN_CAMI3_V3_HOLDOUT_official_17_18_20260820
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download prior truth-blind input carrier
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: prior_artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+
+      - name: Download immutable development-rule artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.DEVELOPMENT_ARTIFACT }}
+          path: development_artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.DEVELOPMENT_RUN_ID }}
+
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: lantern-additive-reapply
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            minimap2=2.31
+            mash=2.3
+            seqkit=2.13.0
+          cache-downloads: true
+          post-cleanup: all
+
+      - name: Isolate original pre-truth inputs and verify frozen additive rule
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          PAIR='${{ matrix.pair_id }}'; A='${{ matrix.sample_a }}'; B='${{ matrix.sample_b }}'; ROOT="additive_reapply_${PAIR}"
+          mkdir -p "$ROOT"/{inputs,variants,evaluation,pseudo_novel,truth_download,truth,decision,provenance,logs}
+
+          baseline=$(find prior_artifact -type f -path '*/assemblies/megahit_pair/final.contigs.fa' -size +0c -print -quit)
+          metaspades=$(find prior_artifact -type f -path '*/assemblies/metaspades_pair/contigs.fasta' -size +0c -print -quit)
+          reps=$(find prior_artifact -type f -path '*/truth_blind/clusters/cluster_representatives.fasta' -size +0c -print -quit)
+          meta=$(find prior_artifact -type f -path '*/truth_blind/clusters/representative_metadata.tsv' -size +0c -print -quit)
+          fullsel=$(find prior_artifact -type f -path '*/truth_blind/v1_full/LANTERN_SELECTION.tsv' -size +0c -print -quit)
+          nolsel=$(find prior_artifact -type f -path '*/truth_blind/v1_no_longitudinal/LANTERN_SELECTION.tsv' -size +0c -print -quit)
+          oldfreeze=$(find prior_artifact -type f -path '*/provenance/HOLDOUT_TRUTH_BLIND_FREEZE.json' -size +0c -print -quit)
+          rule=$(find development_artifact -type f -name ADDITIVE_DEVELOPMENT_FREEZE.json -size +0c -print -quit)
+          for f in "$baseline" "$metaspades" "$reps" "$meta" "$fullsel" "$nolsel" "$oldfreeze" "$rule"; do test -s "$f"; done
+
+          python - "$oldfreeze" "$rule" "$PAIR" "$A" "$B" <<'PY'
+          import json,sys
+          old=json.load(open(sys.argv[1])); rule=json.load(open(sys.argv[2]))
+          assert old.get('heldout_truth_accessed') is False, old
+          assert rule['status']=='WINNER_FROZEN_FOR_UNTOUCHED_PAIR_VALIDATION', rule
+          w=rule['winner']
+          assert w['variant']=='additive_selected_nonbaseline' and w['mode']=='selected_nonbaseline', w
+          assert w['baseline_source_id']=='megahit_pair', w
+          assert w['thresholds']=={'min_score':0.0,'min_breadth':0.0,'min_length':1000,'min_timepoints':1}, w
+          print(json.dumps({'pair_id':sys.argv[3],'samples':[int(sys.argv[4]),int(sys.argv[5])],'original_pretruth_freeze_valid':True,'frozen_rule_valid':True},indent=2))
+          PY
+
+          cp "$baseline" "$ROOT/inputs/megahit_pair.fasta"
+          cp "$metaspades" "$ROOT/inputs/metaspades_pair.fasta"
+          cp "$reps" "$ROOT/inputs/cluster_representatives.fasta"
+          cp "$meta" "$ROOT/inputs/representative_metadata.tsv"
+          cp "$fullsel" "$ROOT/inputs/LANTERN_SELECTION_full.tsv"
+          cp "$nolsel" "$ROOT/inputs/LANTERN_SELECTION_no_longitudinal.tsv"
+          cp "$oldfreeze" "$ROOT/provenance/ORIGINAL_HOLDOUT_TRUTH_BLIND_FREEZE.json"
+          cp "$rule" "$ROOT/provenance/FROZEN_ADDITIVE_RULE.json"
+          sha256sum "$ROOT"/inputs/* "$ROOT"/provenance/*.json > "$ROOT/provenance/INPUT_SHA256SUMS.txt"
+          printf 'pair=%s\nsample_a=%s\nsample_b=%s\nsource_run=%s\nsource_artifact=%s\ndevelopment_run=%s\ndevelopment_artifact=%s\nread_fraction_in_source_artifact=0.01\npair_specific_tuning=false\n' \
+            "$PAIR" "$A" "$B" "$SOURCE_RUN_ID" '${{ matrix.artifact }}' "$DEVELOPMENT_RUN_ID" "$DEVELOPMENT_ARTIFACT" > "$ROOT/provenance/BOUNDARY.txt"
+          git rev-parse HEAD > "$ROOT/provenance/GIT_HEAD.txt"
+          python --version > "$ROOT/provenance/PYTHON_VERSION.txt"
+          minimap2 --version > "$ROOT/provenance/MINIMAP2_VERSION.txt"
+          mash --version > "$ROOT/provenance/MASH_VERSION.txt"
+          micromamba list > "$ROOT/provenance/MICROMAMBA_LIST.txt"
+          rm -rf prior_artifact development_artifact
+
+      - name: Apply exact frozen additive rule and longitudinal ablation without gold access
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          PAIR='${{ matrix.pair_id }}'; ROOT="additive_reapply_${PAIR}"
+          for ab in full no_longitudinal; do
+            python lantern_cami3/scripts/build_additive_rescue.py \
+              --baseline-fasta "$ROOT/inputs/megahit_pair.fasta" \
+              --representative-fasta "$ROOT/inputs/cluster_representatives.fasta" \
+              --representative-metadata "$ROOT/inputs/representative_metadata.tsv" \
+              --selection "$ROOT/inputs/LANTERN_SELECTION_${ab}.tsv" \
+              --baseline-source-id megahit_pair --mode selected_nonbaseline \
+              --min-score 0 --min-breadth 0 --min-length 1000 --min-timepoints 1 \
+              --out "$ROOT/variants/$ab" > "$ROOT/logs/BUILD_${ab}.log" 2>&1
+            python lantern_cami3/scripts/verify_cami_assembly.py \
+              "$ROOT/variants/$ab/ADDITIVE_ASSEMBLY.fasta" --out "$ROOT/variants/$ab/VALIDATION.json"
+          done
+
+          python - "$ROOT" <<'PY'
+          import hashlib,json,sys,time
+          from pathlib import Path
+          root=Path(sys.argv[1]); keep=[root/'inputs/megahit_pair.fasta',root/'inputs/metaspades_pair.fasta',root/'inputs/cluster_representatives.fasta',root/'inputs/representative_metadata.tsv',root/'inputs/LANTERN_SELECTION_full.tsv',root/'inputs/LANTERN_SELECTION_no_longitudinal.tsv',root/'variants/full/ADDITIVE_ASSEMBLY.fasta',root/'variants/no_longitudinal/ADDITIVE_ASSEMBLY.fasta',root/'provenance/FROZEN_ADDITIVE_RULE.json',Path('lantern_cami3/scripts/build_additive_rescue.py')]
+          files=[]
+          for p in keep:
+              if not p.is_file(): raise SystemExit(f'missing freeze file {p}')
+              files.append({'path':str(p),'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()})
+          obj={'freeze_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'pair_specific_tuning':False,'gold_accessed_in_this_workflow':False,'rule_modified':False,'files':files,'boundary':'The development-selected additive rule and longitudinal ablation were applied to previously frozen pre-truth inputs without pair-specific threshold changes. Original carrier artifacts had been evaluated previously, so this is frozen-rule reapplication rather than a prospectively untouched experiment.'}
+          (root/'provenance/DERIVED_ASSEMBLY_FREEZE.json').write_text(json.dumps(obj,indent=2)+'\n')
+          PY
+          sha256sum "$ROOT/provenance/DERIVED_ASSEMBLY_FREEZE.json" > "$ROOT/provenance/DERIVED_ASSEMBLY_FREEZE_SHA256.txt"
+
+      - name: Download public pair gold after derived assembly freeze and evaluate fixed methods
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          PAIR='${{ matrix.pair_id }}'; A='${{ matrix.sample_a }}'; B='${{ matrix.sample_b }}'; ROOT="additive_reapply_${PAIR}"
+          for s in "$A" "$B"; do
+            curl -fsSL --retry 8 --retry-all-errors \
+              "https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_${s}_gsa.tar.gz" \
+              -o "$ROOT/truth_download/sample_${s}_gsa.tar.gz"
+          done
+          sha256sum "$ROOT/truth_download"/*.tar.gz > "$ROOT/provenance/GSA_SHA256SUMS.txt"
+          python lantern_cami3/scripts/extract_gsa_truth.py \
+            --gsa-tar "S${A}=$ROOT/truth_download/sample_${A}_gsa.tar.gz" \
+            --gsa-tar "S${B}=$ROOT/truth_download/sample_${B}_gsa.tar.gz" \
+            --out "$ROOT/truth" > "$ROOT/logs/EXTRACT_TRUTH.log" 2>&1
+          minimap2 -I 4G -d "$ROOT/truth/toy_truth.mmi" "$ROOT/truth/combined_truth.fasta" \
+            > "$ROOT/logs/TRUTH_INDEX.stdout" 2> "$ROOT/logs/TRUTH_INDEX.log"
+
+          cat > "$ROOT/provenance/METHODS.tsv" <<EOF
+          method	role	fasta
+          megahit_pair	frozen_backbone	$ROOT/inputs/megahit_pair.fasta
+          metaspades_pair	strong_baseline	$ROOT/inputs/metaspades_pair.fasta
+          additive_full	candidate	$ROOT/variants/full/ADDITIVE_ASSEMBLY.fasta
+          additive_no_longitudinal	ablation	$ROOT/variants/no_longitudinal/ADDITIVE_ASSEMBLY.fasta
+          EOF
+          tail -n +2 "$ROOT/provenance/METHODS.tsv" | while IFS=$'\t' read -r name role fasta; do
+            dir="$ROOT/evaluation/$name"; mkdir -p "$dir"
+            minimap2 -x asm5 -c -N 100 -t 4 "$ROOT/truth/toy_truth.mmi" "$fasta" \
+              > "$dir/assembly_to_truth.paf" 2> "$dir/minimap2.log"
+            python lantern_cami3/scripts/evaluate_gold_coverage.py \
+              --paf "$dir/assembly_to_truth.paf" --truth-mapping "$ROOT/truth/truth_mapping.tsv" \
+              --assembly-fasta "$fasta" --min-identity 0.90 --min-alignment 500 \
+              --out "$dir" > "$dir/evaluate_console.log" 2>&1
+            rm -f "$dir/assembly_to_truth.paf" "$dir/per_truth_contig.tsv"
+          done
+
+      - name: Build pair pseudo-novel audit and decision
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          PAIR='${{ matrix.pair_id }}'; A='${{ matrix.sample_a }}'; B='${{ matrix.sample_b }}'; ROOT="additive_reapply_${PAIR}"
+          python - "$ROOT" <<'PY'
+          import csv,sys
+          from pathlib import Path
+          root=Path(sys.argv[1]); paths=[]
+          for r in csv.DictReader(open(root/'truth/genome_reference_manifest.tsv'),delimiter='\t'):
+              if int(r['truth_bp'])<50000: continue
+              p=root/'truth/references'/Path(r['reference_path']).name
+              if not p.is_file(): raise SystemExit(f'missing reference {p}')
+              paths.append(str(p))
+          (root/'pseudo_novel/reference_files.txt').write_text('\n'.join(paths)+'\n')
+          PY
+          mash sketch -k 21 -s 1000 -l "$ROOT/pseudo_novel/reference_files.txt" -o "$ROOT/pseudo_novel/truth_genomes" > "$ROOT/logs/MASH_SKETCH.log" 2>&1
+          mash dist "$ROOT/pseudo_novel/truth_genomes.msh" "$ROOT/pseudo_novel/truth_genomes.msh" > "$ROOT/pseudo_novel/distances.tsv"
+          python lantern_cami3/scripts/build_pseudo_novel_audit.py \
+            --manifest "$ROOT/truth/genome_reference_manifest.tsv" --mash "$ROOT/pseudo_novel/distances.tsv" \
+            --recovery "megahit_pair=$ROOT/evaluation/megahit_pair/per_genome_recovery.tsv" \
+            --recovery "metaspades_pair=$ROOT/evaluation/metaspades_pair/per_genome_recovery.tsv" \
+            --recovery "additive_full=$ROOT/evaluation/additive_full/per_genome_recovery.tsv" \
+            --recovery "additive_no_longitudinal=$ROOT/evaluation/additive_no_longitudinal/per_genome_recovery.tsv" \
+            --min-truth-bp 50000 --out "$ROOT/pseudo_novel/results" > "$ROOT/logs/PSEUDO_NOVEL.log" 2>&1
+
+          python - "$ROOT" "$PAIR" "$A" "$B" <<'PY'
+          import csv,json,sys
+          from pathlib import Path
+          root=Path(sys.argv[1]); pair=sys.argv[2]; A=int(sys.argv[3]); B=int(sys.argv[4])
+          names=['megahit_pair','metaspades_pair','additive_full','additive_no_longitudinal']
+          scores={n:json.loads((root/f'evaluation/{n}/GOLD_COVERAGE_SUMMARY.json').read_text()) for n in names}
+          strongest=max(['megahit_pair','metaspades_pair'],key=lambda n:float(scores[n]['genome_fraction_percent']))
+          full=scores['additive_full']; base=scores[strongest]; mega=scores['megahit_pair']; no=scores['additive_no_longitudinal']
+          def rel(new,old):
+              new=float(new); old=float(old)
+              return (new-old)/old if old else (0.0 if new==0 else None)
+          rows=list(csv.DictReader(open(root/'pseudo_novel/results/PSEUDO_NOVEL_RECOVERY_SUMMARY.tsv'),delimiter='\t'))
+          tiers=['exact_target_withheld','species_neighbour_withheld','genus_neighbour_withheld','deep_neighbour_withheld']
+          def val(method,tier):
+              r=next((x for x in rows if x['method']==method and x['tier']==tier),None)
+              return float(r['mean_recovery']) if r and r['mean_recovery'] not in {'','None'} else None
+          gains={}
+          for t in tiers:
+              f=val('additive_full',t); b=val(strongest,t)
+              gains[t]=(100*(f-b)) if f is not None and b is not None else None
+          d={
+            'status':'COMPLETE','pair_id':pair,'sample_a':A,'sample_b':B,
+            'strongest_baseline':strongest,
+            'strongest_baseline_genome_fraction_percent':float(base['genome_fraction_percent']),
+            'frozen_megahit_genome_fraction_percent':float(mega['genome_fraction_percent']),
+            'additive_full_genome_fraction_percent':float(full['genome_fraction_percent']),
+            'genome_fraction_gain_vs_strongest_pp':float(full['genome_fraction_percent'])-float(base['genome_fraction_percent']),
+            'genome_fraction_gain_vs_frozen_megahit_pp':float(full['genome_fraction_percent'])-float(mega['genome_fraction_percent']),
+            'mean_recovery_gain_vs_strongest_pp':100*(float(full['mean_genome_recovery'])-float(base['mean_genome_recovery'])),
+            'mean_recovery_gain_vs_frozen_megahit_pp':100*(float(full['mean_genome_recovery'])-float(mega['mean_genome_recovery'])),
+            'longitudinal_ablation_drop_pp':float(full['genome_fraction_percent'])-float(no['genome_fraction_percent']),
+            'relative_chimera_change_vs_strongest':rel(full['cross_binid_chimeric_bp_fraction'],base['cross_binid_chimeric_bp_fraction']),
+            'alignment_ratio_change_vs_strongest':float(full['alignment_to_unique_truth_ratio'])-float(base['alignment_to_unique_truth_ratio']),
+            'pseudo_novel_gain_pp':gains,
+            'pair_directional_pass':(
+              float(full['genome_fraction_percent'])>float(base['genome_fraction_percent']) and
+              float(full['mean_genome_recovery'])>float(base['mean_genome_recovery']) and
+              float(full['genome_fraction_percent'])>float(no['genome_fraction_percent']) and
+              rel(full['cross_binid_chimeric_bp_fraction'],base['cross_binid_chimeric_bp_fraction']) is not None and
+              rel(full['cross_binid_chimeric_bp_fraction'],base['cross_binid_chimeric_bp_fraction'])<=0.10 and
+              float(full['alignment_to_unique_truth_ratio'])-float(base['alignment_to_unique_truth_ratio'])<=0.10 and
+              all(v is not None and v>0 for v in gains.values())
+            ),
+            'claim_boundary':'Frozen additive-rule reapplication on a previously evaluated public Toy pair at 1% depth; not prospective hidden validation, CAMI rank, or novel-genome discovery.'
+          }
+          (root/'decision/PAIR_DECISION.json').write_text(json.dumps(d,indent=2,sort_keys=True)+'\n')
+          (root/'decision/PAIR_DECISION.md').write_text(f"# {pair} additive-rule audit\n\n- Strongest baseline: `{strongest}`\n- GF gain: **{d['genome_fraction_gain_vs_strongest_pp']:.6f} pp**\n- Mean-recovery gain: **{d['mean_recovery_gain_vs_strongest_pp']:.6f} pp**\n- Longitudinal-ablation drop: **{d['longitudinal_ablation_drop_pp']:.6f} pp**\n- Pair directional pass: **{d['pair_directional_pass']}**\n\n{d['claim_boundary']}\n")
+          print(json.dumps(d,indent=2,sort_keys=True))
+          PY
+
+      - name: Compact and hash pair evidence
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          PAIR='${{ matrix.pair_id }}'; ROOT="additive_reapply_${PAIR}"
+          rm -rf "$ROOT/truth_download" "$ROOT/truth/references" "$ROOT/inputs" "$ROOT/variants"
+          rm -f "$ROOT/truth/combined_truth.fasta" "$ROOT/truth/toy_truth.mmi" \
+            "$ROOT/truth/truth_mapping.tsv" "$ROOT/pseudo_novel/truth_genomes.msh" \
+            "$ROOT/pseudo_novel/distances.tsv" "$ROOT/pseudo_novel/reference_files.txt"
+          find "$ROOT/evaluation" -type f -name 'per_truth_contig.tsv' -delete 2>/dev/null || true
+          find "$ROOT" -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > "$ROOT/SHA256SUMS.txt" || true
+          find "$ROOT" -type f -printf '%P\t%s\n' | sort > "$ROOT/CONTENTS.tsv" || true
+          du -sh "$ROOT" > "$ROOT/PACKAGE_SIZE.txt" || true
+
+      - name: Upload pair evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: LANTERN_CAMI3_ADDITIVE_REAPPLY_${{ matrix.pair_id }}_20260820
+          path: additive_reapply_${{ matrix.pair_id }}
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
+
+  aggregate:
+    needs: pair-audit
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: 'LANTERN_CAMI3_ADDITIVE_REAPPLY_official_*_20260820'
+          path: pair_artifacts
+          merge-multiple: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Aggregate all corrected Toy pairs under frozen rules
+        run: |
+          set -euo pipefail
+          python lantern_cami3/scripts/aggregate_additive_official_holdout.py \
+            --root pair_artifacts --out additive_official_aggregate
+          find additive_official_aggregate -type f -printf '%P\t%s\n' | sort > additive_official_aggregate/CONTENTS.tsv
+          cat additive_official_aggregate/ADDITIVE_OFFICIAL_HOLDOUT_AGGREGATE.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LANTERN_CAMI3_ADDITIVE_OFFICIAL_HOLDOUT_AGGREGATE_20260820
+          path: additive_official_aggregate
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
