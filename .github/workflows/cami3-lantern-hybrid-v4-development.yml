@@ -120,13 +120,50 @@ jobs:
           ROOT=v4_hybrid_development
           mkdir -p "$ROOT"/{inputs,reads,candidates,evidence,configs,variants,evaluation,pseudo_novel,abundance,decision,provenance,logs,failure_audit,truth_download,truth}
 
-          backbone=$(find inputs/hybrid_raw -type f -path '*/assembly/out/contigs.fasta' | head -1)
-          megahit=$(find inputs/megahit_raw -type f -path '*/assembly/out/final.contigs.fa' | head -1)
-          metashort=$(find inputs/metaspades_short_raw -type f -path '*/assembly/out/contigs.fasta' | head -1)
-          flyepair=$(find inputs/flye_pair_raw -type f -path '*/assembly/out/assembly.fasta' | head -1)
-          flyes0=$(find inputs/flye_single_raw -type f -path '*/multimodal_flye_long_s0/assembly/out/assembly.fasta' | head -1)
-          flyes1=$(find inputs/flye_single_raw -type f -path '*/multimodal_flye_long_s1/assembly/out/assembly.fasta' | head -1)
+          pick_required_fasta() {
+            local root="$1"; shift
+            local pattern candidate
+            for pattern in "$@"; do
+              candidate=$(find "$root" -type f -path "$pattern" -size +0c -print -quit)
+              if [[ -n "$candidate" ]]; then
+                printf '%s\n' "$candidate"
+                return 0
+              fi
+            done
+            return 1
+          }
+          flye_status() {
+            case "$1" in
+              */assembly/out/assembly.fasta) printf 'final_assembly\n' ;;
+              */assembly/out/10-consensus/consensus.fasta) printf 'consensus_fallback_from_incomplete_run\n' ;;
+              */assembly/out/20-repeat/repeat_graph_edges.fasta) printf 'repeat_graph_fallback_from_incomplete_run\n' ;;
+              *) printf 'unclassified\n' ;;
+            esac
+          }
+
+          backbone=$(pick_required_fasta inputs/hybrid_raw '*/assembly/out/contigs.fasta')
+          megahit=$(pick_required_fasta inputs/megahit_raw '*/assembly/out/final.contigs.fa')
+          metashort=$(pick_required_fasta inputs/metaspades_short_raw '*/assembly/out/contigs.fasta')
+          flyepair=$(pick_required_fasta inputs/flye_pair_raw '*/assembly/out/assembly.fasta')
+          flyes0=$(pick_required_fasta inputs/flye_single_raw \
+            '*flye_long_s0*/assembly/out/assembly.fasta' \
+            '*flye_long_s0*/assembly/out/10-consensus/consensus.fasta' \
+            '*flye_long_s0*/assembly/out/20-repeat/repeat_graph_edges.fasta')
+          flyes1=$(pick_required_fasta inputs/flye_single_raw \
+            '*flye_long_s1*/assembly/out/assembly.fasta' \
+            '*flye_long_s1*/assembly/out/10-consensus/consensus.fasta' \
+            '*flye_long_s1*/assembly/out/20-repeat/repeat_graph_edges.fasta')
           for f in "$backbone" "$megahit" "$metashort" "$flyepair" "$flyes0" "$flyes1"; do test -s "$f"; done
+
+          flyes0_status=$(flye_status "$flyes0")
+          flyes1_status=$(flye_status "$flyes1")
+          printf 'logical_source\tselected_path\tstatus\n' > "$ROOT/provenance/AUXILIARY_FASTA_SELECTION.tsv"
+          printf 'metaspades_hybrid_backbone\t%s\tfinal_assembly\n' "$backbone" >> "$ROOT/provenance/AUXILIARY_FASTA_SELECTION.tsv"
+          printf 'megahit_short_pair\t%s\tfinal_assembly\n' "$megahit" >> "$ROOT/provenance/AUXILIARY_FASTA_SELECTION.tsv"
+          printf 'metaspades_short_pair\t%s\tfinal_assembly\n' "$metashort" >> "$ROOT/provenance/AUXILIARY_FASTA_SELECTION.tsv"
+          printf 'flye_long_pair\t%s\tfinal_assembly\n' "$flyepair" >> "$ROOT/provenance/AUXILIARY_FASTA_SELECTION.tsv"
+          printf 'flye_long_s0\t%s\t%s\n' "$flyes0" "$flyes0_status" >> "$ROOT/provenance/AUXILIARY_FASTA_SELECTION.tsv"
+          printf 'flye_long_s1\t%s\t%s\n' "$flyes1" "$flyes1_status" >> "$ROOT/provenance/AUXILIARY_FASTA_SELECTION.tsv"
 
           cp "$backbone" "$ROOT/inputs/metaspades_hybrid_backbone.fasta"
           cp "$megahit" "$ROOT/inputs/megahit_short_pair.fasta"
@@ -136,8 +173,9 @@ jobs:
           cp "$flyes1" "$ROOT/inputs/flye_long_s1.fasta"
 
           for s in 0 1; do
-            read_dir=$(dirname "$(find inputs/read_artifacts -type f -name "S${s}_R1.fastq.gz" | head -1)")
-            test -d "$read_dir"
+            read_path=$(find inputs/read_artifacts -type f -name "S${s}_R1.fastq.gz" -print -quit)
+            test -s "$read_path"
+            read_dir=$(dirname "$read_path")
             for kind in R1 R2 long; do
               src="$read_dir/S${s}_${kind}.fastq.gz"; test -s "$src"
               ln -s "$PWD/$src" "$ROOT/reads/S${s}_${kind}.fastq.gz"
@@ -146,13 +184,13 @@ jobs:
           done
 
           cat > "$ROOT/inputs/source_manifest.tsv" <<'EOF'
-          source_id	assembler	scope	mode
-          megahit_short_pair	megahit	longitudinal	short
-          metaspades_short_pair	metaspades	longitudinal	short
-          flye_long_pair	flye	longitudinal	long
-          flye_long_s0	flye	timepoint_support	long
-          flye_long_s1	flye	timepoint_support	long
-          EOF
+source_id	assembler	scope	mode
+megahit_short_pair	megahit	longitudinal	short
+metaspades_short_pair	metaspades	longitudinal	short
+flye_long_pair	flye	longitudinal	long
+flye_long_s0	flye	timepoint_support	long
+flye_long_s1	flye	timepoint_support	long
+EOF
 
           git rev-parse HEAD > "$ROOT/provenance/GIT_HEAD.txt"
           uname -a > "$ROOT/provenance/UNAME.txt"
@@ -166,9 +204,6 @@ jobs:
             "$READ_RUN_ID" "$ASSEMBLY_RUN_ID" "$READ_ARTIFACT_PATTERN" "$HYBRID_ARTIFACT" > "$ROOT/provenance/UPSTREAM.txt"
           sha256sum "$ROOT"/inputs/*.fasta "$ROOT"/reads/*.fastq.gz "$GRID" > "$ROOT/provenance/IMMUTABLE_INPUT_SHA256SUMS.txt"
           seqkit stats -T "$ROOT"/inputs/*.fasta "$ROOT"/reads/*.fastq.gz > "$ROOT/provenance/INPUT_STATS.tsv"
-
-          # Delete all artifact-carried evaluation/truth material. From this point the
-          # construction job can access only copied FASTAs and read files.
           rm -rf inputs/hybrid_raw inputs/megahit_raw inputs/metaspades_short_raw inputs/flye_pair_raw inputs/flye_single_raw
 
       - name: Build and cluster auxiliary candidate contigs without truth
@@ -183,10 +218,8 @@ jobs:
             --assembly "flye_long_s0=$ROOT/inputs/flye_long_s0.fasta" \
             --assembly "flye_long_s1=$ROOT/inputs/flye_long_s1.fasta" \
             --source-manifest "$ROOT/inputs/source_manifest.tsv" \
-            --min-length 1000 \
-            --out "$ROOT/candidates/prepared" \
+            --min-length 1000 --out "$ROOT/candidates/prepared" \
             > "$ROOT/logs/PREPARE_CANDIDATES.log" 2>&1
-
           /usr/bin/time -v timeout --signal=TERM --kill-after=120s 90m \
             minimap2 -x asm5 -c -N 20 -t 4 \
             "$ROOT/candidates/prepared/combined_candidates.fasta" \
@@ -196,18 +229,14 @@ jobs:
           python lantern_cami3/scripts/cluster_candidates.py \
             --fasta "$ROOT/candidates/prepared/combined_candidates.fasta" \
             --metadata "$ROOT/candidates/prepared/candidates.tsv" \
-            --paf "$ROOT/candidates/all_vs_all.paf" \
-            --min-identity 0.97 \
-            --min-shorter-coverage 0.85 \
-            --out "$ROOT/candidates/clusters" \
+            --paf "$ROOT/candidates/all_vs_all.paf" --min-identity 0.97 \
+            --min-shorter-coverage 0.85 --out "$ROOT/candidates/clusters" \
             > "$ROOT/logs/CLUSTER_CANDIDATES.log" 2>&1
           test -s "$ROOT/candidates/clusters/cluster_representatives.fasta"
-
           minimap2 -x asm5 -c -N 100 -t 4 \
             "$ROOT/inputs/metaspades_hybrid_backbone.fasta" \
             "$ROOT/candidates/clusters/cluster_representatives.fasta" \
-            > "$ROOT/candidates/candidate_to_backbone.paf" \
-            2> "$ROOT/logs/CANDIDATE_TO_BACKBONE.log"
+            > "$ROOT/candidates/candidate_to_backbone.paf" 2> "$ROOT/logs/CANDIDATE_TO_BACKBONE.log"
           test -s "$ROOT/candidates/candidate_to_backbone.paf"
           rm -f "$ROOT/candidates/all_vs_all.paf" "$ROOT/candidates/prepared/combined_candidates.fasta"
 
@@ -222,7 +251,6 @@ jobs:
               2> "$ROOT/logs/MAP_S${s}_SHORT.log" | samtools sort -@ 2 -o "$ROOT/evidence/S${s}_short.bam" -
             samtools index "$ROOT/evidence/S${s}_short.bam"
             samtools coverage "$ROOT/evidence/S${s}_short.bam" > "$ROOT/evidence/S${s}_short_coverage.tsv"
-
             minimap2 -t 4 -ax map-ont "$REPS" "$ROOT/reads/S${s}_long.fastq.gz" \
               2> "$ROOT/logs/MAP_S${s}_LONG.log" | samtools sort -@ 2 -o "$ROOT/evidence/S${s}_long.bam" -
             samtools index "$ROOT/evidence/S${s}_long.bam"
@@ -230,7 +258,6 @@ jobs:
             minimap2 -t 4 -x map-ont -c -N 10 "$REPS" "$ROOT/reads/S${s}_long.fastq.gz" \
               > "$ROOT/evidence/S${s}_long.paf" 2> "$ROOT/logs/MAP_S${s}_LONG_PAF.log"
           done
-
           python lantern_cami3/scripts/merge_mapping_evidence.py \
             --short-coverage "S0=$ROOT/evidence/S0_short_coverage.tsv" \
             --short-coverage "S1=$ROOT/evidence/S1_short_coverage.tsv" \
@@ -239,8 +266,7 @@ jobs:
             --long-paf "S0=$ROOT/evidence/S0_long.paf" \
             --long-paf "S1=$ROOT/evidence/S1_long.paf" \
             --end-margin 250 --min-mapq 20 --min-align 500 \
-            --out "$ROOT/evidence/merged" \
-            > "$ROOT/logs/MERGE_EVIDENCE.log" 2>&1
+            --out "$ROOT/evidence/merged" > "$ROOT/logs/MERGE_EVIDENCE.log" 2>&1
           test -s "$ROOT/evidence/merged/mapping_evidence.tsv"
           rm -f "$ROOT/evidence"/*.bam "$ROOT/evidence"/*.bai "$ROOT/evidence"/*.paf
           rm -rf inputs/read_artifacts "$ROOT/reads"
@@ -259,7 +285,6 @@ jobs:
           for name,cfg in grid['variants'].items():
               (out/f'{name}.json').write_text(json.dumps(cfg,indent=2,sort_keys=True)+'\n')
           PY
-
           for cfg in "$ROOT"/configs/*.json; do
             name=$(basename "$cfg" .json)
             for ablation in full no_longitudinal no_long no_consensus; do
@@ -273,8 +298,7 @@ jobs:
                 --config "$cfg" --ablation "$ablation" --out "$out" \
                 > "$ROOT/logs/BUILD_${name}_${ablation}.log" 2>&1
               python lantern_cami3/scripts/verify_cami_assembly.py \
-                "$out/LANTERN_BACKBONE_AUGMENTED.fasta" \
-                --out "$out/VALIDATION.json"
+                "$out/LANTERN_BACKBONE_AUGMENTED.fasta" --out "$out/VALIDATION.json"
               sha256sum "$out/LANTERN_BACKBONE_AUGMENTED.fasta" > "$out/ASSEMBLY_SHA256.txt"
             done
           done
@@ -288,14 +312,7 @@ jobs:
           import hashlib,json,sys,time
           from pathlib import Path
           root=Path(sys.argv[1]); grid=Path(sys.argv[2]); files=[]
-          include=[
-              root/'inputs/metaspades_hybrid_backbone.fasta',
-              root/'candidates/clusters/representative_metadata.tsv',
-              root/'candidates/clusters/cluster_members.tsv',
-              root/'evidence/merged/mapping_evidence.tsv',
-              grid,
-              Path('lantern_cami3/scripts/baseline_preserving_augment.py'),
-          ]
+          include=[root/'inputs/metaspades_hybrid_backbone.fasta',root/'candidates/clusters/representative_metadata.tsv',root/'candidates/clusters/cluster_members.tsv',root/'evidence/merged/mapping_evidence.tsv',grid,Path('lantern_cami3/scripts/baseline_preserving_augment.py')]
           include += sorted(root.glob('configs/*.json'))
           include += sorted(root.glob('variants/*/LANTERN_BACKBONE_AUGMENTED.fasta'))
           for p in include:
@@ -337,7 +354,6 @@ jobs:
             printf '%s\t%s\n' "$name" "$ROOT/variants/${name}_full/LANTERN_BACKBONE_AUGMENTED.fasta" >> "$ROOT/provenance/EVALUATED_METHODS.tsv"
             printf '%s_no_longitudinal\t%s\n' "$name" "$ROOT/variants/${name}_no_longitudinal/LANTERN_BACKBONE_AUGMENTED.fasta" >> "$ROOT/provenance/EVALUATED_METHODS.tsv"
           done
-
           tail -n +2 "$ROOT/provenance/EVALUATED_METHODS.tsv" | while IFS=$'\t' read -r name fasta; do
             dir="$ROOT/evaluation/$name"; mkdir -p "$dir"
             /usr/bin/time -v timeout --signal=TERM --kill-after=120s 60m \
@@ -345,8 +361,7 @@ jobs:
               > "$dir/assembly_to_truth.paf" 2> "$dir/minimap2.log"
             test -s "$dir/assembly_to_truth.paf"
             python lantern_cami3/scripts/evaluate_gold_coverage.py \
-              --paf "$dir/assembly_to_truth.paf" \
-              --truth-mapping "$ROOT/truth/truth_mapping.tsv" \
+              --paf "$dir/assembly_to_truth.paf" --truth-mapping "$ROOT/truth/truth_mapping.tsv" \
               --assembly-fasta "$fasta" --min-identity 0.90 --min-alignment 500 \
               --out "$dir" > "$dir/evaluate_console.log" 2>&1
             rm -f "$dir/assembly_to_truth.paf"
@@ -368,20 +383,16 @@ jobs:
               paths.append(str(p))
           (root/'pseudo_novel/mash_reference_files.txt').write_text('\n'.join(paths)+'\n')
           PY
-          mash sketch -k 21 -s 1000 -l "$ROOT/pseudo_novel/mash_reference_files.txt" \
-            -o "$ROOT/pseudo_novel/truth_genomes" > "$ROOT/logs/MASH_SKETCH.log" 2>&1
-          mash dist "$ROOT/pseudo_novel/truth_genomes.msh" "$ROOT/pseudo_novel/truth_genomes.msh" \
-            > "$ROOT/pseudo_novel/truth_genome_distances.tsv"
+          mash sketch -k 21 -s 1000 -l "$ROOT/pseudo_novel/mash_reference_files.txt" -o "$ROOT/pseudo_novel/truth_genomes" > "$ROOT/logs/MASH_SKETCH.log" 2>&1
+          mash dist "$ROOT/pseudo_novel/truth_genomes.msh" "$ROOT/pseudo_novel/truth_genomes.msh" > "$ROOT/pseudo_novel/truth_genome_distances.tsv"
           RECOVERY_ARGS=(--recovery "metaspades_hybrid_pair=$ROOT/evaluation/metaspades_hybrid_pair/per_genome_recovery.tsv")
           for cfg in "$ROOT"/configs/*.json; do
             name=$(basename "$cfg" .json)
             RECOVERY_ARGS+=(--recovery "$name=$ROOT/evaluation/$name/per_genome_recovery.tsv")
           done
           python lantern_cami3/scripts/build_pseudo_novel_audit.py \
-            --manifest "$ROOT/truth/genome_reference_manifest.tsv" \
-            --mash "$ROOT/pseudo_novel/truth_genome_distances.tsv" \
-            "${RECOVERY_ARGS[@]}" --min-truth-bp 50000 --out "$ROOT/pseudo_novel" \
-            > "$ROOT/logs/PSEUDO_NOVEL.log" 2>&1
+            --manifest "$ROOT/truth/genome_reference_manifest.tsv" --mash "$ROOT/pseudo_novel/truth_genome_distances.tsv" \
+            "${RECOVERY_ARGS[@]}" --min-truth-bp 50000 --out "$ROOT/pseudo_novel" > "$ROOT/logs/PSEUDO_NOVEL.log" 2>&1
           test -s "$ROOT/pseudo_novel/PSEUDO_NOVEL_RECOVERY_SUMMARY.tsv"
 
       - name: Build abundance-stratified recovery after freeze
@@ -392,8 +403,7 @@ jobs:
           for s in 0 1; do
             url="https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_${s}_reads.tar.gz"
             python lantern_cami3/scripts/extract_read_abundance.py \
-              --url "$url" --sample-id "sample${s}" --paired \
-              --out "$ROOT/abundance/sample${s}_abundance.tsv" \
+              --url "$url" --sample-id "sample${s}" --paired --out "$ROOT/abundance/sample${s}_abundance.tsv" \
               > "$ROOT/logs/ABUNDANCE_S${s}.log" 2>&1
           done
           RECOVERY_ARGS=(--recovery "metaspades_hybrid_pair=$ROOT/evaluation/metaspades_hybrid_pair/per_genome_recovery.tsv")
@@ -402,8 +412,7 @@ jobs:
             RECOVERY_ARGS+=(--recovery "$name=$ROOT/evaluation/$name/per_genome_recovery.tsv")
           done
           python lantern_cami3/scripts/summarize_abundance_recovery.py \
-            --abundance "$ROOT/abundance/sample0_abundance.tsv" \
-            --abundance "$ROOT/abundance/sample1_abundance.tsv" \
+            --abundance "$ROOT/abundance/sample0_abundance.tsv" --abundance "$ROOT/abundance/sample1_abundance.tsv" \
             "${RECOVERY_ARGS[@]}" --low-percent 0.01 --high-percent 0.1 \
             --out "$ROOT/abundance/results" > "$ROOT/logs/ABUNDANCE_SUMMARY.log" 2>&1
           test -s "$ROOT/abundance/results/ABUNDANCE_STRATIFIED_SUMMARY.tsv"
@@ -420,8 +429,7 @@ jobs:
             NOLONG_ARGS+=(--no-longitudinal "$name=$ROOT/evaluation/${name}_no_longitudinal")
           done
           python lantern_cami3/scripts/select_hybrid_v4_winner.py \
-            --grid "$GRID" \
-            --baseline-evaluation "$ROOT/evaluation/metaspades_hybrid_pair" \
+            --grid "$GRID" --baseline-evaluation "$ROOT/evaluation/metaspades_hybrid_pair" \
             "${FULL_ARGS[@]}" "${NOLONG_ARGS[@]}" \
             --abundance-summary "$ROOT/abundance/results/ABUNDANCE_STRATIFIED_SUMMARY.tsv" \
             --pseudo-summary "$ROOT/pseudo_novel/PSEUDO_NOVEL_RECOVERY_SUMMARY.tsv" \
@@ -435,21 +443,19 @@ jobs:
           set -euo pipefail
           ROOT=v4_hybrid_development
           winner=$(python - <<'PY'
-          import json
-          x=json.load(open('v4_hybrid_development/decision/V4_DEVELOPMENT_FREEZE.json'))
-          print(x.get('winner_name',''))
-          PY
+import json
+x=json.load(open('v4_hybrid_development/decision/V4_DEVELOPMENT_FREEZE.json'))
+print(x.get('winner_name',''))
+PY
           )
           if [[ -n "$winner" ]]; then
             for ablation in no_long no_consensus; do
               fasta="$ROOT/variants/${winner}_${ablation}/LANTERN_BACKBONE_AUGMENTED.fasta"
               dir="$ROOT/evaluation/${winner}_${ablation}"; mkdir -p "$dir"
-              minimap2 -x asm5 -c -N 100 -t 4 "$ROOT/truth/toy_truth.mmi" "$fasta" \
-                > "$dir/assembly_to_truth.paf" 2> "$dir/minimap2.log"
+              minimap2 -x asm5 -c -N 100 -t 4 "$ROOT/truth/toy_truth.mmi" "$fasta" > "$dir/assembly_to_truth.paf" 2> "$dir/minimap2.log"
               python lantern_cami3/scripts/evaluate_gold_coverage.py \
                 --paf "$dir/assembly_to_truth.paf" --truth-mapping "$ROOT/truth/truth_mapping.tsv" \
-                --assembly-fasta "$fasta" --min-identity 0.90 --min-alignment 500 --out "$dir" \
-                > "$dir/evaluate_console.log" 2>&1
+                --assembly-fasta "$fasta" --min-identity 0.90 --min-alignment 500 --out "$dir" > "$dir/evaluate_console.log" 2>&1
               rm -f "$dir/assembly_to_truth.paf"
             done
           fi
@@ -461,23 +467,21 @@ jobs:
           ROOT=v4_hybrid_development
           mkdir -p "$ROOT/failure_audit"
           python - <<'PY'
-          import csv,hashlib,json
-          from pathlib import Path
-          root=Path('v4_hybrid_development'); errors=[]
-          freeze=root/'provenance/V4_TRUTH_BLIND_FREEZE.json'; decision=root/'decision/V4_DEVELOPMENT_FREEZE.json'
-          if not freeze.is_file(): errors.append('truth-blind freeze missing')
-          if not decision.is_file(): errors.append('development decision missing')
-          if freeze.is_file() and json.loads(freeze.read_text()).get('truth_accessed') is not False: errors.append('freeze boundary invalid')
-          if decision.is_file():
-              d=json.loads(decision.read_text())
-              if d.get('winner_name') and not (root/'decision/FROZEN_V4_WINNER_CONFIG.json').is_file(): errors.append('winner config missing')
-          audit={'status':'PASS' if not errors else 'INCOMPLETE','errors':errors,'claim_boundary':'Public Toy development audit only; no active CAMI challenge data or rank.'}
-          (root/'INDEPENDENT_AUDIT.json').write_text(json.dumps(audit,indent=2)+'\n')
-          PY
-
+import json
+from pathlib import Path
+root=Path('v4_hybrid_development'); errors=[]
+freeze=root/'provenance/V4_TRUTH_BLIND_FREEZE.json'; decision=root/'decision/V4_DEVELOPMENT_FREEZE.json'
+if not freeze.is_file(): errors.append('truth-blind freeze missing')
+if not decision.is_file(): errors.append('development decision missing')
+if freeze.is_file() and json.loads(freeze.read_text()).get('truth_accessed') is not False: errors.append('freeze boundary invalid')
+if decision.is_file():
+    d=json.loads(decision.read_text())
+    if d.get('winner_name') and not (root/'decision/FROZEN_V4_WINNER_CONFIG.json').is_file(): errors.append('winner config missing')
+audit={'status':'PASS' if not errors else 'INCOMPLETE','errors':errors,'claim_boundary':'Public Toy development audit only; no active CAMI challenge data or rank.'}
+(root/'INDEPENDENT_AUDIT.json').write_text(json.dumps(audit,indent=2)+'\n')
+PY
           rm -rf "$ROOT/truth_download" "$ROOT/truth/references" "$ROOT/inputs" "$ROOT/evidence" "$ROOT/candidates/prepared"
-          rm -f "$ROOT/truth/combined_truth.fasta" "$ROOT/truth/toy_truth.mmi" \
-            "$ROOT/pseudo_novel/truth_genomes.msh" "$ROOT/pseudo_novel/truth_genome_distances.tsv"
+          rm -f "$ROOT/truth/combined_truth.fasta" "$ROOT/truth/toy_truth.mmi" "$ROOT/pseudo_novel/truth_genomes.msh" "$ROOT/pseudo_novel/truth_genome_distances.tsv"
           find "$ROOT/variants" -type f -name 'LANTERN_BACKBONE_AUGMENTED.fasta' -delete 2>/dev/null || true
           find "$ROOT" -type f ! -name SHA256SUMS_ALL.txt -print0 | sort -z | xargs -0 sha256sum > "$ROOT/SHA256SUMS_ALL.txt" || true
           find "$ROOT" -type f -printf '%P\t%s\n' | sort > "$ROOT/CONTENTS.tsv" || true
