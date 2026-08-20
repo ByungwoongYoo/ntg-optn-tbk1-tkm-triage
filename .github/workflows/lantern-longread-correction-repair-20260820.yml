@@ -1,0 +1,73 @@
+name: Repair LANTERN long-read correction artifact discovery
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/lantern-longread-correction-repair-20260820.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Patch method-specific immutable baseline FASTA discovery
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('.github/workflows/lantern-longread-correction-development-20260820.yml')
+          text=p.read_text()
+          old='''          isolate() {\n            local artifact="$1" method="$2" dir fasta\n            dir=$(find incoming/baselines -maxdepth 1 -type d -name "$artifact" -print -quit)\n            test -n "$dir"\n            fasta=$(find "$dir" -type f -name final_assembly.fasta -print -quit)\n            test -s "$fasta"\n            cp "$fasta" "$root/baselines/${method}.fasta"\n          }'''
+          new='''          isolate() {\n            local artifact="$1" method="$2" pattern="$3" dir fasta\n            dir=$(find incoming/baselines -type d -name "$artifact" -print -quit)\n            test -n "$dir"\n            fasta=$(find "$dir" -type f -path "$pattern" -size +0c -print -quit || true)\n            if test -z "$fasta"; then\n              fasta=$(find "$dir" -type f \\( -name final_assembly.fasta -o -name final.contigs.fa -o -name contigs.fasta -o -name assembly.fasta \\) -size +0c -print -quit || true)\n            fi\n            test -s "$fasta"\n            cp "$fasta" "$root/baselines/${method}.fasta"\n          }'''
+          if old in text:
+              text=text.replace(old,new)
+          elif new not in text:
+              raise SystemExit('expected isolate function not found')
+          replacements={
+            'isolate LANTERN_CAMI3_MULTIMODAL_metaspades_short_pair_20260820 metaspades_short_pair':'isolate LANTERN_CAMI3_MULTIMODAL_metaspades_short_pair_20260820 metaspades_short_pair \'*/assembly/out/contigs.fasta\'',
+            'isolate LANTERN_CAMI3_MULTIMODAL_metaspades_hybrid_pair_20260820 metaspades_hybrid_pair':'isolate LANTERN_CAMI3_MULTIMODAL_metaspades_hybrid_pair_20260820 metaspades_hybrid_pair \'*/assembly/out/contigs.fasta\'',
+            'isolate LANTERN_CAMI3_MULTIMODAL_megahit_short_pair_20260820 megahit_short_pair':'isolate LANTERN_CAMI3_MULTIMODAL_megahit_short_pair_20260820 megahit_short_pair \'*/assembly/out/final.contigs.fa\'',
+            'isolate LANTERN_CAMI3_MULTIMODAL_flye_long_pair_20260820 flye_long_pair':'isolate LANTERN_CAMI3_MULTIMODAL_flye_long_pair_20260820 flye_long_pair \'*/assembly/out/assembly.fasta\'',
+          }
+          for a,b in replacements.items():
+              if b in text: continue
+              if a not in text: raise SystemExit(f'missing isolate call: {a}')
+              text=text.replace(a,b)
+          p.write_text(text)
+          PY
+          python -m pip install --quiet pyyaml
+          python - <<'PY'
+          import yaml
+          from pathlib import Path
+          p=Path('.github/workflows/lantern-longread-correction-development-20260820.yml')
+          obj=yaml.safe_load(p.read_text())
+          if not isinstance(obj,dict) or 'jobs' not in obj:
+              raise SystemExit('invalid workflow YAML')
+          print('LONGREAD_CORRECTION_REPAIR_VALID')
+          PY
+          git diff --check
+
+      - name: Commit repair to the PR branch
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
+        run: |
+          set -euo pipefail
+          git config user.name 'LANTERN execution bot'
+          git config user.email 'yoonge3@gmail.com'
+          git add .github/workflows/lantern-longread-correction-development-20260820.yml
+          if git diff --cached --quiet; then
+            echo 'repair already present'
+          else
+            git commit -m 'Repair long-read baseline artifact FASTA discovery'
+            git push origin "HEAD:${BRANCH}"
+          fi
