@@ -1,0 +1,83 @@
+name: Observe LANTERN single-timepoint source benchmark
+
+on:
+  push:
+    branches: [lantern-expanded-sources-20260820]
+    paths:
+      - '.github/workflows/cami3-lantern-single-timepoint-observer.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+env:
+  TARGET_WORKFLOW: cami3-lantern-single-timepoint-sources.yml
+  TARGET_BRANCH: lantern-expanded-sources-20260820
+
+jobs:
+  observe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 0
+      - name: Wait for target matrix run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          run_id=''
+          for attempt in $(seq 1 60); do
+            run_id=$(gh run list --repo "$REPO" --workflow "$TARGET_WORKFLOW" --branch "$TARGET_BRANCH" --limit 20 \
+              --json databaseId,createdAt,event,status \
+              --jq '[.[] | select(.event=="push")] | sort_by(.createdAt) | reverse | .[0].databaseId // empty')
+            test -n "$run_id" && break
+            sleep 10
+          done
+          test -n "$run_id"; echo "$run_id" > TARGET_RUN_ID.txt
+          for attempt in $(seq 1 720); do
+            gh run view "$run_id" --repo "$REPO" --json databaseId,status,conclusion,url,headSha,createdAt,updatedAt > TARGET_RUN.json
+            status=$(python -c "import json; print(json.load(open('TARGET_RUN.json'))['status'])")
+            test "$status" = completed && break
+            sleep 30
+          done
+          test "$(python -c "import json; print(json.load(open('TARGET_RUN.json'))['status'])")" = completed
+      - name: Download source artifacts and extract summaries
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          run_id=$(cat TARGET_RUN_ID.txt)
+          mkdir -p observed lantern_status/single_timepoint_sources
+          gh run download "$run_id" --repo "$REPO" --dir observed || true
+          cp TARGET_RUN_ID.txt TARGET_RUN.json lantern_status/single_timepoint_sources/
+          find observed -type f \( -name 'GOLD_COVERAGE_SUMMARY.json' -o -name 'ASSEMBLY_STATS.tsv' -o -name 'VALIDATION.json' -o -name 'TRUTH_BLIND_FREEZE.json' -o -name 'ASSEMBLY.status' \) | while read -r f; do
+            method=$(echo "$f" | sed -n 's|.*LANTERN_CAMI3_SOURCE_\([^/]*\)_20260820.*|\1|p')
+            test -n "$method" || method=$(basename "$(dirname "$(dirname "$f")")")
+            mkdir -p "lantern_status/single_timepoint_sources/$method"
+            cp "$f" "lantern_status/single_timepoint_sources/$method/$(basename "$f")"
+          done
+          find observed -type f -printf '%P\t%s\n' | sort > lantern_status/single_timepoint_sources/OBSERVED_CONTENTS.tsv
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          root=Path('lantern_status/single_timepoint_sources'); rows=[]
+          for p in sorted(root.rglob('GOLD_COVERAGE_SUMMARY.json')):
+              try: rows.append({'method':p.parent.name,**json.loads(p.read_text())})
+              except Exception as e: rows.append({'method':p.parent.name,'parse_error':str(e)})
+          (root/'SUMMARY.json').write_text(json.dumps({'methods':rows},indent=2,sort_keys=True)+'\n')
+          files=[]
+          for p in sorted(root.rglob('*')):
+              if p.is_file() and p.name!='SHA256SUMS.txt': files.append(f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.relative_to(root)}")
+          (root/'SHA256SUMS.txt').write_text('\n'.join(files)+'\n')
+          PY
+          git config user.name 'LANTERN source observer'
+          git config user.email 'yoonge3@gmail.com'
+          git add lantern_status/single_timepoint_sources
+          git commit -m 'Record single-timepoint source benchmark summaries'
+          git push origin "HEAD:${TARGET_BRANCH}"
