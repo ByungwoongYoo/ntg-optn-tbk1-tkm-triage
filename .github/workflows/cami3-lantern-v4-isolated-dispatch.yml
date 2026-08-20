@@ -10,20 +10,38 @@ on:
 permissions:
   actions: write
   contents: read
+  issues: write
+  pull-requests: write
 
 jobs:
   dispatch:
     runs-on: ubuntu-24.04
     steps:
-      - name: Dispatch only the v4 workflow on this isolated branch
+      - name: Dispatch one v4 run and publish its run ID
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           REF: ${{ github.ref_name }}
+          WORKFLOW: cami3-lantern-hybrid-v4-development.yml
         run: |
           set -euo pipefail
-          gh api --method POST \
-            "repos/${REPO}/actions/workflows/cami3-lantern-hybrid-v4-development.yml/dispatches" \
-            -f ref="$REF"
-          printf 'dispatched_workflow=%s\nref=%s\n' \
-            'cami3-lantern-hybrid-v4-development.yml' "$REF"
+          existing=$(gh run list --repo "$REPO" --workflow "$WORKFLOW" --branch "$REF" \
+            --event workflow_dispatch --limit 10 \
+            --json databaseId,status,conclusion,url,headSha,createdAt \
+            --jq '[.[] | select(.status=="queued" or .status=="in_progress")][0] // empty')
+          if [[ -z "$existing" ]]; then
+            gh api --method POST \
+              "repos/${REPO}/actions/workflows/${WORKFLOW}/dispatches" \
+              -f ref="$REF"
+            sleep 20
+          fi
+          run=$(gh run list --repo "$REPO" --workflow "$WORKFLOW" --branch "$REF" \
+            --event workflow_dispatch --limit 1 \
+            --json databaseId,status,conclusion,url,headSha,createdAt --jq '.[0]')
+          test -n "$run"
+          printf '%s\n' "$run" | tee V4_DISPATCHED_RUN.json
+          run_id=$(printf '%s' "$run" | jq -r '.databaseId')
+          status=$(printf '%s' "$run" | jq -r '.status')
+          url=$(printf '%s' "$run" | jq -r '.url')
+          gh api --method POST "repos/${REPO}/issues/18/comments" \
+            -f body="LANTERN v4 isolated execution run: **${run_id}** (status: **${status}**). ${url}"
