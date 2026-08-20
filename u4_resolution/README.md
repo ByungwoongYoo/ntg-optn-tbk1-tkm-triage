@@ -45,7 +45,7 @@ also be paired with an all-green artifact from its own exact release commit.
 
 ## Public identifiers
 
-- Corrected v2 DOI (reserved until publication):
+- Corrected v2 DOI:
   [10.5281/zenodo.22031656](https://doi.org/10.5281/zenodo.22031656)
 - Concept DOI:
   [10.5281/zenodo.21987698](https://doi.org/10.5281/zenodo.21987698)

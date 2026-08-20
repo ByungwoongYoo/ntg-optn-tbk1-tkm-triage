@@ -11,6 +11,9 @@ on:
       - 'u4_resolution/lean/**'
       - 'u4_resolution/lean_check/**'
       - 'u4_resolution/u4_symbolic_checker.py'
+      - 'u4_resolution/u4.p'
+      - 'u4_resolution/U4_NONAXIOM_PROOF.md'
+      - 'u4_resolution/U4_SEMANTIC_MODEL.md'
       - 'u4_resolution/U4_FORMAL_SCOPE_20260820.md'
       - 'u4_resolution/REPRODUCE_U4_V2_20260821.md'
       - 'u4_resolution/README.md'
@@ -28,6 +31,9 @@ on:
       - 'u4_resolution/lean/**'
       - 'u4_resolution/lean_check/**'
       - 'u4_resolution/u4_symbolic_checker.py'
+      - 'u4_resolution/u4.p'
+      - 'u4_resolution/U4_NONAXIOM_PROOF.md'
+      - 'u4_resolution/U4_SEMANTIC_MODEL.md'
       - 'u4_resolution/U4_FORMAL_SCOPE_20260820.md'
       - 'u4_resolution/REPRODUCE_U4_V2_20260821.md'
       - 'u4_resolution/README.md'
@@ -199,6 +205,10 @@ jobs:
           cp u4_resolution/lean/lakefile.lean artifact/u4-strengthened-v2-20260821/
           cp u4_resolution/lean/lake-manifest.json artifact/u4-strengthened-v2-20260821/
           cp u4_resolution/lean/lean-toolchain artifact/u4-strengthened-v2-20260821/
+          cp u4_resolution/u4.p artifact/u4-strengthened-v2-20260821/
+          cp u4_resolution/u4_symbolic_checker.py artifact/u4-strengthened-v2-20260821/
+          cp u4_resolution/U4_NONAXIOM_PROOF.md artifact/u4-strengthened-v2-20260821/
+          cp u4_resolution/U4_SEMANTIC_MODEL.md artifact/u4-strengthened-v2-20260821/
           cp u4_resolution/U4_FORMAL_SCOPE_20260820.md artifact/u4-strengthened-v2-20260821/
           cp u4_resolution/REPRODUCE_U4_V2_20260821.md artifact/u4-strengthened-v2-20260821/
           cp u4_resolution/README.md artifact/u4-strengthened-v2-20260821/
@@ -211,6 +221,7 @@ jobs:
           cp u4_resolution/zenodo-v2.json artifact/u4-strengthened-v2-20260821/
           cp u4_resolution/preprint/U4_PREPRINT_CORRECTED_V2_20260821.tex artifact/u4-strengthened-v2-20260821/
           cp u4_resolution/preprint/U4_PREPRINT_CORRECTED_V2_20260821.pdf artifact/u4-strengthened-v2-20260821/
+          cp .github/workflows/u4-strengthened-independent-check-20260820.yml artifact/u4-strengthened-v2-20260821/WORKFLOW_U4_CORRECTED_V2_20260821.yml
           (
             cd artifact/u4-strengthened-v2-20260821
             find . -type f ! -name SHA256SUMS.txt -print0 \

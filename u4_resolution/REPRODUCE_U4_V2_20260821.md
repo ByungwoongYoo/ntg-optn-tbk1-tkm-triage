@@ -95,8 +95,8 @@ fails any gate or from an artifact produced for a different commit.
 
 ## 5. Public identifiers
 
-- Corrected v2 reserved DOI: <https://doi.org/10.5281/zenodo.22031656>
+- Corrected v2 DOI: <https://doi.org/10.5281/zenodo.22031656>
 - Concept DOI: <https://doi.org/10.5281/zenodo.21987698>
 - Historical v1 DOI: <https://doi.org/10.5281/zenodo.21987699>
 
-The corrected v2 DOI is registered only when Zenodo publishes the version.
+The version DOI identifies corrected v2; the concept DOI identifies its version family.
