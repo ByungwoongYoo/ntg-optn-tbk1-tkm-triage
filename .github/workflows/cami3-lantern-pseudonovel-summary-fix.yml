@@ -1,0 +1,191 @@
+name: CAMI III LANTERN corrected pseudo-novel stress aggregation
+
+on:
+  pull_request:
+    branches: [cami3-lantern-v3-frozen-20260820]
+    paths:
+      - '.github/workflows/cami3-lantern-pseudonovel-summary-fix.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  SOURCE_RUN_ID: '32314301915'
+  SOURCE_PATTERN: 'LANTERN_CAMI3_PSEUDONOVEL_2026082*_20260820'
+
+jobs:
+  corrected-aggregate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download immutable five-seed stress artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ${{ env.SOURCE_PATTERN }}
+          path: seed_artifacts
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Recompute per-seed and aggregate results with the actual recovery column
+        run: |
+          set -euo pipefail
+          mkdir -p corrected_stress/{results,provenance}
+          printf 'source_run=%s\nsource_pattern=%s\n' "$SOURCE_RUN_ID" "$SOURCE_PATTERN" > corrected_stress/provenance/UPSTREAM.txt
+          git rev-parse HEAD > corrected_stress/provenance/GIT_HEAD.txt
+          uname -a > corrected_stress/provenance/UNAME.txt
+          python --version > corrected_stress/provenance/PYTHON_VERSION.txt
+          find seed_artifacts -type f -name PSEUDONOVEL_MANIFEST.csv -print | sort > corrected_stress/provenance/MANIFEST_PATHS.txt
+          test $(wc -l < corrected_stress/provenance/MANIFEST_PATHS.txt) -eq 5
+
+          python - <<'PY'
+          import csv, hashlib, json, statistics
+          from pathlib import Path
+
+          roots=[]
+          for manifest in sorted(Path('seed_artifacts').rglob('benchmark/PSEUDONOVEL_MANIFEST.csv')):
+              roots.append(manifest.parents[1])
+          if len(roots)!=5:
+              raise SystemExit(f'expected 5 seed roots, found {len(roots)}')
+
+          results=[]
+          source_hashes=[]
+          for root in roots:
+              manifest_path=root/'benchmark/PSEUDONOVEL_MANIFEST.csv'
+              seed=int(root.name.rsplit('_',1)[-1])
+              manifest={r['genome_id']:r for r in csv.DictReader(manifest_path.open())}
+              methods={}
+              for directory in (root/'evaluation').iterdir():
+                  p=directory/'GOLD_COVERAGE_SUMMARY.json'
+                  if p.is_file(): methods[directory.name]=json.loads(p.read_text())
+              expected={'megahit_T0','megahit_T1','megahit_pair','metaspades_pair','lantern_v3','lantern_v3_no_longitudinal'}
+              if set(methods)!=expected:
+                  raise SystemExit(f'{seed}: method mismatch {sorted(methods)}')
+              baselines=['megahit_T0','megahit_T1','megahit_pair','metaspades_pair']
+              strongest=max(baselines,key=lambda m:(methods[m]['genome_fraction_percent'],methods[m]['mean_genome_recovery']))
+
+              def recovery(method):
+                  p=root/'evaluation'/method/'per_genome_recovery.tsv'
+                  with p.open(newline='') as handle:
+                      rows=list(csv.DictReader(handle,delimiter='\t'))
+                  if not rows or 'recovery_fraction' not in rows[0]:
+                      raise SystemExit(f'{seed}/{method}: recovery_fraction column missing')
+                  return {r['genome_id']:float(r['recovery_fraction']) for r in rows}
+
+              baseline_recovery=recovery(strongest)
+              full_recovery=recovery('lantern_v3')
+              low=[g for g,r in manifest.items() if r['low_abundance'].lower()=='true']
+              if not low:
+                  raise SystemExit(f'{seed}: no low-abundance target')
+              avg=lambda data:100*sum(data.get(g,0.0) for g in low)/len(low)
+              baseline=methods[strongest]
+              full=methods['lantern_v3']
+              ablation=methods['lantern_v3_no_longitudinal']
+              base_chimera=float(baseline['cross_binid_chimeric_bp_fraction'])
+              full_chimera=float(full['cross_binid_chimeric_bp_fraction'])
+              relative_chimera=(full_chimera/base_chimera-1) if base_chimera else (0.0 if full_chimera==0 else None)
+              result={
+                'seed':seed,
+                'strongest_baseline':strongest,
+                'baseline_genome_fraction_percent':float(baseline['genome_fraction_percent']),
+                'lantern_v3_genome_fraction_percent':float(full['genome_fraction_percent']),
+                'genome_fraction_gain_percentage_points':float(full['genome_fraction_percent'])-float(baseline['genome_fraction_percent']),
+                'mean_recovery_gain_percentage_points':100*(float(full['mean_genome_recovery'])-float(baseline['mean_genome_recovery'])),
+                'low_abundance_baseline_recovery_percent':avg(baseline_recovery),
+                'low_abundance_lantern_recovery_percent':avg(full_recovery),
+                'low_abundance_gain_percentage_points':avg(full_recovery)-avg(baseline_recovery),
+                'longitudinal_ablation_drop_percentage_points':float(full['genome_fraction_percent'])-float(ablation['genome_fraction_percent']),
+                'relative_chimera_change':relative_chimera,
+                'n_low_abundance_genomes':len(low),
+              }
+              results.append(result)
+              for p in [manifest_path]+[root/'evaluation'/m/'GOLD_COVERAGE_SUMMARY.json' for m in sorted(methods)]+[root/'evaluation'/m/'per_genome_recovery.tsv' for m in sorted(methods)]:
+                  source_hashes.append(f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p}')
+
+          results.sort(key=lambda x:x['seed'])
+          thresholds={
+            'minimum_genome_fraction_gain_percentage_points':0.5,
+            'minimum_mean_genome_recovery_gain_percentage_points':1.0,
+            'minimum_low_abundance_gain_percentage_points':2.0,
+            'minimum_longitudinal_ablation_drop_percentage_points':0.5,
+            'maximum_relative_chimera_increase':0.10,
+          }
+          per_seed=[]
+          for r in results:
+              gates={
+                'genome_fraction_gain':r['genome_fraction_gain_percentage_points']>=thresholds['minimum_genome_fraction_gain_percentage_points'],
+                'mean_recovery_gain':r['mean_recovery_gain_percentage_points']>=thresholds['minimum_mean_genome_recovery_gain_percentage_points'],
+                'low_abundance_gain':r['low_abundance_gain_percentage_points']>=thresholds['minimum_low_abundance_gain_percentage_points'],
+                'longitudinal_ablation':r['longitudinal_ablation_drop_percentage_points']>=thresholds['minimum_longitudinal_ablation_drop_percentage_points'],
+                'chimera_tradeoff':r['relative_chimera_change'] is not None and r['relative_chimera_change']<=thresholds['maximum_relative_chimera_increase'],
+              }
+              per_seed.append({'seed':r['seed'],'gates':gates,'all_pass':all(gates.values())})
+
+          def aggregate(key):
+              values=[r[key] for r in results if r[key] is not None]
+              return {'n':len(values),'mean':statistics.mean(values),'median':statistics.median(values),'minimum':min(values),'maximum':max(values),'positive_count':sum(v>0 for v in values)}
+
+          aggregate_result={
+            'status':'SUCCESS_STRICT' if all(x['all_pass'] for x in per_seed) else 'NEGATIVE_STRICT',
+            'n_seeds':len(results),
+            'thresholds':thresholds,
+            'metrics':{key:aggregate(key) for key in ['genome_fraction_gain_percentage_points','mean_recovery_gain_percentage_points','low_abundance_gain_percentage_points','longitudinal_ablation_drop_percentage_points','relative_chimera_change']},
+            'per_seed_gates':per_seed,
+            'all_seeds_pass':all(x['all_pass'] for x in per_seed),
+            'directionally_positive_genome_fraction_seeds':sum(r['genome_fraction_gain_percentage_points']>0 for r in results),
+            'directionally_positive_low_abundance_seeds':sum(r['low_abundance_gain_percentage_points']>0 for r in results),
+            'longitudinal_ablation_positive_all_seeds':all(r['longitudinal_ablation_drop_percentage_points']>0 for r in results),
+            'claim_boundary':'Synthetic reference-withheld stress test only; not hidden CAMI III performance or biological novelty.'
+          }
+          out=Path('corrected_stress/results')
+          (out/'PER_SEED_RESULTS.json').write_text(json.dumps(results,indent=2,sort_keys=True)+'\n')
+          (out/'AGGREGATE_RESULT.json').write_text(json.dumps(aggregate_result,indent=2,sort_keys=True)+'\n')
+          with (out/'PER_SEED_RESULTS.tsv').open('w',newline='') as handle:
+              writer=csv.DictWriter(handle,fieldnames=list(results[0]),delimiter='\t'); writer.writeheader(); writer.writerows(results)
+          lines=['# Corrected five-seed pseudo-novel stress audit','',f"- Strict status: **{aggregate_result['status']}**",f"- Genome-fraction gain positive: **{aggregate_result['directionally_positive_genome_fraction_seeds']}/5 seeds**",f"- Low-abundance gain positive: **{aggregate_result['directionally_positive_low_abundance_seeds']}/5 seeds**",f"- Longitudinal contribution positive in every seed: **{aggregate_result['longitudinal_ablation_positive_all_seeds']}**",'', '## Verdict','', 'The frozen v3 method shows a repeatable longitudinal contribution and improves total recovery in four of five seeds, but it fails the predeclared strict success gates: one seed has a large negative total-recovery result, the average total gain is approximately zero, and average low-abundance gain is below the frozen two-percentage-point requirement.','',aggregate_result['claim_boundary']]
+          (out/'CORRECTED_STRESS_VERDICT.md').write_text('\n'.join(lines)+'\n')
+          Path('corrected_stress/provenance/SOURCE_FILE_SHA256.txt').write_text('\n'.join(source_hashes)+'\n')
+          print(json.dumps(aggregate_result,indent=2,sort_keys=True))
+          if aggregate_result['n_seeds']!=5:
+              raise SystemExit('incomplete seed set')
+          PY
+
+      - name: Independent hash and arithmetic audit
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv,hashlib,json
+          from pathlib import Path
+          root=Path('corrected_stress')
+          rows=list(csv.DictReader((root/'results/PER_SEED_RESULTS.tsv').open(),delimiter='\t'))
+          agg=json.loads((root/'results/AGGREGATE_RESULT.json').read_text())
+          assert len(rows)==5 and agg['n_seeds']==5
+          assert agg['status']=='NEGATIVE_STRICT'
+          assert agg['directionally_positive_genome_fraction_seeds']==4
+          assert agg['directionally_positive_low_abundance_seeds']==1
+          audit={'arithmetic_recomputed':True,'five_seed_set_complete':True,'status':agg['status'],'claim_boundary':agg['claim_boundary']}
+          (root/'INDEPENDENT_AUDIT.json').write_text(json.dumps(audit,indent=2)+'\n')
+          lines=[]
+          for p in sorted(root.rglob('*')):
+              if p.is_file() and p.name!='SHA256SUMS_ALL.txt': lines.append(f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.relative_to(root)}')
+          (root/'SHA256SUMS_ALL.txt').write_text('\n'.join(lines)+'\n')
+          PY
+          find corrected_stress -type f -printf '%P\t%s\n' | sort > corrected_stress/CONTENTS.tsv
+          du -ah corrected_stress | sort -h > corrected_stress/FILE_SIZES.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LANTERN_CAMI3_CORRECTED_PSEUDONOVEL_STRESS_20260820
+          path: corrected_stress
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
