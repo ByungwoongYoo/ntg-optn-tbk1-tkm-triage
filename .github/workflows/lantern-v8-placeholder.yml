@@ -1,0 +1,8 @@
+name: LANTERN V8 placeholder
+on:
+  workflow_dispatch:
+jobs:
+  placeholder:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo placeholder
