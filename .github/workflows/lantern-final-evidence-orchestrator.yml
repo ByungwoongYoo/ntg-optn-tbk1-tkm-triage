@@ -1,0 +1,298 @@
+name: LANTERN final evidence orchestrator
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/lantern-final-evidence-orchestrator.yml'
+      - 'lantern_finalizer/**'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: read
+
+env:
+  CUTOFF_UTC: '2026-08-20T00:00:00Z'
+
+jobs:
+  finalize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Record orchestration environment
+        run: |
+          set -euo pipefail
+          mkdir -p final_work/{metadata,zips,evidence,output,selected_evidence,provenance,diagnostics}
+          git rev-parse HEAD > final_work/provenance/ORCHESTRATOR_GIT_HEAD.txt
+          uname -a > final_work/provenance/UNAME.txt
+          python --version > final_work/provenance/PYTHON_VERSION.txt
+          gh --version > final_work/provenance/GH_VERSION.txt
+          printf 'cutoff=%s\nbranch=%s\n' "$CUTOFF_UTC" "${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}" > final_work/provenance/BOUNDARY.txt
+          sha256sum lantern_finalizer/finalize_evidence.py > final_work/provenance/FINALIZER_CODE_SHA256.txt
+
+      - name: Cancel only redundant inspection jobs with prior successful equivalents
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python - <<'PY' > /tmp/cancel_ids.txt
+          import json, os, re, subprocess
+          repo=os.environ['REPO']
+          data=json.loads(subprocess.check_output(['gh','api',f'/repos/{repo}/actions/runs?per_page=100']))['workflow_runs']
+          low=re.compile(r'(asset probe|archive inspection|header inspection|coverage metadata|source archive metadata|gold metadata|read mapping metadata|compact audit)',re.I)
+          success={(r['workflow_id'],r.get('head_branch')) for r in data if r.get('status')=='completed' and r.get('conclusion')=='success'}
+          for r in data:
+              if r.get('status') not in {'queued','in_progress','waiting','pending','requested'}: continue
+              if not low.search(r.get('name','')): continue
+              if (r['workflow_id'],r.get('head_branch')) in success:
+                  print(r['id'])
+          PY
+          while read -r run_id; do
+            test -n "$run_id" || continue
+            gh run cancel "$run_id" --repo "$REPO" || true
+          done < /tmp/cancel_ids.txt
+          cp /tmp/cancel_ids.txt final_work/diagnostics/CANCELLED_REDUNDANT_RUN_IDS.txt
+
+      - name: Retry latest technical failures once
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python - <<'PY' > /tmp/rerun_ids.txt
+          import json, os, re, subprocess
+          repo=os.environ['REPO']
+          data=json.loads(subprocess.check_output(['gh','api',f'/repos/{repo}/actions/runs?per_page=100']))['workflow_runs']
+          critical=re.compile(r'(holdout|high.depth|metamdbg|domain.specific|extension|precision|additive|pairing)',re.I)
+          low=re.compile(r'(inspection|probe|metadata|compact audit|repair and dispatch)',re.I)
+          latest={}
+          for r in data:
+              if r.get('created_at','') < os.environ.get('CUTOFF_UTC',''): continue
+              if not critical.search(r.get('name','')) or low.search(r.get('name','')): continue
+              key=(r['workflow_id'],r.get('head_branch'))
+              if key not in latest or r.get('created_at','')>latest[key].get('created_at',''): latest[key]=r
+          for r in latest.values():
+              if r.get('status')=='completed' and r.get('conclusion') in {'failure','timed_out','startup_failure'} and int(r.get('run_attempt',1))<2:
+                  print(r['id'])
+          PY
+          while read -r run_id; do
+            test -n "$run_id" || continue
+            gh run rerun "$run_id" --failed --repo "$REPO" || true
+          done < /tmp/rerun_ids.txt
+          cp /tmp/rerun_ids.txt final_work/diagnostics/RERUN_TECHNICAL_FAILURE_IDS.txt
+
+      - name: Wait for current critical LANTERN calculations to quiesce
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          stable=0
+          : > final_work/diagnostics/WAIT_LOG.tsv
+          for attempt in $(seq 1 180); do
+            python - "$attempt" <<'PY'
+          import json, os, re, subprocess, sys, datetime
+          repo=os.environ['REPO']; attempt=sys.argv[1]
+          data=json.loads(subprocess.check_output(['gh','api',f'/repos/{repo}/actions/runs?per_page=100']))['workflow_runs']
+          critical=re.compile(r'(LANTERN|CAMI III)',re.I)
+          low=re.compile(r'(inspection|probe|metadata|compact audit|public asset)',re.I)
+          active=[]
+          for r in data:
+              if r.get('created_at','') < os.environ.get('CUTOFF_UTC',''): continue
+              if not critical.search(r.get('name','')) or low.search(r.get('name','')): continue
+              if r.get('name')=='LANTERN final evidence orchestrator': continue
+              if r.get('status') in {'queued','in_progress','waiting','pending','requested'}:
+                  active.append(r)
+          with open('final_work/diagnostics/WAIT_LOG.tsv','a') as f:
+              f.write(f"{datetime.datetime.now(datetime.timezone.utc).isoformat()}\t{attempt}\t{len(active)}\t"+';'.join(f"{r['id']}:{r['name']}:{r['status']}" for r in active)+'\n')
+          open('/tmp/active_count','w').write(str(len(active)))
+          PY
+            n=$(cat /tmp/active_count)
+            if test "$n" = 0; then stable=$((stable+1)); else stable=0; fi
+            if test "$stable" -ge 3; then break; fi
+            sleep 60
+          done
+          printf '%s\n' "$stable" > final_work/diagnostics/QUIESCENCE_STABLE_CYCLES.txt
+
+      - name: Collect recent LANTERN run and artifact metadata
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, subprocess
+          repo=os.environ['REPO']; cutoff=os.environ['CUTOFF_UTC']
+          all_runs=[]
+          for page in range(1,6):
+              obj=json.loads(subprocess.check_output(['gh','api',f'/repos/{repo}/actions/runs?per_page=100&page={page}']))
+              rows=obj.get('workflow_runs',[])
+              if not rows: break
+              all_runs.extend(rows)
+          runs=[]
+          for r in all_runs:
+              if r.get('created_at','')<cutoff: continue
+              if 'LANTERN' not in r.get('name','') and 'CAMI III' not in r.get('name',''): continue
+              runs.append({k:r.get(k) for k in ['id','name','workflow_id','head_branch','head_sha','status','conclusion','run_number','run_attempt','created_at','updated_at','html_url']})
+          open('final_work/metadata/RUNS.json','w').write(json.dumps({'workflow_runs':runs},indent=2)+'\n')
+          artifacts=[]
+          for r in runs[:120]:
+              if r.get('status')!='completed': continue
+              try:
+                  obj=json.loads(subprocess.check_output(['gh','api',f"/repos/{repo}/actions/runs/{r['id']}/artifacts?per_page=100"]))
+              except subprocess.CalledProcessError:
+                  continue
+              for a in obj.get('artifacts',[]):
+                  artifacts.append({
+                      'id':a['id'],'name':a['name'],'size_in_bytes':a['size_in_bytes'],'expired':a.get('expired',False),
+                      'created_at':a.get('created_at'),'digest':a.get('digest'),'run_id':r['id'],'run_name':r['name'],
+                      'head_branch':r.get('head_branch'),'run_conclusion':r.get('conclusion')})
+          open('final_work/metadata/ARTIFACTS_ALL.json','w').write(json.dumps({'artifacts':artifacts},indent=2)+'\n')
+          include=[]; total=0
+          positive=('HOLDOUT','DECISION','DEVELOPMENT','MODEL','AUDIT','EVIDENCE','FINAL','STATUS','PAIRING','METAMDBG','SPADES','EXTENSION','V4','V5','V6','V7')
+          negative=('TOY_READS','SHORT_BENCHMARK_20260819')
+          for a in sorted(artifacts,key=lambda x:(x.get('created_at') or '',x['id']),reverse=True):
+              name=a['name'].upper(); size=int(a['size_in_bytes'])
+              if a['expired'] or size>450_000_000: continue
+              if not any(x in name for x in positive): continue
+              if any(x in name for x in negative) and 'COMPACT' not in name: continue
+              if total+size>3_200_000_000 or len(include)>=40: continue
+              include.append(a); total+=size
+          open('final_work/metadata/ARTIFACTS_SELECTED.json','w').write(json.dumps({'artifacts':include,'total_bytes':total},indent=2)+'\n')
+          PY
+
+      - name: Download and extract selected compact immutable artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python - <<'PY' > /tmp/artifacts.tsv
+          import json,re
+          for a in json.load(open('final_work/metadata/ARTIFACTS_SELECTED.json'))['artifacts']:
+              safe=re.sub(r'[^A-Za-z0-9_.-]+','_',a['name'])[:120]
+              print(f"{a['id']}\t{safe}")
+          PY
+          while IFS=$'\t' read -r artifact_id safe; do
+            test -n "$artifact_id" || continue
+            zip="final_work/zips/${artifact_id}_${safe}.zip"
+            dir="final_work/evidence/${artifact_id}_${safe}"
+            gh api -H 'Accept: application/vnd.github+json' "/repos/$REPO/actions/artifacts/$artifact_id/zip" > "$zip"
+            unzip -tq "$zip"
+            mkdir -p "$dir"
+            unzip -q "$zip" -d "$dir"
+            sha256sum "$zip" >> final_work/provenance/DOWNLOADED_ARTIFACT_ZIP_SHA256.txt
+          done < /tmp/artifacts.tsv
+
+      - name: Apply unchanged final scientific gates
+        run: |
+          set -euo pipefail
+          python lantern_finalizer/finalize_evidence.py \
+            --evidence-root final_work/evidence \
+            --runs-json final_work/metadata/RUNS.json \
+            --artifacts-json final_work/metadata/ARTIFACTS_SELECTED.json \
+            --out final_work/output \
+            > final_work/diagnostics/FINALIZER_CONSOLE.log 2>&1
+          cat final_work/output/FINAL_MACHINE_SUMMARY.json
+          cat final_work/output/FINAL_VERDICT.md
+
+      - name: Build compact complete user package
+        run: |
+          set -euo pipefail
+          mkdir -p final_package/{results,provenance,code,workflows,evidence_selected,failure_audit}
+          cp final_work/output/* final_package/results/
+          cp final_work/metadata/*.json final_package/provenance/
+          cp final_work/provenance/* final_package/provenance/
+          cp final_work/diagnostics/* final_package/failure_audit/
+          cp lantern_finalizer/finalize_evidence.py final_package/code/
+          find .github/workflows -maxdepth 1 -type f \( -iname '*lantern*' -o -iname '*cami3*' \) -exec cp {} final_package/workflows/ \;
+          for d in lantern_cami3 lantern_v4 lantern_v5 lantern_v6 lantern_v7; do
+            test -d "$d" && cp -a "$d" "final_package/code/$d"
+          done
+          python - <<'PY'
+          from pathlib import Path
+          import shutil
+          roots=sorted(Path('final_work/evidence').iterdir()) if Path('final_work/evidence').exists() else []
+          selected=Path('final_package/evidence_selected'); total=0; limit=45_000_000
+          wanted=('decision','verdict','summary','gate','freeze','comparison','result','status','manifest','audit')
+          for root in roots:
+              for p in sorted(root.rglob('*')):
+                  if not p.is_file() or p.stat().st_size>2_000_000: continue
+                  low=p.name.lower()
+                  if p.suffix.lower() not in {'.json','.csv','.tsv','.md','.txt'}: continue
+                  if not any(x in low for x in wanted): continue
+                  if total+p.stat().st_size>limit: continue
+                  rel=Path(root.name)/p.relative_to(root)
+                  dest=selected/rel; dest.parent.mkdir(parents=True,exist_ok=True)
+                  shutil.copy2(p,dest); total+=p.stat().st_size
+          Path('final_package/provenance/SELECTED_EVIDENCE_BYTES.txt').write_text(str(total)+'\n')
+          PY
+          cp final_work/output/FINAL_VERDICT.md final_package/FINAL_VERDICT.md
+          cat > final_package/README.md <<'EOF'
+          # LANTERN CAMI III final evidence package
+
+          This compact package contains the strict machine verdict, candidate table, run/artifact manifests, selected immutable decision evidence, code, workflows, provenance, and failure audit. Public raw reads and multi-gigabyte intermediates are not duplicated; their workflow run IDs, artifact IDs, source URLs, versions, and hashes are retained.
+          EOF
+          find final_package -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > final_package/SHA256SUMS.txt
+          python - <<'PY'
+          import zipfile
+          from pathlib import Path
+          root=Path('final_package'); out=Path('LANTERN_CAMI3_FINAL_EVIDENCE_20260820.zip')
+          with zipfile.ZipFile(out,'w',compression=zipfile.ZIP_DEFLATED,allowZip64=True) as z:
+              for p in sorted(root.rglob('*')):
+                  if p.is_file(): z.write(p,p.relative_to(root.parent))
+          with zipfile.ZipFile(out) as z:
+              bad=z.testzip()
+              if bad: raise SystemExit(f'bad zip member: {bad}')
+          PY
+          sha256sum LANTERN_CAMI3_FINAL_EVIDENCE_20260820.zip > LANTERN_CAMI3_FINAL_EVIDENCE_20260820_SHA256.txt
+          stat --printf='%n\t%s\t%y\n' LANTERN_CAMI3_FINAL_EVIDENCE_20260820.zip > LANTERN_CAMI3_FINAL_EVIDENCE_20260820_STAT.txt
+          unzip -t LANTERN_CAMI3_FINAL_EVIDENCE_20260820.zip > LANTERN_CAMI3_FINAL_EVIDENCE_20260820_UNZIP_TEST.txt
+
+      - name: Commit final outputs only after a terminal scientific verdict
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
+        run: |
+          set -euo pipefail
+          status=$(python -c "import json; print(json.load(open('final_work/output/FINAL_MACHINE_SUMMARY.json'))['overall_status'])")
+          printf '%s\n' "$status" > final_work/output/OVERALL_STATUS.txt
+          if [[ "$status" == INCOMPLETE_* ]]; then
+            echo "Nonterminal status: $status" >&2
+            exit 2
+          fi
+          rm -rf lantern_final_20260820
+          mkdir -p lantern_final_20260820
+          cp -a final_package/. lantern_final_20260820/
+          cp LANTERN_CAMI3_FINAL_EVIDENCE_20260820.zip lantern_final_20260820/
+          cp LANTERN_CAMI3_FINAL_EVIDENCE_20260820_SHA256.txt lantern_final_20260820/
+          cp LANTERN_CAMI3_FINAL_EVIDENCE_20260820_STAT.txt lantern_final_20260820/
+          cp LANTERN_CAMI3_FINAL_EVIDENCE_20260820_UNZIP_TEST.txt lantern_final_20260820/
+          git config user.name 'LANTERN finalizer'
+          git config user.email 'yoonge3@gmail.com'
+          git add lantern_final_20260820
+          git commit -m "Finalize LANTERN evidence: $status"
+          git push origin "HEAD:${BRANCH}"
+
+      - name: Upload final package or nonterminal diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: LANTERN_CAMI3_FINAL_ORCHESTRATION_20260820
+          path: |
+            final_work
+            final_package
+            LANTERN_CAMI3_FINAL_EVIDENCE_20260820.zip
+            LANTERN_CAMI3_FINAL_EVIDENCE_20260820_SHA256.txt
+            LANTERN_CAMI3_FINAL_EVIDENCE_20260820_STAT.txt
+            LANTERN_CAMI3_FINAL_EVIDENCE_20260820_UNZIP_TEST.txt
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
