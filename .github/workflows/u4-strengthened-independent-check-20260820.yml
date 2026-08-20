@@ -1,5 +1,8 @@
 name: U4 strengthened independent verification 20260820
 
+# Read-only verifier. This file is also the final-head trigger after legacy
+# self-report workflows have finished writing their historical log snapshot.
+
 on:
   workflow_dispatch:
   push:
