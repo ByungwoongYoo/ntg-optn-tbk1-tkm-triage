@@ -1,0 +1,30 @@
+name: Canonical push-dispatch repaired LANTERN v4 holdout
+
+on:
+  push:
+    branches: [cami3-lantern-20260819]
+    paths:
+      - '.github/workflows/cami3-lantern-v4-holdout-resume-fixed-base-dispatch.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Dispatch repaired holdout workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          REF: cami3-lantern-20260819
+        run: |
+          set -euo pipefail
+          gh workflow run cami3-lantern-v4-holdout-resume-fixed.yml --repo "$REPO" --ref "$REF"
+          sleep 10
+          gh run list --repo "$REPO" --workflow cami3-lantern-v4-holdout-resume-fixed.yml \
+            --branch "$REF" --event workflow_dispatch --limit 5 \
+            --json databaseId,status,conclusion,url,headSha,createdAt
