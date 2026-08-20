@@ -74,11 +74,69 @@ jobs:
           use-github-cache: false
           leanchecker: true
           leanchecker-args: 'U4Formal'
-          nanoda: true
-          nanoda-allow-sorry: false
           axiom-audit: true
           axiom-audit-allow: 'propext,Classical.choice,Quot.sound'
           axiom-audit-root: U4Formal
+
+      - name: Check the exported environment with pinned nanoda
+        id: nanoda
+        continue-on-error: true
+        run: |
+          mkdir -p artifact/u4-strengthened-20260820
+          set -o pipefail
+          (
+            set -euo pipefail
+            work_dir="$(mktemp -d)"
+            trap 'rm -rf "$work_dir"' EXIT
+            export_sha='15f6055e299ad5b89345e533cc2192f4cc00f659'
+            nanoda_sha='6ae1f0cd962f081f6c423454c5da729d841236a7'
+
+            git init "$work_dir/lean4export"
+            git -C "$work_dir/lean4export" remote add origin \
+              https://github.com/leanprover/lean4export.git
+            git -C "$work_dir/lean4export" fetch --depth=1 origin "$export_sha"
+            git -C "$work_dir/lean4export" checkout --detach FETCH_HEAD
+            test "$(git -C "$work_dir/lean4export" rev-parse HEAD)" = "$export_sha"
+
+            git init "$work_dir/nanoda"
+            git -C "$work_dir/nanoda" remote add origin \
+              https://github.com/ammkrn/nanoda_lib.git
+            git -C "$work_dir/nanoda" fetch --depth=1 origin "$nanoda_sha"
+            git -C "$work_dir/nanoda" checkout --detach FETCH_HEAD
+            test "$(git -C "$work_dir/nanoda" rev-parse HEAD)" = "$nanoda_sha"
+
+            cp u4_resolution/lean/lean-toolchain "$work_dir/lean4export/"
+            (cd "$work_dir/lean4export" && lake build)
+            (cd "$work_dir/nanoda" && cargo build --release)
+            (
+              cd u4_resolution/lean
+              lake env "$work_dir/lean4export/.lake/build/bin/lean4export" \
+                U4Formal > "$work_dir/U4Formal.export"
+            )
+            python3 - "$work_dir/U4Formal.export" "$work_dir/nanoda.json" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          export_path, config_path = sys.argv[1:]
+          config = {
+              'export_file_path': export_path,
+              'use_stdin': False,
+              'permitted_axioms': [
+                  'propext', 'Classical.choice', 'Quot.sound',
+                  'Lean.trustCompiler',
+              ],
+              'unpermitted_axiom_hard_error': False,
+              'nat_extension': True,
+              'string_extension': True,
+              'print_success_message': True,
+          }
+          pathlib.Path(config_path).write_text(
+              json.dumps(config, indent=2), encoding='utf-8')
+          PY
+            "$work_dir/nanoda/target/release/nanoda_bin" \
+              "$work_dir/nanoda.json"
+          ) 2>&1 | tee artifact/u4-strengthened-20260820/NANODA.log
 
       - name: Run direct compiler and symbolic cross-check
         id: direct
@@ -108,7 +166,7 @@ jobs:
         env:
           LEAN_ACTION_OUTCOME: ${{ steps.lean.outcome }}
           BUILD_STATUS: ${{ steps.lean.outputs['build-status'] }}
-          NANODA_STATUS: ${{ steps.lean.outputs['nanoda-status'] }}
+          NANODA_STATUS: ${{ steps.nanoda.outcome }}
           AXIOM_AUDIT_STATUS: ${{ steps.lean.outputs['axiom-audit-status'] }}
           DIRECT_OUTCOME: ${{ steps.direct.outcome }}
         run: |
@@ -148,12 +206,12 @@ jobs:
         env:
           LEAN_ACTION_OUTCOME: ${{ steps.lean.outcome }}
           BUILD_STATUS: ${{ steps.lean.outputs['build-status'] }}
-          NANODA_STATUS: ${{ steps.lean.outputs['nanoda-status'] }}
+          NANODA_STATUS: ${{ steps.nanoda.outcome }}
           AXIOM_AUDIT_STATUS: ${{ steps.lean.outputs['axiom-audit-status'] }}
           DIRECT_OUTCOME: ${{ steps.direct.outcome }}
         run: |
           test "$LEAN_ACTION_OUTCOME" = success
           test "$BUILD_STATUS" = SUCCESS
-          test "$NANODA_STATUS" = SUCCESS
+          test "$NANODA_STATUS" = success
           test "$AXIOM_AUDIT_STATUS" = SUCCESS
           test "$DIRECT_OUTCOME" = success
