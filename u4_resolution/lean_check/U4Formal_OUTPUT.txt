@@ -1,22 +1,3 @@
-U4Formal.lean:79:8: error: omega could not prove the goal:
-a possible counterexample may satisfy the constraints
-  g ≥ 1
-  f ≥ 1
-  e ≥ 1
-  d ≥ 0
-  d + e ≥ 0
-where
- d := ↑(C b a c).size
- e := ↑w.size
- f := ↑b.size
- g := ↑c.size
-U4Formal.lean:86:14: warning: This simp argument is unused:
-  C
-
-Hint: Omit it from the simp argument list.
-  [apply] simp [Fml.size] at hs
-
-Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
 U4Formal.explicitU4Countermodel : U4Countermodel
 U4Formal.u4_countermodel_exists :
   ∃ pred,
@@ -29,6 +10,6 @@ U4Formal.u4_fails_single_axiom_test (q : Fml) : ¬U4Derivable (I q q)
 U4Formal.positive_derives_reflexivity (q : Fml) : PositiveDerivable (I q q)
 U4Formal.positive_reflexivity_not_u4 (q : Fml) : PositiveDerivable (I q q) ∧ ¬U4Derivable (I q q)
 U4Formal.u4_not_axiomatizes_positive_implication : ∃ f, PositiveDerivable f ∧ ¬U4Derivable f
-'U4Formal.u4_countermodel_exists' depends on axioms: [propext, sorryAx, Quot.sound]
-'U4Formal.U4Derivable.sound' depends on axioms: [propext, sorryAx, Quot.sound]
-'U4Formal.u4_not_axiomatizes_positive_implication' depends on axioms: [propext, sorryAx, Quot.sound]
+'U4Formal.u4_countermodel_exists' depends on axioms: [propext, Quot.sound]
+'U4Formal.U4Derivable.sound' depends on axioms: [propext, Quot.sound]
+'U4Formal.u4_not_axiomatizes_positive_implication' depends on axioms: [propext, Quot.sound]
