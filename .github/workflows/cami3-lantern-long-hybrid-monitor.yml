@@ -1,0 +1,45 @@
+name: CAMI III LANTERN long-hybrid run monitor
+
+on:
+  pull_request:
+    branches: [cami3-lantern-long-hybrid-20260820]
+    paths:
+      - '.github/workflows/cami3-lantern-long-hybrid-monitor.yml'
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  locate-run:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Locate push-triggered long-hybrid run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TARGET_SHA: '2adb5c56f2ceaae260c2c5fef5701d86132b34c7'
+        run: |
+          set -euo pipefail
+          gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "/repos/$REPO/actions/runs?head_sha=$TARGET_SHA&per_page=20" \
+            > runs.json
+          python - <<'PY'
+          import json
+          x=json.load(open('runs.json'))
+          rows=[]
+          for r in x.get('workflow_runs',[]):
+              rows.append({k:r.get(k) for k in ['id','name','event','status','conclusion','head_branch','head_sha','created_at','updated_at','html_url']})
+          y={'target_sha':'2adb5c56f2ceaae260c2c5fef5701d86132b34c7','runs':rows}
+          open('LONG_HYBRID_RUN_LOOKUP.json','w').write(json.dumps(y,indent=2)+'\n')
+          print(json.dumps(y,indent=2))
+          if not any(r.get('name')=='CAMI III LANTERN Toy long-read and hybrid benchmark' for r in rows):
+              raise SystemExit('target long-hybrid run not found')
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LANTERN_LONG_HYBRID_RUN_LOOKUP
+          path: LONG_HYBRID_RUN_LOOKUP.json
+          retention-days: 7
