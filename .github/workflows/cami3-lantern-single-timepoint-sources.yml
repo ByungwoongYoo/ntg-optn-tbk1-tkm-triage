@@ -1,0 +1,178 @@
+name: LANTERN single-timepoint short and hybrid source benchmark
+
+on:
+  push:
+    branches: [lantern-expanded-sources-20260820]
+    paths:
+      - '.github/workflows/cami3-lantern-single-timepoint-sources.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  READ_RUN_ID: '32285680342'
+
+jobs:
+  assemble-evaluate:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - method: megahit_s0
+            sample: 0
+            family: megahit
+            mode: short
+          - method: megahit_s1
+            sample: 1
+            family: megahit
+            mode: short
+          - method: metaspades_s0
+            sample: 0
+            family: metaspades
+            mode: short
+          - method: metaspades_s1
+            sample: 1
+            family: metaspades
+            mode: short
+          - method: metaspades_hybrid_s0
+            sample: 0
+            family: metaspades
+            mode: hybrid
+          - method: metaspades_hybrid_s1
+            sample: 1
+            family: metaspades
+            mode: hybrid
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download immutable Toy read artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: LANTERN_CAMI3_TOY_READS_S${{ matrix.sample }}_V1
+          path: read_artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.READ_RUN_ID }}
+
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: lantern-single-source
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            megahit=1.2.9
+            spades=4.3.0
+            minimap2=2.31
+            seqkit=2.13.0
+          cache-downloads: true
+          post-cleanup: all
+
+      - name: Isolate exact sample reads and provenance
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          method='${{ matrix.method }}'; s='${{ matrix.sample }}'; root="source_${method}"
+          mkdir -p "$root"/{reads,assembly,evaluation,truth_download,truth,provenance,logs,failure_audit}
+          r1=$(find read_artifact -type f -name "S${s}_R1.fastq.gz" -print -quit)
+          r2=$(find read_artifact -type f -name "S${s}_R2.fastq.gz" -print -quit)
+          long=$(find read_artifact -type f -name "S${s}_long.fastq.gz" -print -quit)
+          test -s "$r1"; test -s "$r2"; test -s "$long"
+          cp "$r1" "$root/reads/R1.fastq.gz"
+          cp "$r2" "$root/reads/R2.fastq.gz"
+          cp "$long" "$root/reads/long.fastq.gz"
+          gzip -t "$root/reads/R1.fastq.gz" "$root/reads/R2.fastq.gz" "$root/reads/long.fastq.gz"
+          seqkit stats -T "$root"/reads/*.fastq.gz > "$root/provenance/READ_STATS.tsv"
+          sha256sum "$root"/reads/*.fastq.gz > "$root/provenance/READ_SHA256.txt"
+          git rev-parse HEAD > "$root/provenance/GIT_HEAD.txt"
+          uname -a > "$root/provenance/UNAME.txt"
+          python --version > "$root/provenance/PYTHON_VERSION.txt"
+          micromamba list > "$root/provenance/MICROMAMBA_LIST.txt"
+          printf 'method=%s\nsample=%s\nfamily=%s\nmode=%s\nread_run=%s\ngold_accessed=false\n' \
+            "$method" "$s" '${{ matrix.family }}' '${{ matrix.mode }}' "$READ_RUN_ID" > "$root/provenance/FROZEN_INPUTS.txt"
+
+      - name: Assemble and freeze before gold access
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          method='${{ matrix.method }}'; family='${{ matrix.family }}'; mode='${{ matrix.mode }}'; root="source_${method}"
+          set +e
+          if test "$family" = megahit; then
+            /usr/bin/time -v timeout --signal=TERM --kill-after=120s 300m \
+              megahit -1 "$root/reads/R1.fastq.gz" -2 "$root/reads/R2.fastq.gz" \
+              -o "$root/assembly/out" --min-contig-len 1000 -t 4 --memory 0.8 \
+              > "$root/logs/ASSEMBLY.log" 2>&1
+            rc=$?; preferred="$root/assembly/out/final.contigs.fa"
+          elif test "$mode" = hybrid; then
+            /usr/bin/time -v timeout --signal=TERM --kill-after=120s 300m \
+              metaspades.py --only-assembler -t 4 -m 14 \
+              -1 "$root/reads/R1.fastq.gz" -2 "$root/reads/R2.fastq.gz" --nanopore "$root/reads/long.fastq.gz" \
+              -o "$root/assembly/out" > "$root/logs/ASSEMBLY.log" 2>&1
+            rc=$?; preferred="$root/assembly/out/contigs.fasta"
+          else
+            /usr/bin/time -v timeout --signal=TERM --kill-after=120s 300m \
+              metaspades.py --only-assembler -t 4 -m 14 \
+              -1 "$root/reads/R1.fastq.gz" -2 "$root/reads/R2.fastq.gz" \
+              -o "$root/assembly/out" > "$root/logs/ASSEMBLY.log" 2>&1
+            rc=$?; preferred="$root/assembly/out/contigs.fasta"
+          fi
+          set -e
+          printf 'exit_code=%s\nmethod=%s\nfamily=%s\nmode=%s\n' "$rc" "$method" "$family" "$mode" > "$root/failure_audit/ASSEMBLY.status"
+          test -s "$preferred"
+          cp "$preferred" "$root/assembly/final_assembly.fasta"
+          python lantern_cami3/scripts/verify_cami_assembly.py "$root/assembly/final_assembly.fasta" --out "$root/assembly/VALIDATION.json"
+          seqkit stats -T "$root/assembly/final_assembly.fasta" > "$root/assembly/ASSEMBLY_STATS.tsv"
+          sha256sum "$root/assembly/final_assembly.fasta" > "$root/assembly/ASSEMBLY_SHA256.txt"
+          python - "$root" "$method" <<'PY'
+          import hashlib,json,sys,time
+          from pathlib import Path
+          root=Path(sys.argv[1]); method=sys.argv[2]; p=root/'assembly/final_assembly.fasta'
+          x={'method':method,'freeze_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'assembly_sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'assembly_bytes':p.stat().st_size,'truth_accessed':False,'boundary':'Single-timepoint source assembly completed and hashed before Toy gold-standard access.'}
+          (root/'provenance/TRUTH_BLIND_FREEZE.json').write_text(json.dumps(x,indent=2)+'\n')
+          PY
+
+      - name: Open sample gold and evaluate after freeze
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          method='${{ matrix.method }}'; s='${{ matrix.sample }}'; root="source_${method}"
+          curl -fsSL --retry 8 --retry-all-errors \
+            "https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_${s}_gsa.tar.gz" \
+            -o "$root/truth_download/sample_gsa.tar.gz"
+          sha256sum "$root/truth_download/sample_gsa.tar.gz" > "$root/provenance/GSA_SHA256.txt"
+          python lantern_cami3/scripts/extract_gsa_truth.py \
+            --gsa-tar "S${s}=$root/truth_download/sample_gsa.tar.gz" --out "$root/truth" \
+            > "$root/logs/EXTRACT_TRUTH.log" 2>&1
+          minimap2 -x asm5 -c -N 100 -t 4 "$root/truth/combined_truth.fasta" "$root/assembly/final_assembly.fasta" \
+            > "$root/evaluation/assembly_to_truth.paf" 2> "$root/logs/MINIMAP2.log"
+          python lantern_cami3/scripts/evaluate_gold_coverage.py \
+            --paf "$root/evaluation/assembly_to_truth.paf" --truth-mapping "$root/truth/truth_mapping.tsv" \
+            --assembly-fasta "$root/assembly/final_assembly.fasta" --min-identity 0.90 --min-alignment 500 \
+            --out "$root/evaluation" > "$root/logs/EVALUATE.log" 2>&1
+          test -s "$root/evaluation/GOLD_COVERAGE_SUMMARY.json"
+
+      - name: Compact reproducible source artifact
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          method='${{ matrix.method }}'; root="source_${method}"
+          rm -rf "$root/reads" "$root/assembly/out" "$root/truth_download" "$root/truth/references"
+          rm -f "$root/truth/combined_truth.fasta" "$root/evaluation/assembly_to_truth.paf"
+          find "$root" -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > "$root/SHA256SUMS.txt" || true
+          du -ah "$root" | sort -h > "$root/FILE_SIZES.txt" || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: LANTERN_CAMI3_SOURCE_${{ matrix.method }}_20260820
+          path: source_${{ matrix.method }}
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
