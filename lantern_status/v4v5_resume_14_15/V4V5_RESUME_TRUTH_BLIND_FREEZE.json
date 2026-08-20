@@ -1,0 +1,122 @@
+{
+  "freeze_utc": "2026-08-20T08:02:54Z",
+  "holdout_pair": [
+    14,
+    15
+  ],
+  "truth_accessed": false,
+  "n_files": 22,
+  "files": [
+    {
+      "path": "lantern_cami3/scripts/baseline_preserving_augment.py",
+      "bytes": 15424,
+      "sha256": "57ba4ba8494681a78173fc2c67cd764054074e41c22cef6469f2c395239a5621"
+    },
+    {
+      "path": "lantern_v5/apply_precision_filter.py",
+      "bytes": 6268,
+      "sha256": "955fe870c30b2a4eab2fd627d43eb8ecdacf914aa59c9c9b5afd66a1aab3c573"
+    },
+    {
+      "path": "resume_v4v5_14_15/configs/v4_balanced.json",
+      "bytes": 581,
+      "sha256": "9d8b1a0e92300adcd30fd6ff3e5a44ad6d7f9480cc8c6487df22ffaa62c16400"
+    },
+    {
+      "path": "resume_v4v5_14_15/configs/MODEL_FREEZE.json",
+      "bytes": 1518,
+      "sha256": "fd7b630c34ee6a57f9e7bee1b155d2011d59a13dddf5f1535f123ecab6efe0c4"
+    },
+    {
+      "path": "resume_v4v5_14_15/candidates/clusters/representative_metadata.tsv",
+      "bytes": 4337839,
+      "sha256": "04a6123bbefa127838df027d231dd22c558cc1cb13ad5c026a87f018331a674f"
+    },
+    {
+      "path": "resume_v4v5_14_15/evidence/merged/mapping_evidence.tsv",
+      "bytes": 2672915,
+      "sha256": "f74e5e9b1ac70c988f275f66e5eea9b9dd494d7f86ac0ec4a0f692a746a1822c"
+    },
+    {
+      "path": "resume_v4v5_14_15/variants/v4_balanced_full/LANTERN_BACKBONE_AUGMENTED.fasta",
+      "bytes": 186278910,
+      "sha256": "62b535e78655a289f563c9a8e123156c6f27c157e0503bdc5a5b52e09df2c72f"
+    },
+    {
+      "path": "resume_v4v5_14_15/variants/v4_balanced_no_consensus/LANTERN_BACKBONE_AUGMENTED.fasta",
+      "bytes": 184387764,
+      "sha256": "9f224d498ce2bbff5b2ec6eaf118bc30ff4ce4c4595fe0d47a54619385320cf0"
+    },
+    {
+      "path": "resume_v4v5_14_15/variants/v4_balanced_no_long/LANTERN_BACKBONE_AUGMENTED.fasta",
+      "bytes": 185938124,
+      "sha256": "9bc4127082b49e03aa4cbc22433ba3ef0214183c916014e4d1448026b2c7e463"
+    },
+    {
+      "path": "resume_v4v5_14_15/variants/v4_balanced_no_longitudinal/LANTERN_BACKBONE_AUGMENTED.fasta",
+      "bytes": 186143891,
+      "sha256": "954ab6518f9f3b410030cf0750ac85d2da3f3b919531d85bdf6c4b097a1197f2"
+    },
+    {
+      "path": "resume_v4v5_14_15/variants/v4_balanced_full/AUGMENTATION_DECISIONS.tsv",
+      "bytes": 6229292,
+      "sha256": "22e3d531dfbf7802824f0cb03122234a5a2b39d1361a5cfd2681ed98e2287162"
+    },
+    {
+      "path": "resume_v4v5_14_15/variants/v4_balanced_no_consensus/AUGMENTATION_DECISIONS.tsv",
+      "bytes": 6414989,
+      "sha256": "156a16d2d3f24bf02eadb3bb2b4fce2c974c197fb075a399c3afc36409dc01c0"
+    },
+    {
+      "path": "resume_v4v5_14_15/variants/v4_balanced_no_long/AUGMENTATION_DECISIONS.tsv",
+      "bytes": 5883516,
+      "sha256": "f2f34865bda780012cda5774bd35fa50f357e8b584ad5b8a829eadddbf77e6b9"
+    },
+    {
+      "path": "resume_v4v5_14_15/variants/v4_balanced_no_longitudinal/AUGMENTATION_DECISIONS.tsv",
+      "bytes": 6461710,
+      "sha256": "2dbeb0d3b9149b30dc203b68b5be182efe360c6bf7a6c0952341b526caed2ea3"
+    },
+    {
+      "path": "resume_v4v5_14_15/variants/v5_precision_full/LANTERN_V5_ASSEMBLY.fasta",
+      "bytes": 183967385,
+      "sha256": "f396fa819f018c4fcd3d46d4a42527f42c6312e4f5583e0bcc5c55de9e304979"
+    },
+    {
+      "path": "resume_v4v5_14_15/variants/v5_precision_no_consensus/LANTERN_V5_ASSEMBLY.fasta",
+      "bytes": 183398364,
+      "sha256": "d86c54a21042111c33a91919b7c916f7b4f8858026a02077de988828aae9d8a5"
+    },
+    {
+      "path": "resume_v4v5_14_15/variants/v5_precision_no_long/LANTERN_V5_ASSEMBLY.fasta",
+      "bytes": 183105201,
+      "sha256": "25c8be25a6a522ea7633cf81b99fcd6a90b9d7619440c56ecad1887b489cc708"
+    },
+    {
+      "path": "resume_v4v5_14_15/variants/v5_precision_no_longitudinal/LANTERN_V5_ASSEMBLY.fasta",
+      "bytes": 183987600,
+      "sha256": "2a6bc7a0efb69b55519f3599d0730f380368d77fe4667cef46794597d38d7a0e"
+    },
+    {
+      "path": "resume_v4v5_14_15/variants/v5_precision_full/V5_FILTER_DECISIONS.tsv",
+      "bytes": 9236010,
+      "sha256": "54fa8d65daec35735d2e6176f79df3569633b7b71c0a15de3896ca03fb09ccc7"
+    },
+    {
+      "path": "resume_v4v5_14_15/variants/v5_precision_no_consensus/V5_FILTER_DECISIONS.tsv",
+      "bytes": 9422004,
+      "sha256": "f79b0e029ece37627229e515ae71a6ba31cba073c75bb6fe79e846a263b52af7"
+    },
+    {
+      "path": "resume_v4v5_14_15/variants/v5_precision_no_long/V5_FILTER_DECISIONS.tsv",
+      "bytes": 8964326,
+      "sha256": "f36b2cef2b7e7cf0ad03b77a81125cc3959c4776145936bd905566c63f045a8a"
+    },
+    {
+      "path": "resume_v4v5_14_15/variants/v5_precision_no_longitudinal/V5_FILTER_DECISIONS.tsv",
+      "bytes": 9468941,
+      "sha256": "b1e35e9bf4c9e529fbc893618db142750b4eba879d232cbfc78c557efa14b36c"
+    }
+  ],
+  "boundary": "Resumed immutable candidate and baseline state, completed evidence, all v4/v5 assemblies and ablations were hashed before either holdout GSA or reads_mapping truth was accessed."
+}

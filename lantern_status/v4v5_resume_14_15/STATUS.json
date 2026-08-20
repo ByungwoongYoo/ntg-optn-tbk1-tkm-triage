@@ -1,0 +1,40 @@
+{
+  "artifact_download_exit_code": 0,
+  "decisions": [],
+  "files": [
+    {
+      "bytes": 2,
+      "name": "ARTIFACT_DOWNLOAD_EXIT_CODE.txt",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 9673,
+      "name": "OBSERVED_CONTENTS.tsv",
+      "sha256": "bda32559b64032f5a32a30665bcee0b00e886c58c24bea56c6f6c488040e12c7"
+    },
+    {
+      "bytes": 285,
+      "name": "TARGET_RUN.json",
+      "sha256": "502da6966270b058bd206bdc636171f9d1cd534230187b96f56469169d2f54bf"
+    },
+    {
+      "bytes": 12,
+      "name": "TARGET_RUN_ID.txt",
+      "sha256": "59a40f7c73ce69cae10eda3e46ae2bef6646edc07da573e376fe737b48a71fe8"
+    },
+    {
+      "bytes": 4895,
+      "name": "V4V5_RESUME_TRUTH_BLIND_FREEZE.json",
+      "sha256": "3d522ee096296cd6ec1bcd96dd5750a9dcad332a697e543e6e993c9728ed9776"
+    }
+  ],
+  "run": {
+    "conclusion": "failure",
+    "createdAt": "2026-08-20T07:48:59Z",
+    "databaseId": 32345759193,
+    "headSha": "b5749d7e3e570a49281fcba745e5e8eabfa4fad7",
+    "status": "completed",
+    "updatedAt": "2026-08-20T08:25:39Z",
+    "url": "https://github.com/ByungwoongYoo/ntg-optn-tbk1-tkm-triage/actions/runs/32345759193"
+  }
+}
