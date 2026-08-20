@@ -1,0 +1,218 @@
+{
+  "version": "LANTERN-hybrid-v4-grid-20260820",
+  "development_pair": [0, 1],
+  "untouched_validation_pair": [14, 16],
+  "read_input": {
+    "upstream_run_id": 32285680342,
+    "short_fraction": 0.08,
+    "long_fraction": 0.04,
+    "seed": 20260819
+  },
+  "backbone": {
+    "artifact_run_id": 32312941523,
+    "artifact_name": "LANTERN_CAMI3_MULTIMODAL_metaspades_hybrid_pair_20260820",
+    "method": "metaspades_hybrid_pair"
+  },
+  "auxiliary_assemblies": [
+    {
+      "artifact_run_id": 32312941523,
+      "artifact_name": "LANTERN_CAMI3_MULTIMODAL_megahit_short_pair_20260820",
+      "source_id": "megahit_short_pair",
+      "assembler": "megahit",
+      "scope": "longitudinal",
+      "mode": "short"
+    },
+    {
+      "artifact_run_id": 32312941523,
+      "artifact_name": "LANTERN_CAMI3_MULTIMODAL_metaspades_short_pair_20260820",
+      "source_id": "metaspades_short_pair",
+      "assembler": "metaspades",
+      "scope": "longitudinal",
+      "mode": "short"
+    },
+    {
+      "artifact_run_id": 32312941523,
+      "artifact_name": "LANTERN_CAMI3_MULTIMODAL_flye_long_pair_20260820",
+      "source_id": "flye_long_pair",
+      "assembler": "flye",
+      "scope": "longitudinal",
+      "mode": "long"
+    },
+    {
+      "artifact_run_id": 32312941523,
+      "artifact_name": "LANTERN_CAMI3_MULTIMODAL_flye_long_s0_20260820",
+      "source_id": "flye_long_s0",
+      "assembler": "flye",
+      "scope": "timepoint_support",
+      "mode": "long"
+    },
+    {
+      "artifact_run_id": 32312941523,
+      "artifact_name": "LANTERN_CAMI3_MULTIMODAL_flye_long_s1_20260820",
+      "source_id": "flye_long_s1",
+      "assembler": "flye",
+      "scope": "timepoint_support",
+      "mode": "long"
+    }
+  ],
+  "candidate_clustering": {
+    "minimum_length": 1000,
+    "identity": 0.97,
+    "shorter_coverage": 0.85
+  },
+  "development_selection_rule": {
+    "primary_objective": "maximum genome-fraction gain over the immutable hybrid backbone",
+    "secondary_objective": "maximum mean per-genome recovery gain",
+    "tertiary_objective": "maximum low-abundance recovery gain",
+    "safety_constraints": {
+      "relative_cross_binid_chimera_increase_maximum": 0.10,
+      "alignment_to_unique_truth_ratio_increase_maximum": 0.10,
+      "longitudinal_ablation_drop_minimum_percentage_points": 0.0
+    },
+    "winner_count": 1,
+    "no_safe_winner_behavior": "do not promote v4 to the untouched holdout"
+  },
+  "strict_success_gates": {
+    "genome_fraction_gain_minimum_percentage_points": 0.5,
+    "mean_genome_recovery_gain_minimum_percentage_points": 1.0,
+    "relative_cross_binid_chimera_increase_maximum": 0.10,
+    "longitudinal_ablation_drop_minimum_percentage_points": 0.5,
+    "low_abundance_gain_minimum_percentage_points": 2.0,
+    "pseudo_novel_improvement_required_in_all_tiers": true
+  },
+  "variants": {
+    "v4_balanced": {
+      "version": "LANTERN-v4-balanced-20260820",
+      "truth_blind": true,
+      "minimum_contig_length": 1000,
+      "maximum_n_fraction": 0.05,
+      "support_breadth": 0.50,
+      "support_depth": 0.75,
+      "minimum_unique_long_spans": 2,
+      "minimum_rescue_timepoints": 2,
+      "minimum_assembler_sources_for_consensus": 2,
+      "weights": {
+        "length": 0.12,
+        "source_consensus": 0.23,
+        "temporal_recurrence": 0.25,
+        "short_breadth": 0.12,
+        "long_breadth": 0.10,
+        "long_spanning": 0.18
+      },
+      "selection_score_minimum": 0.28,
+      "cluster_identity": 0.97,
+      "cluster_shorter_coverage": 0.85
+    },
+    "v4_temporal_strict": {
+      "version": "LANTERN-v4-temporal-strict-20260820",
+      "truth_blind": true,
+      "minimum_contig_length": 1500,
+      "maximum_n_fraction": 0.03,
+      "support_breadth": 0.80,
+      "support_depth": 1.00,
+      "minimum_unique_long_spans": 2,
+      "minimum_rescue_timepoints": 2,
+      "minimum_assembler_sources_for_consensus": 2,
+      "weights": {
+        "length": 0.10,
+        "source_consensus": 0.15,
+        "temporal_recurrence": 0.40,
+        "short_breadth": 0.15,
+        "long_breadth": 0.10,
+        "long_spanning": 0.10
+      },
+      "selection_score_minimum": 0.40,
+      "cluster_identity": 0.96,
+      "cluster_shorter_coverage": 0.75
+    },
+    "v4_multimodal_strict": {
+      "version": "LANTERN-v4-multimodal-strict-20260820",
+      "truth_blind": true,
+      "minimum_contig_length": 2000,
+      "maximum_n_fraction": 0.03,
+      "support_breadth": 0.80,
+      "support_depth": 1.00,
+      "minimum_unique_long_spans": 2,
+      "minimum_rescue_timepoints": 2,
+      "minimum_assembler_sources_for_consensus": 2,
+      "weights": {
+        "length": 0.10,
+        "source_consensus": 0.20,
+        "temporal_recurrence": 0.20,
+        "short_breadth": 0.10,
+        "long_breadth": 0.20,
+        "long_spanning": 0.20
+      },
+      "selection_score_minimum": 0.45,
+      "cluster_identity": 0.95,
+      "cluster_shorter_coverage": 0.70
+    },
+    "v4_long_supported": {
+      "version": "LANTERN-v4-long-supported-20260820",
+      "truth_blind": true,
+      "minimum_contig_length": 2000,
+      "maximum_n_fraction": 0.03,
+      "support_breadth": 0.55,
+      "support_depth": 0.75,
+      "minimum_unique_long_spans": 2,
+      "minimum_rescue_timepoints": 2,
+      "minimum_assembler_sources_for_consensus": 2,
+      "weights": {
+        "length": 0.10,
+        "source_consensus": 0.10,
+        "temporal_recurrence": 0.15,
+        "short_breadth": 0.05,
+        "long_breadth": 0.25,
+        "long_spanning": 0.35
+      },
+      "selection_score_minimum": 0.40,
+      "cluster_identity": 0.95,
+      "cluster_shorter_coverage": 0.70
+    },
+    "v4_consensus_strict": {
+      "version": "LANTERN-v4-consensus-strict-20260820",
+      "truth_blind": true,
+      "minimum_contig_length": 1500,
+      "maximum_n_fraction": 0.03,
+      "support_breadth": 0.70,
+      "support_depth": 1.00,
+      "minimum_unique_long_spans": 3,
+      "minimum_rescue_timepoints": 2,
+      "minimum_assembler_sources_for_consensus": 2,
+      "weights": {
+        "length": 0.10,
+        "source_consensus": 0.35,
+        "temporal_recurrence": 0.25,
+        "short_breadth": 0.10,
+        "long_breadth": 0.10,
+        "long_spanning": 0.10
+      },
+      "selection_score_minimum": 0.45,
+      "cluster_identity": 0.96,
+      "cluster_shorter_coverage": 0.75
+    },
+    "v4_ultra_strict": {
+      "version": "LANTERN-v4-ultra-strict-20260820",
+      "truth_blind": true,
+      "minimum_contig_length": 3000,
+      "maximum_n_fraction": 0.02,
+      "support_breadth": 0.90,
+      "support_depth": 2.00,
+      "minimum_unique_long_spans": 3,
+      "minimum_rescue_timepoints": 2,
+      "minimum_assembler_sources_for_consensus": 2,
+      "weights": {
+        "length": 0.15,
+        "source_consensus": 0.20,
+        "temporal_recurrence": 0.25,
+        "short_breadth": 0.10,
+        "long_breadth": 0.15,
+        "long_spanning": 0.15
+      },
+      "selection_score_minimum": 0.52,
+      "cluster_identity": 0.95,
+      "cluster_shorter_coverage": 0.60
+    }
+  },
+  "boundary": "The candidate source set, six configurations, read fractions, development pair, untouched corrected holdout pair, objectives, safety constraints, and strict success gates were committed before v4 development-gold evaluation."
+}
