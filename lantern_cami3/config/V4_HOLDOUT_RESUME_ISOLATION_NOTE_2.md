@@ -1,0 +1,1 @@
+This note marks the repaired sample-14/15 holdout execution boundary. Scientific parameters are unchanged; only the broken symbolic-link lifetime is repaired by materializing read artifacts before mapping.
