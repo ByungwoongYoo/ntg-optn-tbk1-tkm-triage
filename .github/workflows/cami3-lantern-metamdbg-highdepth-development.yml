@@ -1,14 +1,10 @@
-name: CAMI III LANTERN high-depth metaMDBG development
+name: LANTERN isolated high-depth metaMDBG development
 
 on:
   pull_request:
-    branches: [main]
+    branches: [cami3-lantern-20260819]
     paths:
       - '.github/workflows/cami3-lantern-metamdbg-highdepth-development.yml'
-      - 'lantern_cami3/scripts/stream_downsample_cami_tar.py'
-      - 'lantern_cami3/scripts/evaluate_gold_coverage.py'
-      - 'lantern_cami3/scripts/extract_gsa_truth.py'
-      - 'lantern_cami3/scripts/verify_cami_assembly.py'
   workflow_dispatch:
 
 permissions:
@@ -130,7 +126,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: LANTERN_CAMI3_METAMDBG_HIGHDEPTH_${{ matrix.label }}_20260820
+          name: LANTERN_CAMI3_METAMDBG_HIGHDEPTH_${{ matrix.label }}_ISOLATED_20260820
           path: metamdbg_highdepth_${{ matrix.label }}
           if-no-files-found: error
           retention-days: 90
