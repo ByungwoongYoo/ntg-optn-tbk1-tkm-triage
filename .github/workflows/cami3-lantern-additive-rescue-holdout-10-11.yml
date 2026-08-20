@@ -1,0 +1,396 @@
+name: CAMI III LANTERN additive-rescue untouched holdout 10-11
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cami3-lantern-additive-rescue-holdout-10-11.yml'
+      - 'lantern_cami3/scripts/build_additive_rescue.py'
+      - 'lantern_cami3/scripts/stream_downsample_cami_tar.py'
+      - 'lantern_cami3/scripts/prepare_candidates.py'
+      - 'lantern_cami3/scripts/cluster_candidates.py'
+      - 'lantern_cami3/scripts/merge_mapping_evidence.py'
+      - 'lantern_cami3/scripts/lantern_select.py'
+      - 'lantern_cami3/scripts/evaluate_gold_coverage.py'
+      - 'lantern_cami3/scripts/extract_gsa_truth.py'
+      - 'lantern_cami3/scripts/build_pseudo_novel_audit.py'
+      - 'lantern_cami3/scripts/verify_cami_assembly.py'
+      - 'lantern_cami3/config/lantern_frozen_v1.json'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  DEVELOPMENT_RUN_ID: '32322092727'
+  DEVELOPMENT_ARTIFACT: 'LANTERN_CAMI3_ADDITIVE_RESCUE_DEVELOPMENT_20260820'
+  HOLDOUT_A: '10'
+  HOLDOUT_B: '11'
+  FRACTION: '0.03'
+  SEED: '20260819'
+
+jobs:
+  untouched-holdout:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download immutable development-rule artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.DEVELOPMENT_ARTIFACT }}
+          path: development_artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.DEVELOPMENT_RUN_ID }}
+
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: lantern-additive-holdout
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            megahit=1.2.9
+            spades
+            minimap2=2.31
+            samtools=1.24
+            mash=2.3
+            seqkit=2.13.0
+          cache-downloads: true
+          post-cleanup: all
+
+      - name: Verify and freeze the preselected additive rule
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          ROOT=additive_holdout_10_11
+          mkdir -p "$ROOT"/{reads,assemblies,truth_blind,truth_download,truth,evaluation,pseudo_novel,decision,provenance,logs,failure_audit}
+          freeze=$(find development_artifact -type f -name ADDITIVE_DEVELOPMENT_FREEZE.json -print -quit)
+          test -s "$freeze"
+          python - "$freeze" "$ROOT/provenance/FROZEN_RULE.json" <<'PY'
+          import json,sys
+          from pathlib import Path
+          x=json.loads(Path(sys.argv[1]).read_text())
+          assert x['status']=='WINNER_FROZEN_FOR_UNTOUCHED_PAIR_VALIDATION', x
+          w=x['winner']
+          assert w['variant']=='additive_selected_nonbaseline', w
+          assert w['mode']=='selected_nonbaseline', w
+          assert w['baseline_source_id']=='megahit_pair', w
+          assert w['thresholds']=={'min_score':0.0,'min_breadth':0.0,'min_length':1000,'min_timepoints':1}, w
+          out={
+            'development_samples':['sample0','sample1'],
+            'untouched_holdout_samples':['sample10','sample11'],
+            'winner':w,
+            'builder_sha256':x['builder_sha256'],
+            'selection_rule_locked_before_holdout_reads':True,
+            'claim_boundary':'The exact development-selected rule is applied once to samples 10 and 11 without threshold changes.'
+          }
+          Path(sys.argv[2]).write_text(json.dumps(out,indent=2,sort_keys=True)+'\n')
+          PY
+          sha256sum "$freeze" "$ROOT/provenance/FROZEN_RULE.json" > "$ROOT/provenance/FROZEN_RULE_SHA256.txt"
+          git rev-parse HEAD > "$ROOT/provenance/GIT_HEAD.txt"
+          uname -a > "$ROOT/provenance/UNAME.txt"
+          python --version > "$ROOT/provenance/PYTHON_VERSION.txt"
+          megahit --version > "$ROOT/provenance/MEGAHIT_VERSION.txt" 2>&1 || true
+          metaspades.py --version > "$ROOT/provenance/METASPADES_VERSION.txt" 2>&1 || true
+          minimap2 --version > "$ROOT/provenance/MINIMAP2_VERSION.txt"
+          samtools --version > "$ROOT/provenance/SAMTOOLS_VERSION.txt"
+          mash --version > "$ROOT/provenance/MASH_VERSION.txt"
+          micromamba list > "$ROOT/provenance/MICROMAMBA_LIST.txt"
+          printf 'holdout_samples=10,11\nfraction=%s\nseed=%s\ntruth_accessed=false\ndevelopment_run=%s\ndevelopment_artifact=%s\n' \
+            "$FRACTION" "$SEED" "$DEVELOPMENT_RUN_ID" "$DEVELOPMENT_ARTIFACT" > "$ROOT/provenance/BOUNDARY.txt"
+
+      - name: Stream deterministic short-read holdout subsets
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          ROOT=additive_holdout_10_11
+          for s in "$HOLDOUT_A" "$HOLDOUT_B"; do
+            url="https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_${s}_reads.tar.gz"
+            python lantern_cami3/scripts/stream_downsample_cami_tar.py \
+              --url "$url" --sample-id "sample${s}" --mode short \
+              --fraction "$FRACTION" --seed "$SEED" --min-kept 10000 \
+              --out-dir "$ROOT/reads" 2>&1 | tee "$ROOT/logs/DOWNSAMPLE_${s}.log"
+            gzip -t "$ROOT/reads/sample${s}_R1.fastq.gz" "$ROOT/reads/sample${s}_R2.fastq.gz"
+          done
+          sha256sum "$ROOT"/reads/*.fastq.gz "$ROOT"/reads/*_downsample.json > "$ROOT/provenance/DOWNSAMPLED_READ_SHA256.txt"
+          seqkit stats -T "$ROOT"/reads/*.fastq.gz > "$ROOT/provenance/DOWNSAMPLED_READ_STATS.tsv"
+
+      - name: Build strong short-read baseline family
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          ROOT=additive_holdout_10_11
+          run_assembler() {
+            local name="$1"; shift
+            local log="$ROOT/logs/${name}.log" status="$ROOT/failure_audit/${name}.status"
+            set +e
+            /usr/bin/time -v timeout --signal=TERM --kill-after=120s 150m "$@" > "$log" 2>&1
+            local rc=$?
+            set -e
+            printf 'name=%s\nexit_code=%s\ncommand=' "$name" "$rc" > "$status"
+            printf '%q ' "$@" >> "$status"; printf '\n' >> "$status"
+          }
+          run_assembler megahit_single10 megahit -1 "$ROOT/reads/sample10_R1.fastq.gz" -2 "$ROOT/reads/sample10_R2.fastq.gz" -o "$ROOT/assemblies/megahit_single10" --min-contig-len 1000 -t 4 --memory 0.8
+          run_assembler megahit_single11 megahit -1 "$ROOT/reads/sample11_R1.fastq.gz" -2 "$ROOT/reads/sample11_R2.fastq.gz" -o "$ROOT/assemblies/megahit_single11" --min-contig-len 1000 -t 4 --memory 0.8
+          run_assembler megahit_pair megahit \
+            -1 "$ROOT/reads/sample10_R1.fastq.gz,$ROOT/reads/sample11_R1.fastq.gz" \
+            -2 "$ROOT/reads/sample10_R2.fastq.gz,$ROOT/reads/sample11_R2.fastq.gz" \
+            -o "$ROOT/assemblies/megahit_pair" --min-contig-len 1000 -t 4 --memory 0.8
+          cat "$ROOT/reads/sample10_R1.fastq.gz" "$ROOT/reads/sample11_R1.fastq.gz" > "$ROOT/reads/pair_R1.fastq.gz"
+          cat "$ROOT/reads/sample10_R2.fastq.gz" "$ROOT/reads/sample11_R2.fastq.gz" > "$ROOT/reads/pair_R2.fastq.gz"
+          gzip -t "$ROOT/reads/pair_R1.fastq.gz" "$ROOT/reads/pair_R2.fastq.gz"
+          run_assembler metaspades_pair metaspades.py --only-assembler -t 4 -m 12 \
+            -1 "$ROOT/reads/pair_R1.fastq.gz" -2 "$ROOT/reads/pair_R2.fastq.gz" \
+            -o "$ROOT/assemblies/metaspades_pair"
+
+          test -s "$ROOT/assemblies/megahit_pair/final.contigs.fa"
+          cat > "$ROOT/assemblies/source_manifest.tsv" <<'EOF'
+          source_id	assembler	scope	mode
+          megahit_s10	megahit	single	short
+          megahit_s11	megahit	single	short
+          megahit_pair	megahit	longitudinal	short
+          metaspades_pair	metaspades	longitudinal	short
+          EOF
+          sha256sum \
+            "$ROOT/assemblies/megahit_single10/final.contigs.fa" \
+            "$ROOT/assemblies/megahit_single11/final.contigs.fa" \
+            "$ROOT/assemblies/megahit_pair/final.contigs.fa" \
+            "$ROOT/assemblies/metaspades_pair/contigs.fasta" \
+            > "$ROOT/provenance/BASELINE_FASTA_SHA256.txt"
+
+      - name: Construct full and ablation additive assemblies without truth
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          ROOT=additive_holdout_10_11
+          mkdir -p "$ROOT/truth_blind"/{prepared,clusters,evidence,selections,additive}
+          python lantern_cami3/scripts/prepare_candidates.py \
+            --assembly "megahit_s10=$ROOT/assemblies/megahit_single10/final.contigs.fa" \
+            --assembly "megahit_s11=$ROOT/assemblies/megahit_single11/final.contigs.fa" \
+            --assembly "megahit_pair=$ROOT/assemblies/megahit_pair/final.contigs.fa" \
+            --assembly "metaspades_pair=$ROOT/assemblies/metaspades_pair/contigs.fasta" \
+            --source-manifest "$ROOT/assemblies/source_manifest.tsv" --min-length 1000 \
+            --out "$ROOT/truth_blind/prepared" > "$ROOT/logs/PREPARE_CANDIDATES.log" 2>&1
+          minimap2 -x asm5 -c -N 100 -t 4 \
+            "$ROOT/truth_blind/prepared/combined_candidates.fasta" \
+            "$ROOT/truth_blind/prepared/combined_candidates.fasta" \
+            > "$ROOT/truth_blind/all_vs_all.paf" 2> "$ROOT/logs/ALL_VS_ALL.log"
+          python lantern_cami3/scripts/cluster_candidates.py \
+            --fasta "$ROOT/truth_blind/prepared/combined_candidates.fasta" \
+            --metadata "$ROOT/truth_blind/prepared/candidates.tsv" \
+            --paf "$ROOT/truth_blind/all_vs_all.paf" \
+            --min-identity 0.97 --min-shorter-coverage 0.85 \
+            --out "$ROOT/truth_blind/clusters" > "$ROOT/logs/CLUSTER.log" 2>&1
+
+          for s in 10 11; do
+            minimap2 -t 4 -ax sr "$ROOT/truth_blind/clusters/cluster_representatives.fasta" \
+              "$ROOT/reads/sample${s}_R1.fastq.gz" "$ROOT/reads/sample${s}_R2.fastq.gz" \
+              2> "$ROOT/logs/MAP_${s}.log" | samtools sort -@ 2 -o "$ROOT/truth_blind/evidence/sample${s}.bam" -
+            samtools index "$ROOT/truth_blind/evidence/sample${s}.bam"
+            samtools coverage "$ROOT/truth_blind/evidence/sample${s}.bam" > "$ROOT/truth_blind/evidence/sample${s}_coverage.tsv"
+          done
+          python lantern_cami3/scripts/merge_mapping_evidence.py \
+            --short-coverage "sample10=$ROOT/truth_blind/evidence/sample10_coverage.tsv" \
+            --short-coverage "sample11=$ROOT/truth_blind/evidence/sample11_coverage.tsv" \
+            --out "$ROOT/truth_blind/evidence/merged" > "$ROOT/logs/MERGE_EVIDENCE.log" 2>&1
+
+          for ablation in full no_longitudinal no_consensus; do
+            python lantern_cami3/scripts/lantern_select.py \
+              --fasta "$ROOT/truth_blind/clusters/cluster_representatives.fasta" \
+              --metadata "$ROOT/truth_blind/clusters/representative_metadata.tsv" \
+              --evidence "$ROOT/truth_blind/evidence/merged/mapping_evidence.tsv" \
+              --config lantern_cami3/config/lantern_frozen_v1.json \
+              --ablation "$ablation" --out "$ROOT/truth_blind/selections/$ablation" \
+              > "$ROOT/logs/LANTERN_${ablation}.log" 2>&1
+            python lantern_cami3/scripts/build_additive_rescue.py \
+              --baseline-fasta "$ROOT/assemblies/megahit_pair/final.contigs.fa" \
+              --representative-fasta "$ROOT/truth_blind/clusters/cluster_representatives.fasta" \
+              --representative-metadata "$ROOT/truth_blind/clusters/representative_metadata.tsv" \
+              --selection "$ROOT/truth_blind/selections/$ablation/LANTERN_SELECTION.tsv" \
+              --baseline-source-id megahit_pair --mode selected_nonbaseline \
+              --min-score 0 --min-breadth 0 --min-length 1000 --min-timepoints 1 \
+              --out "$ROOT/truth_blind/additive/$ablation" \
+              > "$ROOT/logs/ADDITIVE_${ablation}.log" 2>&1
+            python lantern_cami3/scripts/verify_cami_assembly.py \
+              "$ROOT/truth_blind/additive/$ablation/ADDITIVE_ASSEMBLY.fasta" \
+              --out "$ROOT/truth_blind/additive/$ablation/VALIDATION.json"
+          done
+
+      - name: Freeze holdout constructions before opening public Toy gold
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          ROOT=additive_holdout_10_11
+          python - "$ROOT" <<'PY'
+          import hashlib,json,sys,time
+          from pathlib import Path
+          root=Path(sys.argv[1]); files=[]
+          keep=[root/'assemblies',root/'truth_blind',root/'provenance/FROZEN_RULE.json',Path('lantern_cami3/config/lantern_frozen_v1.json')]
+          for base in keep:
+              paths=[base] if base.is_file() else sorted(base.rglob('*'))
+              for p in paths:
+                  if p.is_file() and p.suffix not in {'.bam','.bai'}:
+                      files.append({'path':str(p),'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()})
+          out={'freeze_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'samples':['sample10','sample11'],'truth_accessed':False,'development_rule_modified':False,'n_files':len(files),'files':files,'boundary':'All baseline, clustering, mapping, selection, additive construction and ablations were frozen before downloading sample 10/11 gold assemblies.'}
+          (root/'provenance/HOLDOUT_TRUTH_BLIND_FREEZE.json').write_text(json.dumps(out,indent=2)+'\n')
+          PY
+          sha256sum "$ROOT/provenance/HOLDOUT_TRUTH_BLIND_FREEZE.json" > "$ROOT/provenance/HOLDOUT_FREEZE_SHA256.txt"
+
+      - name: Download gold and evaluate all fixed methods
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          ROOT=additive_holdout_10_11
+          for s in 10 11; do
+            url="https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_${s}_gsa.tar.gz"
+            curl -fsSL --retry 8 --retry-all-errors "$url" -o "$ROOT/truth_download/sample${s}_gsa.tar.gz"
+          done
+          sha256sum "$ROOT/truth_download"/*.tar.gz > "$ROOT/provenance/GSA_SHA256.txt"
+          python lantern_cami3/scripts/extract_gsa_truth.py \
+            --gsa-tar "sample10=$ROOT/truth_download/sample10_gsa.tar.gz" \
+            --gsa-tar "sample11=$ROOT/truth_download/sample11_gsa.tar.gz" \
+            --out "$ROOT/truth" > "$ROOT/logs/EXTRACT_TRUTH.log" 2>&1
+          minimap2 -I 4G -d "$ROOT/truth/toy_truth.mmi" "$ROOT/truth/combined_truth.fasta" \
+            > "$ROOT/logs/TRUTH_INDEX.stdout" 2> "$ROOT/logs/TRUTH_INDEX.log"
+
+          cat > "$ROOT/provenance/METHODS.tsv" <<EOF
+          method	role	fasta
+          megahit_s10	baseline	$ROOT/assemblies/megahit_single10/final.contigs.fa
+          megahit_s11	baseline	$ROOT/assemblies/megahit_single11/final.contigs.fa
+          megahit_pair	baseline	$ROOT/assemblies/megahit_pair/final.contigs.fa
+          metaspades_pair	baseline	$ROOT/assemblies/metaspades_pair/contigs.fasta
+          additive_full	candidate	$ROOT/truth_blind/additive/full/ADDITIVE_ASSEMBLY.fasta
+          additive_no_longitudinal	ablation	$ROOT/truth_blind/additive/no_longitudinal/ADDITIVE_ASSEMBLY.fasta
+          additive_no_consensus	ablation	$ROOT/truth_blind/additive/no_consensus/ADDITIVE_ASSEMBLY.fasta
+          EOF
+          tail -n +2 "$ROOT/provenance/METHODS.tsv" | while IFS=$'\t' read -r name role fasta; do
+            test -s "$fasta"
+            dir="$ROOT/evaluation/$name"; mkdir -p "$dir"
+            minimap2 -x asm5 -c -N 100 -t 4 "$ROOT/truth/toy_truth.mmi" "$fasta" \
+              > "$dir/assembly_to_truth.paf" 2> "$dir/minimap2.log"
+            python lantern_cami3/scripts/evaluate_gold_coverage.py \
+              --paf "$dir/assembly_to_truth.paf" \
+              --truth-mapping "$ROOT/truth/truth_mapping.tsv" \
+              --assembly-fasta "$fasta" --min-identity 0.90 --min-alignment 500 \
+              --out "$dir" > "$dir/evaluate_console.log" 2>&1
+            rm -f "$dir/assembly_to_truth.paf" "$dir/per_truth_contig.tsv"
+          done
+
+      - name: Build evaluation-only pseudo-novel audit and final holdout decision
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          ROOT=additive_holdout_10_11
+          python - "$ROOT" <<'PY'
+          import csv,sys
+          from pathlib import Path
+          root=Path(sys.argv[1]); rows=list(csv.DictReader(open(root/'truth/genome_reference_manifest.tsv'),delimiter='\t')); paths=[]
+          for r in rows:
+              if int(r['truth_bp'])<50000: continue
+              p=root/'truth/references'/Path(r['reference_path']).name
+              if not p.is_file(): raise SystemExit(f'missing truth reference {p}')
+              paths.append(str(p))
+          (root/'pseudo_novel/reference_files.txt').write_text('\n'.join(paths)+'\n')
+          PY
+          mash sketch -k 21 -s 1000 -l "$ROOT/pseudo_novel/reference_files.txt" -o "$ROOT/pseudo_novel/truth_genomes" > "$ROOT/logs/MASH_SKETCH.log" 2>&1
+          mash dist "$ROOT/pseudo_novel/truth_genomes.msh" "$ROOT/pseudo_novel/truth_genomes.msh" > "$ROOT/pseudo_novel/distances.tsv"
+          RECOVERY_ARGS=()
+          for name in megahit_s10 megahit_s11 megahit_pair metaspades_pair additive_full additive_no_longitudinal additive_no_consensus; do
+            RECOVERY_ARGS+=(--recovery "$name=$ROOT/evaluation/$name/per_genome_recovery.tsv")
+          done
+          python lantern_cami3/scripts/build_pseudo_novel_audit.py \
+            --manifest "$ROOT/truth/genome_reference_manifest.tsv" \
+            --mash "$ROOT/pseudo_novel/distances.tsv" \
+            "${RECOVERY_ARGS[@]}" --out "$ROOT/pseudo_novel/results" \
+            > "$ROOT/logs/PSEUDO_NOVEL.log" 2>&1
+
+          python - "$ROOT" <<'PY'
+          import csv,json,sys
+          from pathlib import Path
+          root=Path(sys.argv[1])
+          names=['megahit_s10','megahit_s11','megahit_pair','metaspades_pair','additive_full','additive_no_longitudinal','additive_no_consensus']
+          scores={n:json.loads((root/f'evaluation/{n}/GOLD_COVERAGE_SUMMARY.json').read_text()) for n in names}
+          strongest=max(names[:4],key=lambda n:float(scores[n]['genome_fraction_percent']))
+          full=scores['additive_full']; base=scores[strongest]; mega=scores['megahit_pair']
+          def rel(new,old):
+              old=float(old or 0); new=float(new or 0)
+              return (new-old)/old if old else (0.0 if new==0 else None)
+          pn=list(csv.DictReader(open(root/'pseudo_novel/results/PSEUDO_NOVEL_RECOVERY_SUMMARY.tsv'),delimiter='\t'))
+          def tier(method,tier):
+              row=next((r for r in pn if r['method']==method and r['tier']==tier),None)
+              return float(row['mean_recovery']) if row and row['mean_recovery'] not in {'','None'} else None
+          genus_full=tier('additive_full','genus_neighbour_withheld'); genus_base=tier(strongest,'genus_neighbour_withheld')
+          genus_gain=(100*(genus_full-genus_base)) if genus_full is not None and genus_base is not None else None
+          d={
+            'status':'PASS' if (
+              float(full['genome_fraction_percent'])>float(base['genome_fraction_percent']) and
+              float(full['mean_genome_recovery'])>float(base['mean_genome_recovery']) and
+              (rel(full['cross_binid_chimeric_bp_fraction'],base['cross_binid_chimeric_bp_fraction']) is not None and rel(full['cross_binid_chimeric_bp_fraction'],base['cross_binid_chimeric_bp_fraction'])<=0.10) and
+              float(full['alignment_to_unique_truth_ratio'])-float(base['alignment_to_unique_truth_ratio'])<=0.10 and
+              float(full['genome_fraction_percent'])>float(scores['additive_no_longitudinal']['genome_fraction_percent']) and
+              (genus_gain is not None and genus_gain>0)
+            ) else 'FAIL',
+            'samples':['sample10','sample11'],
+            'frozen_rule':'additive_selected_nonbaseline',
+            'strongest_baseline':strongest,
+            'strongest_baseline_genome_fraction_percent':float(base['genome_fraction_percent']),
+            'megahit_pair_genome_fraction_percent':float(mega['genome_fraction_percent']),
+            'additive_full_genome_fraction_percent':float(full['genome_fraction_percent']),
+            'genome_fraction_gain_vs_strongest_pp':float(full['genome_fraction_percent'])-float(base['genome_fraction_percent']),
+            'genome_fraction_gain_vs_frozen_megahit_pp':float(full['genome_fraction_percent'])-float(mega['genome_fraction_percent']),
+            'mean_recovery_gain_vs_strongest_pp':100*(float(full['mean_genome_recovery'])-float(base['mean_genome_recovery'])),
+            'relative_chimera_change_vs_strongest':rel(full['cross_binid_chimeric_bp_fraction'],base['cross_binid_chimeric_bp_fraction']),
+            'alignment_ratio_change_vs_strongest':float(full['alignment_to_unique_truth_ratio'])-float(base['alignment_to_unique_truth_ratio']),
+            'longitudinal_ablation_drop_pp':float(full['genome_fraction_percent'])-float(scores['additive_no_longitudinal']['genome_fraction_percent']),
+            'consensus_ablation_drop_pp':float(full['genome_fraction_percent'])-float(scores['additive_no_consensus']['genome_fraction_percent']),
+            'genus_neighbour_pseudonovel_gain_pp':genus_gain,
+            'promotion_rule':{
+              'genome_fraction_gain_vs_strongest_pp':'>0',
+              'mean_recovery_gain_vs_strongest_pp':'>0',
+              'relative_chimera_change_vs_strongest':'<=0.10',
+              'alignment_ratio_change_vs_strongest':'<=0.10',
+              'longitudinal_ablation_drop_pp':'>0',
+              'genus_neighbour_pseudonovel_gain_pp':'>0'
+            },
+            'claim_boundary':'A PASS is one untouched public Toy participant-pair validation of a frozen rule, not CAMI challenge performance or novel-genome discovery.'
+          }
+          (root/'decision/HOLDOUT_DECISION.json').write_text(json.dumps(d,indent=2,sort_keys=True)+'\n')
+          lines=['# Frozen additive-rescue holdout decision','',f"- Status: **{d['status']}**",f"- Strongest baseline: `{strongest}`",f"- Genome-fraction gain vs strongest: **{d['genome_fraction_gain_vs_strongest_pp']:.6f} pp**",f"- Mean-recovery gain vs strongest: **{d['mean_recovery_gain_vs_strongest_pp']:.6f} pp**",f"- Longitudinal-ablation drop: **{d['longitudinal_ablation_drop_pp']:.6f} pp**",f"- Genus-neighbour pseudo-novel gain: **{d['genus_neighbour_pseudonovel_gain_pp']} pp**",'',d['claim_boundary']]
+          (root/'decision/HOLDOUT_DECISION.md').write_text('\n'.join(lines)+'\n')
+          print(json.dumps(d,indent=2,sort_keys=True))
+          PY
+          cat "$ROOT/decision/HOLDOUT_DECISION.md"
+
+      - name: Remove public-read and bulky intermediate bytes; finalize evidence
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          ROOT=additive_holdout_10_11
+          rm -rf "$ROOT/reads" "$ROOT/truth_download" "$ROOT/truth/references" "$ROOT/truth_blind/prepared"
+          rm -f "$ROOT/truth/combined_truth.fasta" "$ROOT/truth/toy_truth.mmi" \
+            "$ROOT/pseudo_novel/truth_genomes.msh" "$ROOT/pseudo_novel/distances.tsv" \
+            "$ROOT/pseudo_novel/reference_files.txt" "$ROOT/truth_blind/all_vs_all.paf"
+          rm -f "$ROOT/truth_blind/evidence"/*.bam "$ROOT/truth_blind/evidence"/*.bai
+          find "$ROOT/assemblies" -type f \( -name '*.fa' -o -name '*.fasta' \) -delete 2>/dev/null || true
+          find "$ROOT/truth_blind" -type f -name '*.fasta' -delete 2>/dev/null || true
+          find "$ROOT/evaluation" -type f -name 'per_truth_contig.tsv' -delete 2>/dev/null || true
+          find "$ROOT" -type f ! -name SHA256SUMS_ALL.txt -print0 | sort -z | xargs -0 sha256sum > "$ROOT/SHA256SUMS_ALL.txt" || true
+          find "$ROOT" -type f -printf '%P\t%s\n' | sort > "$ROOT/CONTENTS.tsv" || true
+          du -sh "$ROOT" > "$ROOT/PACKAGE_SIZE.txt" || true
+
+      - name: Upload compact untouched holdout evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: LANTERN_CAMI3_ADDITIVE_HOLDOUT_10_11_20260820
+          path: additive_holdout_10_11
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
