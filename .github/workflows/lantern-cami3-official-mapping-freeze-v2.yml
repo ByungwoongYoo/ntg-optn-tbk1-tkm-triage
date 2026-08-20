@@ -1,14 +1,343 @@
-name: LANTERN corrected mapping and submission freeze v2
+name: LANTERN explicit mapping and submission package CI
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'lantern_submission/**'
+      - 'lantern_v6/prepare_extension_candidates.py'
+      - 'lantern_v6/extension_union.py'
+      - 'lantern_cami3/scripts/fasta_utils.py'
+      - 'lantern_cami3/scripts/verify_cami_assembly.py'
+      - '.github/workflows/lantern-cami3-official-mapping-freeze-v2.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  repair-in-progress:
+  validate-package:
     runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    env:
+      ALGORITHM_COMMIT: d2f44b529d2198784ce7666ba1c98ae44709f981
+      PACKAGE_NAME: LANTERN_CAMI3_SUBMISSION_PACKAGE_20260821.zip
     steps:
-      - run: |
-          echo 'Submission-package repair in progress. This temporary manual-only workflow is replaced by the final audited CI in the same branch.'
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Record source boundary and reject inferred production pairing
+        run: |
+          set -euo pipefail
+          mkdir -p validation/provenance
+          source_commit='${{ github.event.pull_request.head.sha }}'
+          if [[ -z "$source_commit" ]]; then source_commit=$(git rev-parse HEAD); fi
+          printf '%s\n' "$source_commit" > validation/provenance/SOURCE_COMMIT.txt
+          git rev-parse HEAD > validation/provenance/CHECKOUT_COMMIT.txt
+          uname -a > validation/provenance/UNAME.txt
+          python --version > validation/provenance/PYTHON_VERSION.txt
+          if grep -R --line-number -E -- '--mash-dist|mash[[:space:]]+dist|minimum-weight perfect matching' \
+              lantern_submission/scripts lantern_submission/run_frozen_v7.sh; then
+            echo 'Production submission path contains forbidden similarity/Mash pairing logic' >&2
+            exit 1
+          fi
+          python lantern_submission/scripts/load_explicit_mapping.py --help | grep -q -- '--mapping'
+
+      - name: Verify frozen algorithm files against the preregistered source commit
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin \
+            lantern-v7-multi-angle-20260820:refs/remotes/origin/lantern-v7-multi-angle-20260820
+          test "$(git rev-parse refs/remotes/origin/lantern-v7-multi-angle-20260820)" = "$ALGORITHM_COMMIT"
+          git show "$ALGORITHM_COMMIT:lantern_v6/prepare_extension_candidates.py" > /tmp/frozen_prepare.py
+          git show "$ALGORITHM_COMMIT:lantern_v6/extension_union.py" > /tmp/frozen_extension.py
+          cmp /tmp/frozen_prepare.py lantern_v6/prepare_extension_candidates.py
+          cmp /tmp/frozen_extension.py lantern_v6/extension_union.py
+          sha256sum lantern_v6/prepare_extension_candidates.py lantern_v6/extension_union.py \
+            > validation/provenance/FROZEN_ALGORITHM_SHA256.txt
+
+      - name: Validate exact Toy and active metadata mappings deterministically
+        run: |
+          set -euo pipefail
+          mkdir -p validation/mapping/toy_a validation/mapping/toy_b validation/mapping/active
+          python lantern_submission/scripts/load_explicit_mapping.py \
+            --mapping lantern_submission/configs/toy_official_mapping.tsv \
+            --expected-individuals 10 --expected-timepoints 2 \
+            --expected-sample-ids "$(seq -s, 0 19)" --require-consecutive-timepoints \
+            --out validation/mapping/toy_a
+          python lantern_submission/scripts/load_explicit_mapping.py \
+            --mapping lantern_submission/configs/toy_official_mapping.tsv \
+            --expected-individuals 10 --expected-timepoints 2 \
+            --expected-sample-ids "$(seq -s, 0 19)" --require-consecutive-timepoints \
+            --out validation/mapping/toy_b
+          cmp validation/mapping/toy_a/MAPPING_FREEZE.json validation/mapping/toy_b/MAPPING_FREEZE.json
+          cmp validation/mapping/toy_a/NORMALIZED_MAPPING.tsv validation/mapping/toy_b/NORMALIZED_MAPPING.tsv
+          python lantern_submission/scripts/load_explicit_mapping.py \
+            --mapping lantern_submission/configs/active_official_mapping.tsv \
+            --expected-individuals 9 --expected-timepoints 4 \
+            --expected-sample-ids "$(seq -s, 0 35)" --require-consecutive-timepoints \
+            --out validation/mapping/active
+          python - <<'PY'
+          import json
+          toy=json.load(open('validation/mapping/toy_a/MAPPING_FREEZE.json'))
+          active=json.load(open('validation/mapping/active/MAPPING_FREEZE.json'))
+          expected_toy=[['0','1'],['2','7'],['3','5'],['4','8'],['6','19'],['9','12'],['10','15'],['11','13'],['14','16'],['17','18']]
+          expected_active=[['0','2','5','19'],['1','4','11','30'],['3','8','20','24'],['6','7','9','31'],['10','28','29','32'],['12','14','18','34'],['13','22','25','26'],['15','16','27','33'],['17','21','23','35']]
+          assert [g['samples'] for g in toy['groups']]==expected_toy
+          assert [g['samples'] for g in active['groups']]==expected_active
+          for obj in (toy,active):
+              assert obj['mapping_method']=='explicit_metadata_only'
+              assert obj['sequential_pairing_used'] is False
+              assert obj['similarity_pairing_used'] is False
+          PY
+
+      - name: Run invalid mapping rejection tests
+        run: |
+          set -euo pipefail
+          mkdir -p validation/invalid
+          expect_fail() {
+            local mapping="$1" individuals="$2" timepoints="$3" ids="$4" label="$5"
+            if python lantern_submission/scripts/load_explicit_mapping.py \
+                --mapping "$mapping" --expected-individuals "$individuals" \
+                --expected-timepoints "$timepoints" --expected-sample-ids "$ids" \
+                --require-consecutive-timepoints --out "validation/invalid/out_${label}" \
+                >"validation/invalid/${label}.stdout" 2>"validation/invalid/${label}.stderr"; then
+              echo "Invalid mapping unexpectedly passed: $label" >&2
+              exit 1
+            fi
+          }
+          printf 'individual_id\tsample_id\ttimepoint\n1\t0\t1\n1\t0\t2\n' > validation/invalid/duplicate_sample.tsv
+          printf 'individual_id\tsample_id\ttimepoint\n1\t0\t1\n1\t1\t1\n' > validation/invalid/duplicate_timepoint.tsv
+          printf 'individual_id\tsample_id\ttimepoint\n1\t0\t1\n1\t2\t2\n' > validation/invalid/sample_set.tsv
+          printf 'individual_id\tsample_id\ttimepoint\n1\t0\t1\n1\t1\t3\n' > validation/invalid/nonconsecutive.tsv
+          printf 'individual_id\tsample_id\ttimepoint\n1\t0\t1\n' > validation/invalid/missing_timepoint.tsv
+          expect_fail validation/invalid/duplicate_sample.tsv 1 2 0 duplicate_sample
+          expect_fail validation/invalid/duplicate_timepoint.tsv 1 2 0,1 duplicate_timepoint
+          expect_fail validation/invalid/sample_set.tsv 1 2 0,1 sample_set
+          expect_fail validation/invalid/nonconsecutive.tsv 1 2 0,1 nonconsecutive
+          expect_fail validation/invalid/missing_timepoint.tsv 1 2 0 missing_timepoint
+          printf 'PASS\n' > validation/invalid/INVALID_MAPPING_TESTS.txt
+
+      - name: Compile code and run unit tests
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            lantern_submission/scripts/load_explicit_mapping.py \
+            lantern_submission/scripts/validate_inputs.py \
+            lantern_submission/scripts/build_execution_plan.py \
+            lantern_submission/scripts/run_individual_frozen_v7.py \
+            lantern_submission/scripts/combine_submission_fastas.py \
+            lantern_submission/scripts/build_deterministic_package.py \
+            lantern_submission/scripts/verify_package.py \
+            lantern_v6/prepare_extension_candidates.py \
+            lantern_v6/extension_union.py \
+            lantern_cami3/scripts/fasta_utils.py \
+            lantern_cami3/scripts/verify_cami_assembly.py
+          bash -n lantern_submission/run_frozen_v7.sh
+          python -m unittest discover -s lantern_submission/tests -p 'test_*.py' -v \
+            2>&1 | tee validation/UNIT_TESTS.log
+
+      - name: Run FASTA validator and frozen extension integration tests
+        run: |
+          set -euo pipefail
+          mkdir -p validation/fasta validation/extension
+          python - <<'PY'
+          from pathlib import Path
+          backbone='A'*1000
+          candidate=backbone+'C'*500
+          Path('validation/fasta/valid.fa').write_text('>contig_1\n'+candidate+'\n')
+          Path('validation/fasta/lowercase.fa').write_text('>bad\nACGTacgt\n')
+          Path('validation/fasta/duplicate.fa').write_text('>same\nACGT\n>same\nACGT\n')
+          Path('validation/extension/backbone.fa').write_text('>backbone\n'+backbone+'\n')
+          Path('validation/extension/source.fa').write_text('>candidate\n'+candidate+'\n')
+          PY
+          python lantern_cami3/scripts/verify_cami_assembly.py \
+            validation/fasta/valid.fa --out validation/fasta/VALID.json
+          for invalid in lowercase duplicate; do
+            if python lantern_cami3/scripts/verify_cami_assembly.py \
+                "validation/fasta/${invalid}.fa" --out "validation/fasta/${invalid}.json"; then
+              echo "Invalid FASTA passed: $invalid" >&2
+              exit 1
+            fi
+          done
+          python lantern_v6/prepare_extension_candidates.py \
+            --source synthetic=validation/extension/source.fa --min-length 500 \
+            --out validation/extension/candidates
+          python - <<'PY'
+          import csv
+          from pathlib import Path
+          rows=list(csv.DictReader(open('validation/extension/candidates/extension_candidate_metadata.tsv'),delimiter='\t'))
+          assert len(rows)==1
+          q=rows[0]['candidate_id']
+          Path('validation/extension/candidate_to_backbone.paf').write_text(
+              f'{q}\t1500\t0\t1000\t+\tbackbone\t1000\t0\t1000\t1000\t1000\t60\n'
+          )
+          PY
+          python lantern_v6/extension_union.py \
+            --backbone validation/extension/backbone.fa \
+            --candidates validation/extension/candidates/extension_candidates.fasta \
+            --metadata validation/extension/candidates/extension_candidate_metadata.tsv \
+            --candidate-to-backbone-paf validation/extension/candidate_to_backbone.paf \
+            --mode terminal --min-candidate-length 500 --min-terminal-bp 500 \
+            --alignment-identity 0.97 --alignment-min-bp 500 \
+            --whole-max-aligned-fraction 0.30 --containment-fraction 0.98 \
+            --min-source-count 1 --single-target-terminal \
+            --out validation/extension/result
+          python lantern_cami3/scripts/verify_cami_assembly.py \
+            validation/extension/result/LANTERN_V6_EXTENSION_UNION.fasta \
+            --out validation/extension/VALIDATION.json
+          python - <<'PY'
+          import json
+          x=json.load(open('validation/extension/result/EXTENSION_SUMMARY.json'))
+          assert x['selected_segments']==1, x
+          assert x['selected_segment_bp']==500, x
+          assert x['final_bp']==1500, x
+          PY
+
+      - name: Create synthetic private-style active manifest and run host dry run
+        run: |
+          set -euo pipefail
+          mkdir -p validation/synthetic_reads validation/host_dry_run
+          python - <<'PY'
+          import csv,gzip,hashlib,io
+          from pathlib import Path
+          root=Path('validation/synthetic_reads').resolve()
+          fields=['sample_id','short_r1','short_r2','long_reads','short_r1_sha256','short_r2_sha256','long_reads_sha256']
+          rows=[]
+          def write_gzip(path,data):
+              with path.open('wb') as raw:
+                  with gzip.GzipFile(filename='',mode='wb',fileobj=raw,mtime=0) as gz: gz.write(data)
+          def sha(path): return hashlib.sha256(path.read_bytes()).hexdigest()
+          for sample in range(36):
+              record={'sample_id':str(sample)}
+              for kind,suffix,seq in [('short_r1','R1','ACGT'*20),('short_r2','R2','TGCA'*20),('long_reads','long','ACGT'*300)]:
+                  path=root/f'S{sample}_{suffix}.fastq.gz'
+                  fastq=f'@S{sample}_{suffix}\n{seq}\n+\n'+('I'*len(seq))+'\n'
+                  write_gzip(path,fastq.encode('ascii'))
+                  record[kind]=str(path)
+                  record[kind+'_sha256']=sha(path)
+              rows.append(record)
+          with (root/'input_manifest.tsv').open('w',newline='',encoding='utf-8') as fh:
+              w=csv.DictWriter(fh,fieldnames=fields,delimiter='\t',lineterminator='\n');w.writeheader();w.writerows(rows)
+          PY
+          bash lantern_submission/run_frozen_v7.sh \
+            --mapping lantern_submission/configs/active_official_mapping.tsv \
+            --manifest validation/synthetic_reads/input_manifest.tsv \
+            --out validation/host_dry_run \
+            --threads 2 --memory-gb 4 \
+            --expected-individuals 9 --expected-timepoints 4 --dry-run \
+            > validation/HOST_DRY_RUN.log
+          python - <<'PY'
+          import json
+          x=json.load(open('validation/host_dry_run/plan/RUN_PLAN.json'))
+          assert x['status']=='PREREGISTERED_EXECUTION_PLAN'
+          assert x['n_individuals']==9 and x['n_samples']==36
+          assert x['result_dependent_changes_allowed'] is False
+          PY
+
+      - name: Build pinned container and run container-internal dry run
+        run: |
+          set -euo pipefail
+          docker build --pull -f lantern_submission/Dockerfile \
+            -t lantern-cami3-v7-frozen:20260821 . \
+            2>&1 | tee validation/DOCKER_BUILD.log
+          docker image inspect lantern-cami3-v7-frozen:20260821 \
+            --format '{{.Id}}' > validation/CONTAINER_IMAGE_ID.txt
+          docker run --rm -v "$PWD:/work:ro" -w /opt/lantern \
+            lantern-cami3-v7-frozen:20260821 \
+            python lantern_submission/scripts/load_explicit_mapping.py \
+              --mapping /work/lantern_submission/configs/active_official_mapping.tsv \
+              --expected-individuals 9 --expected-timepoints 4 \
+              --expected-sample-ids "$(seq -s, 0 35)" --require-consecutive-timepoints \
+              --out /tmp/container_mapping \
+            > validation/CONTAINER_MAPPING.log
+          docker run --rm -v "$PWD:/work:ro" -w /opt/lantern \
+            lantern-cami3-v7-frozen:20260821 \
+            bash lantern_submission/run_frozen_v7.sh \
+              --mapping /work/lantern_submission/configs/active_official_mapping.tsv \
+              --manifest /work/validation/synthetic_reads/input_manifest.tsv \
+              --out /tmp/container_dry_run \
+              --threads 2 --memory-gb 4 \
+              --expected-individuals 9 --expected-timepoints 4 --dry-run \
+            > validation/CONTAINER_DRY_RUN.log
+          grep -q DRY_RUN_COMPLETE validation/CONTAINER_DRY_RUN.log
+
+      - name: Build deterministic package twice and verify internal hashes
+        run: |
+          set -euo pipefail
+          source_commit='${{ github.event.pull_request.head.sha }}'
+          if [[ -z "$source_commit" ]]; then source_commit=$(git rev-parse HEAD); fi
+          includes=(
+            --include lantern_submission
+            --include lantern_v6/prepare_extension_candidates.py
+            --include lantern_v6/extension_union.py
+            --include lantern_cami3/scripts/fasta_utils.py
+            --include lantern_cami3/scripts/verify_cami_assembly.py
+          )
+          python lantern_submission/scripts/build_deterministic_package.py \
+            --source-root . "${includes[@]}" --source-commit "$source_commit" \
+            --out "$PACKAGE_NAME"
+          python lantern_submission/scripts/build_deterministic_package.py \
+            --source-root . "${includes[@]}" --source-commit "$source_commit" \
+            --out /tmp/package_rebuild.zip
+          cmp "$PACKAGE_NAME" /tmp/package_rebuild.zip
+          python lantern_submission/scripts/verify_package.py "$PACKAGE_NAME" \
+            --out validation/PACKAGE_VERIFICATION.json
+          unzip -t "$PACKAGE_NAME" > validation/PACKAGE_UNZIP_TEST.txt
+          unzip -Z1 "$PACKAGE_NAME" | grep -E '\.(fastq|fq)(\.gz)?$|\.bam$|\.cram$' && {
+            echo 'Restricted-data-like payload found in public package' >&2; exit 1;
+          } || true
+          sha256sum "$PACKAGE_NAME" > LANTERN_CAMI3_SUBMISSION_PACKAGE_20260821_SHA256.txt
+          stat --printf='%n\t%s\t%y\n' "$PACKAGE_NAME" > validation/PACKAGE_STAT.txt
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          summary={
+            'status':'PACKAGE_CI_PASS',
+            'explicit_toy_mapping':'PASS',
+            'explicit_active_mapping':'PASS',
+            'invalid_mapping_rejection':'PASS',
+            'python_compile':'PASS',
+            'unit_tests':'PASS',
+            'fasta_validator':'PASS',
+            'frozen_extension_integration':'PASS',
+            'host_dry_run':'PASS',
+            'docker_build':'PASS',
+            'container_dry_run':'PASS',
+            'deterministic_zip':'PASS',
+            'zip_integrity':'PASS',
+            'internal_sha256':'PASS',
+            'active_reads_accessed':False,
+            'active_data_uploaded':False,
+            'scientific_superiority_established':False,
+            'green_actions_meaning':'technical package validation only',
+          }
+          Path('validation/CI_SUMMARY.json').write_text(json.dumps(summary,indent=2,sort_keys=True)+'\n')
+          PY
+
+      - name: Upload public-safe package evidence only
+        uses: actions/upload-artifact@v4
+        with:
+          name: LANTERN_CAMI3_SUBMISSION_PACKAGE_CI_20260821
+          path: |
+            LANTERN_CAMI3_SUBMISSION_PACKAGE_20260821.zip
+            LANTERN_CAMI3_SUBMISSION_PACKAGE_20260821_SHA256.txt
+            validation/CI_SUMMARY.json
+            validation/PACKAGE_VERIFICATION.json
+            validation/PACKAGE_UNZIP_TEST.txt
+            validation/PACKAGE_STAT.txt
+            validation/CONTAINER_IMAGE_ID.txt
+            validation/mapping/toy_a/MAPPING_FREEZE.json
+            validation/mapping/active/MAPPING_FREEZE.json
+            validation/provenance/FROZEN_ALGORITHM_SHA256.txt
+            validation/UNIT_TESTS.log
+            validation/HOST_DRY_RUN.log
+            validation/CONTAINER_DRY_RUN.log
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0
