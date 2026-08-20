@@ -73,6 +73,7 @@ jobs:
           use-mathlib-cache: false
           use-github-cache: false
           leanchecker: true
+          leanchecker-args: 'U4Formal'
           nanoda: true
           nanoda-allow-sorry: false
           axiom-audit: true

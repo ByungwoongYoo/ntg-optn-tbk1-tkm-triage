@@ -2,7 +2,7 @@ import Lake
 
 open Lake DSL
 
-package u4Resolution where
+package U4Formal where
   version := v!"2.0.0"
 
 @[default_target]
