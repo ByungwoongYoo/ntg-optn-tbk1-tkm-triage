@@ -1,0 +1,1 @@
+This file intentionally retriggers the final evidence orchestrator after the current LANTERN development, holdout, long-read, domain-specific, and pairing workflows had additional time to complete. It changes no scientific threshold, model, assembly, or evidence.
