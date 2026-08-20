@@ -1,0 +1,38 @@
+name: Dispatch isolated repaired LANTERN v4 holdout resume
+
+on:
+  pull_request:
+    branches: [cami3-lantern-20260819]
+    paths:
+      - '.github/workflows/cami3-lantern-v4-holdout-resume-fixed-dispatch.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Dispatch repaired holdout workflow on the CAMI branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          REF: cami3-lantern-20260819
+        run: |
+          set -euo pipefail
+          gh workflow run cami3-lantern-v4-holdout-resume-fixed.yml --repo "$REPO" --ref "$REF"
+          run_id=''
+          for attempt in $(seq 1 30); do
+            run_id=$(gh run list --repo "$REPO" --workflow cami3-lantern-v4-holdout-resume-fixed.yml \
+              --branch "$REF" --event workflow_dispatch --limit 10 \
+              --json databaseId,createdAt,status,headSha \
+              --jq 'sort_by(.createdAt) | reverse | .[0].databaseId // empty')
+            if test -n "$run_id"; then break; fi
+            sleep 5
+          done
+          test -n "$run_id"
+          echo "dispatched_run_id=$run_id" >> "$GITHUB_STEP_SUMMARY"
+          gh run view "$run_id" --repo "$REPO" --json databaseId,status,url,headSha,createdAt
