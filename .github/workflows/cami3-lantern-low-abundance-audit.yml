@@ -1,0 +1,216 @@
+name: CAMI III LANTERN frozen low-abundance and strict-gate audit
+
+on:
+  pull_request:
+    branches: [cami3-lantern-20260819]
+    paths:
+      - '.github/workflows/cami3-lantern-low-abundance-audit.yml'
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  GOLD_RUN_ID: '32314185029'
+  GOLD_ARTIFACT: 'LANTERN_CAMI3_RESUMED_GOLD_EVALUATION_20260820'
+  DECISION_RUN_ID: '32315711002'
+  DECISION_ARTIFACT: 'LANTERN_CAMI3_CORRECTED_SHORT_DECISION_20260820'
+  SAMPLE0_URL: 'https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_0_reads.tar.gz'
+  SAMPLE1_URL: 'https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_1_reads.tar.gz'
+
+jobs:
+  low-abundance-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download immutable frozen recovery evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.GOLD_ARTIFACT }}
+          path: inputs/gold
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.GOLD_RUN_ID }}
+
+      - name: Download corrected arithmetic decision evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.DECISION_ARTIFACT }}
+          path: inputs/decision
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.DECISION_RUN_ID }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Locate and freeze evidence inputs
+        run: |
+          set -euo pipefail
+          mkdir -p abundance_audit/{abundance,results,provenance,logs}
+          gold=$(find inputs/gold -type f -name INDEPENDENT_AUDIT.json -printf '%h\n' | head -1)
+          decision=$(find inputs/decision -type f -path '*/results/FINAL_DECISION.json' | head -1)
+          test -n "$gold"; test -n "$decision"
+          test -s "$gold/evaluation/megahit_pair/per_genome_recovery.tsv"
+          test -s "$gold/evaluation/LANTERN_full/per_genome_recovery.tsv"
+          test -s "$gold/evaluation/LANTERN_no_longitudinal/per_genome_recovery.tsv"
+          test -s "$gold/pseudo_novel/PSEUDO_NOVEL_RECOVERY_SUMMARY.tsv"
+          printf '%s\n' "$gold" > /tmp/gold_root
+          printf '%s\n' "$decision" > /tmp/decision_json
+          printf 'gold_run=%s\ngold_artifact=%s\ndecision_run=%s\ndecision_artifact=%s\ngold_root=%s\ndecision_json=%s\n' \
+            "$GOLD_RUN_ID" "$GOLD_ARTIFACT" "$DECISION_RUN_ID" "$DECISION_ARTIFACT" "$gold" "$decision" \
+            > abundance_audit/provenance/UPSTREAM.txt
+          sha256sum "$decision" \
+            "$gold/evaluation/megahit_pair/per_genome_recovery.tsv" \
+            "$gold/evaluation/LANTERN_full/per_genome_recovery.tsv" \
+            "$gold/evaluation/LANTERN_no_longitudinal/per_genome_recovery.tsv" \
+            "$gold/pseudo_novel/PSEUDO_NOVEL_RECOVERY_SUMMARY.tsv" \
+            > abundance_audit/provenance/INPUT_SHA256.txt
+          git rev-parse HEAD > abundance_audit/provenance/GIT_HEAD.txt
+          uname -a > abundance_audit/provenance/UNAME.txt
+          python --version > abundance_audit/provenance/PYTHON_VERSION.txt
+          printf '%s\n%s\n' "$SAMPLE0_URL" "$SAMPLE1_URL" > abundance_audit/provenance/SOURCE_URLS.txt
+          printf 'truth_accessed_after_truth_blind_freeze=true\nlow_threshold_percent=0.01\nhigh_threshold_percent=0.1\n' \
+            > abundance_audit/provenance/FROZEN_AUDIT_PARAMETERS.txt
+
+      - name: Stream only official read-to-genome mapping metadata
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$PWD/lantern_cami3/scripts" python lantern_cami3/scripts/extract_read_abundance.py \
+            --url "$SAMPLE0_URL" --sample-id sample0 --paired \
+            --out abundance_audit/abundance/sample0_abundance.tsv \
+            2>&1 | tee abundance_audit/logs/SAMPLE0_ABUNDANCE.log
+          PYTHONPATH="$PWD/lantern_cami3/scripts" python lantern_cami3/scripts/extract_read_abundance.py \
+            --url "$SAMPLE1_URL" --sample-id sample1 --paired \
+            --out abundance_audit/abundance/sample1_abundance.tsv \
+            2>&1 | tee abundance_audit/logs/SAMPLE1_ABUNDANCE.log
+          test -s abundance_audit/abundance/sample0_abundance.tsv
+          test -s abundance_audit/abundance/sample1_abundance.tsv
+          sha256sum abundance_audit/abundance/*.tsv abundance_audit/abundance/*.json \
+            > abundance_audit/provenance/ABUNDANCE_SHA256.txt
+
+      - name: Join exact abundance strata to frozen recovery results
+        run: |
+          set -euo pipefail
+          gold=$(cat /tmp/gold_root)
+          PYTHONPATH="$PWD/lantern_cami3/scripts" python lantern_cami3/scripts/summarize_abundance_recovery.py \
+            --abundance abundance_audit/abundance/sample0_abundance.tsv \
+            --abundance abundance_audit/abundance/sample1_abundance.tsv \
+            --recovery "megahit_s0=$gold/evaluation/megahit_s0/per_genome_recovery.tsv" \
+            --recovery "megahit_s1=$gold/evaluation/megahit_s1/per_genome_recovery.tsv" \
+            --recovery "megahit_pair=$gold/evaluation/megahit_pair/per_genome_recovery.tsv" \
+            --recovery "LANTERN_full=$gold/evaluation/LANTERN_full/per_genome_recovery.tsv" \
+            --recovery "LANTERN_no_longitudinal=$gold/evaluation/LANTERN_no_longitudinal/per_genome_recovery.tsv" \
+            --recovery "LANTERN_no_consensus=$gold/evaluation/LANTERN_no_consensus/per_genome_recovery.tsv" \
+            --low-percent 0.01 --high-percent 0.1 \
+            --out abundance_audit/results \
+            2>&1 | tee abundance_audit/logs/ABUNDANCE_JOIN.log
+          test -s abundance_audit/results/ABUNDANCE_STRATIFIED_SUMMARY.tsv
+
+      - name: Apply strict pre-existing low-abundance gate and prompt-consistency audit
+        run: |
+          set -euo pipefail
+          gold=$(cat /tmp/gold_root)
+          decision=$(cat /tmp/decision_json)
+          python - "$decision" "$gold/pseudo_novel/PSEUDO_NOVEL_RECOVERY_SUMMARY.tsv" <<'PY'
+          import csv,json,sys
+          from pathlib import Path
+
+          decision=json.load(open(sys.argv[1]))
+          pseudo=list(csv.DictReader(open(sys.argv[2]),delimiter='\t'))
+          rows=list(csv.DictReader(open('abundance_audit/results/ABUNDANCE_STRATIFIED_SUMMARY.tsv'),delimiter='\t'))
+          by={(r['method'],r['stratum']):r for r in rows}
+          baseline=decision['strongest_baseline']
+          full='LANTERN_full'
+          threshold=float(decision['decision_config']['minimum_low_abundance_gain_percentage_points'])
+
+          def value(method,stratum):
+              r=by.get((method,stratum))
+              if not r or r.get('mean_recovery') in ('',None,'None'): return None
+              return 100*float(r['mean_recovery'])
+
+          strata={}
+          for stratum in ['low','medium','high','persistent_low','longitudinal_rescue_opportunity','consistently_detectable']:
+              fv=value(full,stratum); bv=value(baseline,stratum)
+              strata[stratum]={
+                  'full_mean_recovery_percent':fv,
+                  'baseline_mean_recovery_percent':bv,
+                  'gain_percentage_points':None if fv is None or bv is None else fv-bv,
+                  'full_n':int(float(by.get((full,stratum),{}).get('n_genomes') or 0)),
+                  'baseline_n':int(float(by.get((baseline,stratum),{}).get('n_genomes') or 0)),
+              }
+
+          low_gain=strata['low']['gain_percentage_points']
+          low_gate=low_gain is not None and low_gain>=threshold
+
+          pseudo_tiers=[]
+          for r in pseudo:
+              if r.get('method')!=full: continue
+              # The artifact stores method-specific recovery, not gain. Join against baseline below.
+              tier=r.get('tier','')
+              b=next((x for x in pseudo if x.get('method')==baseline and x.get('tier')==tier),None)
+              if b is None: continue
+              fr=float(r['mean_recovery']); br=float(b['mean_recovery'])
+              pseudo_tiers.append({'tier':tier,'n_targets':int(float(r['n_targets'])),'full_mean_recovery_percent':100*fr,'baseline_mean_recovery_percent':100*br,'gain_percentage_points':100*(fr-br)})
+          pseudo_consistent=bool(pseudo_tiers) and all(x['gain_percentage_points']>0 for x in pseudo_tiers)
+
+          original_gates=dict(decision['gates'])
+          strict_gates={
+              'genome_fraction_gain':bool(original_gates.get('genome_fraction_gain')),
+              'mean_genome_recovery_gain':bool(original_gates.get('mean_genome_recovery_gain')),
+              'chimera_tradeoff':bool(original_gates.get('chimera_tradeoff')),
+              'longitudinal_ablation_contribution':bool(original_gates.get('longitudinal_ablation_contribution')),
+              'low_abundance_gain_at_least_frozen_threshold':low_gate,
+              'pseudo_novel_consistent_across_all_withholding_tiers':pseudo_consistent,
+          }
+          success=all(strict_gates.values())
+          status='SUCCESS' if success else ('PARTIAL' if strict_gates['longitudinal_ablation_contribution'] else 'NEGATIVE')
+          out={
+              'status':status,
+              'strongest_baseline':baseline,
+              'frozen_low_abundance_threshold_percentage_points':threshold,
+              'abundance_strata':strata,
+              'pseudo_novel_tiers':pseudo_tiers,
+              'strict_gates':strict_gates,
+              'success':success,
+              'interpretation_rule':'The 2.0 percentage-point low-abundance threshold was already present in decision_gate_v1 before gold evaluation. Pseudo-novel consistency follows the pre-task requirement for improvement across multiple withholding splits; no new effect-size threshold was invented after result inspection.',
+              'claim_boundary':'This is post-freeze evaluation on the public CAMI Toy pair (samples 0 and 1), not an active CAMI III challenge result.'
+          }
+          Path('abundance_audit/results/STRICT_ABUNDANCE_AND_PSEUDONOVEL_DECISION.json').write_text(json.dumps(out,indent=2,sort_keys=True)+'\n')
+          lines=['# Strict low-abundance and pseudo-novel audit','',f"- Status: **{status}**",f"- Strongest baseline: `{baseline}`",f"- Low-abundance recovery gain: **{low_gain} percentage points**",f"- Frozen required gain: **{threshold} percentage points**",f"- Pseudo-novel improvement consistent across all tiers: **{pseudo_consistent}**",'', '## Gates','']
+          for k,v in strict_gates.items(): lines.append(f"- {k}: **{'PASS' if v else 'FAIL'}**")
+          lines += ['', '## Claim boundary','',out['claim_boundary'],'']
+          Path('abundance_audit/results/STRICT_ABUNDANCE_AND_PSEUDONOVEL_DECISION.md').write_text('\n'.join(lines)+'\n')
+          print(json.dumps(out,indent=2,sort_keys=True))
+          PY
+          test -s abundance_audit/results/STRICT_ABUNDANCE_AND_PSEUDONOVEL_DECISION.json
+
+      - name: Independent integrity audit
+        if: always()
+        run: |
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          root=Path('abundance_audit')
+          decision=root/'results/STRICT_ABUNDANCE_AND_PSEUDONOVEL_DECISION.json'
+          audit={'decision_present':decision.is_file(),'decision':json.loads(decision.read_text()) if decision.is_file() else None,'boundary':'Evaluation-only metadata were accessed after the frozen truth-blind assembly hash existed.'}
+          (root/'INDEPENDENT_AUDIT.json').write_text(json.dumps(audit,indent=2,sort_keys=True)+'\n')
+          lines=[]
+          for p in sorted(root.rglob('*')):
+              if p.is_file() and p.name!='SHA256SUMS_ALL.txt': lines.append(f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.relative_to(root)}')
+          (root/'SHA256SUMS_ALL.txt').write_text('\n'.join(lines)+'\n')
+          PY
+          find abundance_audit -type f -printf '%P\t%s\n' | sort > abundance_audit/CONTENTS.tsv
+          du -ah abundance_audit | sort -h > abundance_audit/FILE_SIZES.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: LANTERN_CAMI3_LOW_ABUNDANCE_AUDIT_20260820
+          path: abundance_audit
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
