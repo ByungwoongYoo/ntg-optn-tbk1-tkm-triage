@@ -1,0 +1,404 @@
+name: LANTERN v7 official Toy holdout 18-19 finalizer v2
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/lantern-v7-holdout-18-19-finalize-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  RESEARCH_REF: 'lantern-v7-multi-angle-20260820'
+  DEVELOPMENT_RUN_ID: '32351114616'
+  DEVELOPMENT_ARTIFACT: 'LANTERN_CAMI3_V7_SHORT_BACKBONE_DEVELOPMENT_20260820'
+  HOLDOUT_RUN_ID: '32358054873'
+  SEED: '20260819'
+
+jobs:
+  finalize-v2:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RESEARCH_REF }}
+          fetch-depth: 1
+
+      - name: Download immutable development decision
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.DEVELOPMENT_ARTIFACT }}
+          path: upstream/development
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.DEVELOPMENT_RUN_ID }}
+
+      - name: Download completed holdout baselines
+        uses: actions/download-artifact@v4
+        with:
+          pattern: LANTERN_CAMI3_V7_HOLDOUT_BASELINE_*_20260820
+          path: upstream/baselines
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.HOLDOUT_RUN_ID }}
+
+      - name: Download immutable holdout reads
+        uses: actions/download-artifact@v4
+        with:
+          pattern: LANTERN_CAMI3_V7_HOLDOUT_READS_S*_20260820
+          path: upstream/reads
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.HOLDOUT_RUN_ID }}
+
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: lantern-v7-finalizer-v2
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            megahit=1.2.9
+            minimap2=2.31
+            mash=2.3
+            seqkit=2.13.0
+          cache-downloads: true
+          post-cleanup: all
+
+      - name: Materialize baselines, reads, and exact frozen winner
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=v7_holdout_18_19_final_v2
+          mkdir -p "$root"/{inputs,reads,candidates,alignments,variants,evaluation,pseudo,abundance,decision,submission,validation,truth_download,truth,provenance,logs,failure_audit}
+          winner=$(find upstream/development -type f -name FROZEN_V7_SHORT_BACKBONE_WINNER.json -print -quit)
+          test -s "$winner"
+          cp "$winner" "$root/provenance/FROZEN_V7_SHORT_BACKBONE_WINNER.json"
+          python - "$winner" <<'PY'
+          import json,sys
+          x=json.load(open(sys.argv[1]))
+          assert x['status']=='V7_SHORT_BACKBONE_RULE_FROZEN_FOR_NEW_UNTOUCHED_PAIR',x
+          assert x['winner']=='short_terminal_500_s1',x
+          expected={'mode':'terminal','min_candidate_length':500,'min_terminal_bp':500,'alignment_identity':0.97,'alignment_min_bp':500,'whole_max_aligned_fraction':0.30,'containment_fraction':0.98,'min_source_count':1,'single_target_terminal':True}
+          actual={'mode':x['construction']['mode'],**x['construction']['parameters']}
+          assert actual==expected,(actual,expected)
+          PY
+          for d in upstream/baselines/LANTERN_CAMI3_V7_HOLDOUT_BASELINE_*_20260820; do
+            method=${d##*BASELINE_}; method=${method%_20260820}
+            fasta=$(find "$d" -type f -name final_assembly.fasta -size +0c -print -quit || true)
+            if test -n "$fasta" && test -s "$fasta"; then cp "$fasta" "$root/inputs/${method}.fasta"; fi
+          done
+          for required in metaspades_short_pair metaspades_hybrid_pair flye_long_pair metaspades_short_s18 metaspades_hybrid_s18 flye_long_s18 metaspades_short_s19 metaspades_hybrid_s19 flye_long_s19; do
+            test -s "$root/inputs/${required}.fasta"
+          done
+          for s in 18 19; do
+            for kind in R1 R2 long; do
+              src=$(find upstream/reads -type f -name "S${s}_${kind}.fastq.gz" -print -quit)
+              test -s "$src"
+              cp "$src" "$root/reads/S${s}_${kind}.fastq.gz"
+              gzip -t "$root/reads/S${s}_${kind}.fastq.gz"
+            done
+          done
+          git rev-parse HEAD > "$root/provenance/RESEARCH_HEAD.txt"
+          uname -a > "$root/provenance/UNAME.txt"
+          python --version > "$root/provenance/PYTHON_VERSION.txt"
+          micromamba list > "$root/provenance/MICROMAMBA_LIST.txt"
+          printf 'holdout_pair=18,19\ndevelopment_run=%s\nholdout_run=%s\ntruth_accessed=false\n' "$DEVELOPMENT_RUN_ID" "$HOLDOUT_RUN_ID" > "$root/provenance/BOUNDARY.txt"
+          sha256sum "$root/inputs"/*.fasta "$root/reads"/*.fastq.gz "$root/provenance/FROZEN_V7_SHORT_BACKBONE_WINNER.json" > "$root/provenance/IMMUTABLE_INPUT_SHA256SUMS.txt"
+          rm -rf upstream
+
+      - name: Rebuild only failed MEGAHIT pair and single baselines
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=v7_holdout_18_19_final_v2
+          build_megahit() {
+            local suffix="$1" r1 r2
+            if test "$suffix" = pair; then
+              cat "$root/reads/S18_R1.fastq.gz" "$root/reads/S19_R1.fastq.gz" > "$root/reads/megahit_pair_R1.fastq.gz"
+              cat "$root/reads/S18_R2.fastq.gz" "$root/reads/S19_R2.fastq.gz" > "$root/reads/megahit_pair_R2.fastq.gz"
+              r1="$root/reads/megahit_pair_R1.fastq.gz"; r2="$root/reads/megahit_pair_R2.fastq.gz"
+            else
+              local s=${suffix#s}
+              r1="$root/reads/S${s}_R1.fastq.gz"; r2="$root/reads/S${s}_R2.fastq.gz"
+            fi
+            local out="$root/megahit_${suffix}"
+            rm -rf "$out"
+            /usr/bin/time -v timeout --signal=TERM --kill-after=120s 240m \
+              megahit -1 "$r1" -2 "$r2" -o "$out" --min-contig-len 500 -t 4 --memory 0.8 \
+              > "$root/logs/MEGAHIT_${suffix}.log" 2>&1
+            test -s "$out/final.contigs.fa"
+            cp "$out/final.contigs.fa" "$root/inputs/megahit_short_${suffix}.fasta"
+            rm -rf "$out"
+          }
+          build_megahit pair
+          build_megahit s18
+          build_megahit s19
+          for f in "$root/inputs"/megahit_short_*.fasta; do
+            python lantern_cami3/scripts/verify_cami_assembly.py "$f" --out "${f}.validation.json"
+          done
+          seqkit stats -T "$root/inputs"/*.fasta > "$root/provenance/INPUT_ASSEMBLY_STATS.tsv"
+          sha256sum "$root/inputs"/*.fasta > "$root/provenance/COMPLETE_BASELINE_SHA256SUMS.txt"
+          rm -rf "$root/reads"
+
+      - name: Apply exact frozen rule and construct matched ablations
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=v7_holdout_18_19_final_v2
+          build_one() {
+            local label="$1" suffix="$2"
+            python lantern_v6/prepare_extension_candidates.py \
+              --source "hybrid=$root/inputs/metaspades_hybrid_${suffix}.fasta" \
+              --source "megahit=$root/inputs/megahit_short_${suffix}.fasta" \
+              --source "flye=$root/inputs/flye_long_${suffix}.fasta" \
+              --min-length 500 --max-n-fraction 0.05 --out "$root/candidates/$label" \
+              > "$root/logs/PREPARE_${label}.log" 2>&1
+            minimap2 -x asm5 -c -N 100 -t 4 "$root/inputs/metaspades_short_${suffix}.fasta" \
+              "$root/candidates/$label/extension_candidates.fasta" > "$root/alignments/${label}.paf" 2> "$root/logs/ALIGN_${label}.log"
+            python lantern_v6/extension_union.py \
+              --backbone "$root/inputs/metaspades_short_${suffix}.fasta" \
+              --candidates "$root/candidates/$label/extension_candidates.fasta" \
+              --metadata "$root/candidates/$label/extension_candidate_metadata.tsv" \
+              --candidate-to-backbone-paf "$root/alignments/${label}.paf" \
+              --mode terminal --min-candidate-length 500 --min-terminal-bp 500 \
+              --alignment-identity 0.97 --alignment-min-bp 500 --whole-max-aligned-fraction 0.30 \
+              --containment-fraction 0.98 --min-source-count 1 --single-target-terminal \
+              --out "$root/variants/$label" > "$root/logs/CONSTRUCT_${label}.log" 2>&1
+          }
+          build_one pair pair
+          build_one s18 s18
+          build_one s19 s19
+          python - "$root" <<'PY'
+          import hashlib,sys
+          from pathlib import Path
+          root=Path(sys.argv[1]); sources=[root/'variants/s18/LANTERN_V6_EXTENSION_UNION.fasta',root/'variants/s19/LANTERN_V6_EXTENSION_UNION.fasta']; seen=set(); out=root/'variants/v7_no_longitudinal.fasta'
+          def records(path):
+              name=None;parts=[]
+              for raw in path.open():
+                  line=raw.strip()
+                  if not line:continue
+                  if line.startswith('>'):
+                      if name is not None:yield name,''.join(parts)
+                      name=line[1:].split()[0];parts=[]
+                  else:parts.append(line)
+              if name is not None:yield name,''.join(parts)
+          with out.open('w') as fo:
+              for src in sources:
+                  for _name,seq in records(src):
+                      h=hashlib.sha256(seq.encode()).hexdigest()
+                      if h in seen:continue
+                      seen.add(h);fo.write(f'>V7_NL_{h[:20].upper()}\n')
+                      for i in range(0,len(seq),80):fo.write(seq[i:i+80]+'\n')
+          PY
+          cp "$root/inputs/metaspades_short_pair.fasta" "$root/variants/v7_no_extension.fasta"
+          python lantern_v6/prepare_extension_candidates.py \
+            --source "megahit=$root/inputs/megahit_short_pair.fasta" --min-length 500 --max-n-fraction 0.05 \
+            --out "$root/candidates/no_long" > "$root/logs/PREPARE_NO_LONG.log" 2>&1
+          minimap2 -x asm5 -c -N 100 -t 4 "$root/inputs/metaspades_short_pair.fasta" \
+            "$root/candidates/no_long/extension_candidates.fasta" > "$root/alignments/no_long.paf" 2> "$root/logs/ALIGN_NO_LONG.log"
+          python lantern_v6/extension_union.py \
+            --backbone "$root/inputs/metaspades_short_pair.fasta" \
+            --candidates "$root/candidates/no_long/extension_candidates.fasta" \
+            --metadata "$root/candidates/no_long/extension_candidate_metadata.tsv" \
+            --candidate-to-backbone-paf "$root/alignments/no_long.paf" \
+            --mode terminal --min-candidate-length 500 --min-terminal-bp 500 \
+            --alignment-identity 0.97 --alignment-min-bp 500 --whole-max-aligned-fraction 0.30 \
+            --containment-fraction 0.98 --min-source-count 1 --single-target-terminal \
+            --out "$root/variants/v7_no_long" > "$root/logs/CONSTRUCT_NO_LONG.log" 2>&1
+          for f in "$root/variants/pair/LANTERN_V6_EXTENSION_UNION.fasta" "$root/variants/v7_no_longitudinal.fasta" "$root/variants/v7_no_extension.fasta" "$root/variants/v7_no_long/LANTERN_V6_EXTENSION_UNION.fasta"; do
+            python lantern_cami3/scripts/verify_cami_assembly.py "$f" --out "${f}.validation.json"
+          done
+
+      - name: Freeze holdout outputs before gold access
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=v7_holdout_18_19_final_v2
+          python - "$root" <<'PY'
+          import hashlib,json,sys,time
+          from pathlib import Path
+          root=Path(sys.argv[1]);paths={'v7_full':root/'variants/pair/LANTERN_V6_EXTENSION_UNION.fasta','v7_no_longitudinal':root/'variants/v7_no_longitudinal.fasta','v7_no_extension':root/'variants/v7_no_extension.fasta','v7_no_long':root/'variants/v7_no_long/LANTERN_V6_EXTENSION_UNION.fasta'}
+          obj={'status':'V7_HOLDOUT_18_19_FROZEN_BEFORE_GOLD','holdout_pair':[18,19],'truth_accessed':False,'freeze_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'outputs':{k:{'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()} for k,p in paths.items()},'winner_sha256':hashlib.sha256((root/'provenance/FROZEN_V7_SHORT_BACKBONE_WINNER.json').read_bytes()).hexdigest(),'boundary':'Exact frozen v7 development rule and all matched ablations were constructed and hashed before sample-18/19 gold or abundance metadata was accessed.'}
+          (root/'provenance/HOLDOUT_TRUTH_BLIND_FREEZE.json').write_text(json.dumps(obj,indent=2,sort_keys=True)+'\n')
+          PY
+          sha256sum "$root/provenance/HOLDOUT_TRUTH_BLIND_FREEZE.json" > "$root/provenance/HOLDOUT_FREEZE_SHA256.txt"
+
+      - name: Open public gold and evaluate all fixed methods
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=v7_holdout_18_19_final_v2
+          for s in 18 19; do
+            curl -fsSL --retry 8 --retry-all-errors "https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_${s}_gsa.tar.gz" -o "$root/truth_download/sample_${s}_gsa.tar.gz"
+          done
+          sha256sum "$root/truth_download"/*.tar.gz > "$root/provenance/GSA_SHA256SUMS.txt"
+          python lantern_cami3/scripts/extract_gsa_truth.py --gsa-tar "S18=$root/truth_download/sample_18_gsa.tar.gz" \
+            --gsa-tar "S19=$root/truth_download/sample_19_gsa.tar.gz" --out "$root/truth" > "$root/logs/EXTRACT_TRUTH.log" 2>&1
+          minimap2 -I 4G -d "$root/truth/toy_truth.mmi" "$root/truth/combined_truth.fasta" > "$root/logs/TRUTH_INDEX.stdout" 2> "$root/logs/TRUTH_INDEX.log"
+          cat > "$root/provenance/METHOD_MANIFEST.tsv" <<'EOF'
+          method	role	mode	scope	ablation	eligible_primary_baseline
+          metaspades_short_pair	baseline	short	longitudinal	none	true
+          metaspades_hybrid_pair	baseline	hybrid	longitudinal	none	true
+          megahit_short_pair	baseline	short	longitudinal	none	true
+          flye_long_pair	baseline	long	longitudinal	none	true
+          metaspades_short_s18	baseline	short	single	none	false
+          metaspades_hybrid_s18	baseline	hybrid	single	none	false
+          megahit_short_s18	baseline	short	single	none	false
+          flye_long_s18	baseline	long	single	none	false
+          metaspades_short_s19	baseline	short	single	none	false
+          metaspades_hybrid_s19	baseline	hybrid	single	none	false
+          megahit_short_s19	baseline	short	single	none	false
+          flye_long_s19	baseline	long	single	none	false
+          v7_full	lantern	hybrid	longitudinal	full	false
+          v7_no_longitudinal	ablation	hybrid	single_union	no_longitudinal	false
+          v7_no_extension	ablation	short	longitudinal	no_extension	false
+          v7_no_long	ablation	short	longitudinal	no_long	false
+          EOF
+          printf 'method\tfasta\n' > "$root/provenance/EVALUATED_METHODS.tsv"
+          for f in "$root/inputs"/*.fasta; do printf '%s\t%s\n' "$(basename "$f" .fasta)" "$f" >> "$root/provenance/EVALUATED_METHODS.tsv"; done
+          printf 'v7_full\t%s\n' "$root/variants/pair/LANTERN_V6_EXTENSION_UNION.fasta" >> "$root/provenance/EVALUATED_METHODS.tsv"
+          printf 'v7_no_longitudinal\t%s\n' "$root/variants/v7_no_longitudinal.fasta" >> "$root/provenance/EVALUATED_METHODS.tsv"
+          printf 'v7_no_extension\t%s\n' "$root/variants/v7_no_extension.fasta" >> "$root/provenance/EVALUATED_METHODS.tsv"
+          printf 'v7_no_long\t%s\n' "$root/variants/v7_no_long/LANTERN_V6_EXTENSION_UNION.fasta" >> "$root/provenance/EVALUATED_METHODS.tsv"
+          while IFS=$'\t' read -r method fasta; do
+            test "$method" = method && continue
+            dir="$root/evaluation/$method"; mkdir -p "$dir"
+            minimap2 -x asm5 -c -N 100 -t 4 "$root/truth/toy_truth.mmi" "$fasta" > "$dir/assembly_to_truth.paf" 2> "$dir/minimap2.log"
+            python lantern_cami3/scripts/evaluate_gold_coverage.py --paf "$dir/assembly_to_truth.paf" \
+              --truth-mapping "$root/truth/truth_mapping.tsv" --assembly-fasta "$fasta" \
+              --min-identity 0.90 --min-alignment 500 --out "$dir" > "$dir/evaluate.log" 2>&1
+            rm -f "$dir/assembly_to_truth.paf"
+          done < "$root/provenance/EVALUATED_METHODS.tsv"
+
+      - name: Build pseudo-novel and dynamically serialized abundance tables
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=v7_holdout_18_19_final_v2
+          python - "$root" <<'PY'
+          import csv,sys
+          from pathlib import Path
+          root=Path(sys.argv[1]);rows=list(csv.DictReader(open(root/'truth/genome_reference_manifest.tsv'),delimiter='\t'));paths=[]
+          for row in rows:
+              if int(row['truth_bp'])>=50000:
+                  p=root/'truth/references'/Path(row['reference_path']).name
+                  if p.is_file():paths.append(str(p))
+          (root/'pseudo/mash_reference_files.txt').write_text('\n'.join(paths)+'\n')
+          PY
+          mash sketch -k 21 -s 1000 -l "$root/pseudo/mash_reference_files.txt" -o "$root/pseudo/truth_genomes" > "$root/logs/MASH_SKETCH.log" 2>&1
+          mash dist "$root/pseudo/truth_genomes.msh" "$root/pseudo/truth_genomes.msh" > "$root/pseudo/truth_genome_distances.tsv"
+          recovery_args=(); while IFS=$'\t' read -r method fasta; do test "$method" = method && continue; recovery_args+=(--recovery "$method=$root/evaluation/$method/per_genome_recovery.tsv"); done < "$root/provenance/EVALUATED_METHODS.tsv"
+          python lantern_cami3/scripts/build_pseudo_novel_audit.py --manifest "$root/truth/genome_reference_manifest.tsv" \
+            --mash "$root/pseudo/truth_genome_distances.tsv" "${recovery_args[@]}" --min-truth-bp 50000 --out "$root/pseudo/results" > "$root/logs/PSEUDO_NOVEL.log" 2>&1
+          for s in 18 19; do
+            python lantern_cami3/scripts/extract_read_abundance.py \
+              --url "https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_${s}_reads.tar.gz" \
+              --sample-id "S${s}" --paired --out "$root/abundance/S${s}_abundance.tsv" > "$root/logs/ABUNDANCE_S${s}.log" 2>&1
+          done
+          python - "$root" <<'PY'
+          import csv,statistics,sys
+          from collections import defaultdict
+          from pathlib import Path
+          root=Path(sys.argv[1]);by=defaultdict(dict)
+          for path in [root/'abundance/S18_abundance.tsv',root/'abundance/S19_abundance.tsv']:
+              for r in csv.DictReader(open(path),delimiter='\t'):by[r['genome_id']][r['sample_id']]=float(r['relative_read_percent'])
+          profile={}
+          for gid,x in by.items():
+              vals=list(x.values());mean=sum(vals)/len(vals);mn=min(vals);mx=max(vals)
+              stratum='low' if mean<.01 else ('medium' if mean<.1 else 'high')
+              trajectory='persistent_low' if mx<.01 else ('longitudinal_rescue_opportunity' if mn<.01<=mx else 'consistently_detectable')
+              profile[gid]={'genome_id':gid,'n_samples':len(vals),'mean_read_percent':mean,'min_read_percent':mn,'max_read_percent':mx,'abundance_stratum':stratum,'trajectory_stratum':trajectory,**{f'{s}_read_percent':v for s,v in sorted(x.items())}}
+          methods=[r['method'] for r in csv.DictReader(open(root/'provenance/EVALUATED_METHODS.tsv'),delimiter='\t')]
+          details=[];summaries=[]
+          for method in methods:
+              for r in csv.DictReader(open(root/f'evaluation/{method}/per_genome_recovery.tsv'),delimiter='\t'):
+                  gid=r['genome_id']
+                  if gid in profile:details.append({'method':method,**profile[gid],'recovery_fraction':float(r['recovery_fraction']),'recovered_50':r['recovered_50'],'recovered_90':r['recovered_90']})
+          for method in methods:
+              for group in ['low','medium','high','persistent_low','longitudinal_rescue_opportunity','consistently_detectable']:
+                  rows=[r for r in details if r['method']==method and (r['abundance_stratum']==group if group in {'low','medium','high'} else r['trajectory_stratum']==group)]
+                  vals=[r['recovery_fraction'] for r in rows]
+                  summaries.append({'method':method,'stratum':group,'n_genomes':len(rows),'mean_recovery':sum(vals)/len(vals) if vals else None,'median_recovery':statistics.median(vals) if vals else None,'minimum_recovery':min(vals) if vals else None,'recovered_50':sum(r['recovered_50']=='true' for r in rows),'recovered_90':sum(r['recovered_90']=='true' for r in rows)})
+          out=root/'abundance/results';out.mkdir(parents=True,exist_ok=True)
+          def write(name,rows):
+              fields=[]
+              for r in rows:
+                  for k in r:
+                      if k not in fields:fields.append(k)
+              with open(out/name,'w',newline='') as f:
+                  w=csv.DictWriter(f,fieldnames=fields,delimiter='\t');w.writeheader();w.writerows(rows)
+          write('ABUNDANCE_RECOVERY_DETAIL.tsv',details);write('ABUNDANCE_STRATIFIED_SUMMARY.tsv',summaries)
+          PY
+
+      - name: Apply unchanged strict gates and validate candidate FASTA
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=v7_holdout_18_19_final_v2
+          cat > "$root/provenance/HOLDOUT_CONFIG.json" <<'EOF'
+          {
+            "holdout_pair": [18, 19],
+            "strict_success_gates": {
+              "genome_fraction_gain_minimum_percentage_points": 0.5,
+              "mean_genome_recovery_gain_minimum_percentage_points": 1.0,
+              "low_abundance_gain_minimum_percentage_points": 2.0,
+              "relative_cross_binid_chimera_increase_maximum": 0.10,
+              "longitudinal_ablation_drop_minimum_percentage_points": 0.5
+            },
+            "claim_boundary": "Untouched public Toy participant-pair validation of the exact frozen v7 rule. This is not an official hidden CAMI III result or a novel-organism discovery."
+          }
+          EOF
+          method_args=(); while IFS=$'\t' read -r method fasta; do test "$method" = method && continue; method_args+=(--method "$method=$root/evaluation/$method"); done < "$root/provenance/EVALUATED_METHODS.tsv"
+          python lantern_cami3/scripts/evaluate_frozen_holdout.py "${method_args[@]}" \
+            --manifest "$root/provenance/METHOD_MANIFEST.tsv" --holdout-config "$root/provenance/HOLDOUT_CONFIG.json" \
+            --full-method v7_full --no-longitudinal-method v7_no_longitudinal --no-long-method v7_no_long \
+            --abundance-summary "$root/abundance/results/ABUNDANCE_STRATIFIED_SUMMARY.tsv" \
+            --pseudo-summary "$root/pseudo/results/PSEUDO_NOVEL_RECOVERY_SUMMARY.tsv" --seed "$SEED" --out "$root/decision" \
+            > "$root/logs/HOLDOUT_DECISION.log" 2>&1
+          cp "$root/variants/pair/LANTERN_V6_EXTENSION_UNION.fasta" "$root/submission/LANTERN_V7_HOLDOUT_18_19.fasta"
+          python lantern_cami3/scripts/verify_cami_assembly.py "$root/submission/LANTERN_V7_HOLDOUT_18_19.fasta" --out "$root/validation/SUBMISSION_FASTA_VALIDATION.json"
+          sha256sum "$root/submission/LANTERN_V7_HOLDOUT_18_19.fasta" > "$root/validation/SUBMISSION_FASTA_SHA256.txt"
+          cat "$root/decision/HOLDOUT_DECISION.md"
+
+      - name: Compact, audit, and upload evidence
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          root=v7_holdout_18_19_final_v2
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('v7_holdout_18_19_final_v2');errors=[]
+          for rel in ['provenance/FROZEN_V7_SHORT_BACKBONE_WINNER.json','provenance/HOLDOUT_TRUTH_BLIND_FREEZE.json','decision/HOLDOUT_DECISION.json','validation/SUBMISSION_FASTA_VALIDATION.json']:
+              if not (root/rel).is_file():errors.append(f'missing {rel}')
+          d=json.loads((root/'decision/HOLDOUT_DECISION.json').read_text()) if (root/'decision/HOLDOUT_DECISION.json').is_file() else {}
+          v=json.loads((root/'validation/SUBMISSION_FASTA_VALIDATION.json').read_text()) if (root/'validation/SUBMISSION_FASTA_VALIDATION.json').is_file() else {}
+          if d.get('holdout_pair')!=[18,19]:errors.append('pair mismatch')
+          if d.get('full_method')!='v7_full':errors.append('method mismatch')
+          if v.get('status')!='PASS':errors.append('validation failed')
+          (root/'INDEPENDENT_AUDIT.json').write_text(json.dumps({'status':'PASS' if not errors else 'FAIL','errors':errors,'decision_status':d.get('status'),'strict_success':d.get('strict_success')},indent=2)+'\n')
+          PY
+          rm -rf "$root/inputs" "$root/candidates" "$root/alignments" "$root/truth_download" "$root/truth/references"
+          rm -f "$root/truth/combined_truth.fasta" "$root/truth/toy_truth.mmi" "$root/pseudo/truth_genomes.msh" "$root/pseudo/truth_genome_distances.tsv"
+          rm -rf "$root/variants/s18" "$root/variants/s19"
+          find "$root" -type f ! -name SHA256SUMS_ALL.txt -print0 | sort -z | xargs -0 sha256sum > "$root/SHA256SUMS_ALL.txt" || true
+          find "$root" -type f -printf '%P\t%s\n' | sort > "$root/CONTENTS.tsv" || true
+          du -sh "$root" > "$root/PACKAGE_SIZE.txt" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: LANTERN_CAMI3_V7_UNTOUCHED_HOLDOUT_18_19_FINAL_V2_20260820
+          path: v7_holdout_18_19_final_v2
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
