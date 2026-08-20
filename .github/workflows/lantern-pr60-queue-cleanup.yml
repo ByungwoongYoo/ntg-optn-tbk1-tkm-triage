@@ -1,0 +1,54 @@
+name: LANTERN PR60 legacy queue cleanup
+
+on:
+  push:
+    branches: [lantern-cami3-official-mapping-freeze-20260820]
+    paths:
+      - '.github/workflows/lantern-pr60-queue-cleanup.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  cancel-obsolete-queued-runs:
+    runs-on: macos-15
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_BRANCH: lantern-cami3-official-mapping-freeze-20260820
+      PACKAGE_WORKFLOW_NAME: LANTERN explicit mapping and submission package CI
+    steps:
+      - name: Cancel obsolete queued runs while preserving the newest package CI
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="$GITHUB_REPOSITORY"
+          current="$GITHUB_RUN_ID"
+          tmp=$(mktemp)
+          gh api --paginate "repos/${repo}/actions/runs?status=queued&per_page=100" \
+            --jq '.workflow_runs[] | [.id,.name,.head_branch,.status] | @tsv' > "$tmp"
+
+          keep_package=$(awk -F '\t' -v branch="$TARGET_BRANCH" -v name="$PACKAGE_WORKFLOW_NAME" \
+            '$3==branch && $2==name && $4=="queued" {print $1}' "$tmp" | sort -n | tail -1)
+          printf 'current_cleanup_run=%s\nkept_package_run=%s\n' "$current" "${keep_package:-none}"
+
+          cancelled=0
+          while IFS=$'\t' read -r id name branch status; do
+            [[ "$branch" == "$TARGET_BRANCH" ]] || continue
+            [[ "$status" == queued ]] || continue
+            [[ "$id" != "$current" ]] || continue
+            if [[ -n "${keep_package:-}" && "$id" == "$keep_package" ]]; then
+              continue
+            fi
+            printf 'cancelling run %s\t%s\n' "$id" "$name"
+            gh api -X POST "repos/${repo}/actions/runs/${id}/cancel" >/dev/null || true
+            cancelled=$((cancelled+1))
+          done < "$tmp"
+          printf 'cancel_requests=%s\n' "$cancelled"
+          sleep 15
+          if [[ -n "${keep_package:-}" ]]; then
+            gh api "repos/${repo}/actions/runs/${keep_package}" \
+              --jq '{id,name,status,conclusion,head_sha,html_url}'
+          fi
