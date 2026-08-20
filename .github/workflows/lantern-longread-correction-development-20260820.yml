@@ -1,0 +1,274 @@
+name: LANTERN truth-blind long-read correction rescue development
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/lantern-longread-correction-development-20260820.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  RESEARCH_REF: 'cami3-lantern-20260819'
+  READ_RUN_ID: '32285680342'
+  ASSEMBLY_RUN_ID: '32312941523'
+  SEED: '20260819'
+
+jobs:
+  corrected-long-read-development:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mode: q10_metamdbg
+            correction: quality_filter
+            assembler: metamdbg
+          - mode: top50_metamdbg
+            correction: filtlong_top50
+            assembler: metamdbg
+          - mode: ratatosk_metamdbg
+            correction: ratatosk
+            assembler: metamdbg
+          - mode: ratatosk_flye
+            correction: ratatosk
+            assembler: flye
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - name: Checkout frozen LANTERN research code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RESEARCH_REF }}
+          fetch-depth: 1
+
+      - name: Download immutable Toy 0/1 short and long reads
+        uses: actions/download-artifact@v4
+        with:
+          pattern: LANTERN_CAMI3_TOY_READS_S*_V1
+          path: incoming/reads
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.READ_RUN_ID }}
+
+      - name: Download immutable strong development baselines
+        uses: actions/download-artifact@v4
+        with:
+          pattern: LANTERN_CAMI3_MULTIMODAL_*_20260820
+          path: incoming/baselines
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.ASSEMBLY_RUN_ID }}
+
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: lantern-long-correction
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            ratatosk=0.9.0
+            filtlong=0.2.1
+            metamdbg=1.4
+            flye
+            minimap2=2.31
+            seqkit=2.13.0
+          cache-downloads: true
+          post-cleanup: all
+
+      - name: Normalize read identifiers and isolate baselines
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mode='${{ matrix.mode }}'; root="longcorr_${mode}"
+          mkdir -p "$root"/{reads,baselines,correction,assembly,evaluation,truth_download,truth,provenance,logs,failure_audit}
+
+          for s in 0 1; do
+            for kind in R1 R2 long; do
+              src=$(find incoming/reads -type f -name "S${s}_${kind}.fastq.gz" -print -quit)
+              test -s "$src"
+              cp "$src" "$root/reads/S${s}_${kind}.raw.fastq.gz"
+            done
+          done
+          python - "$root" <<'PY'
+          import gzip,re,sys
+          from pathlib import Path
+          root=Path(sys.argv[1])
+          def records(path):
+              with gzip.open(path,'rt',encoding='ascii',errors='strict') as f:
+                  while True:
+                      h=f.readline()
+                      if not h: return
+                      s=f.readline();p=f.readline();q=f.readline()
+                      if not (s and p and q): raise SystemExit(f'truncated FASTQ: {path}')
+                      yield h,s,p,q
+          for sample in (0,1):
+              for kind in ('R1','R2','long'):
+                  src=root/'reads'/f'S{sample}_{kind}.raw.fastq.gz'
+                  dst=root/'reads'/f'S{sample}_{kind}.norm.fastq.gz'
+                  with gzip.open(dst,'wt',encoding='ascii',newline='') as out:
+                      for h,s,p,q in records(src):
+                          token=h[1:].strip().split()[0]
+                          token=re.sub(r'/(?:1|2)$','',token)
+                          token=re.sub(r'(?:[._-])R?[12]$','',token,flags=re.I)
+                          out.write(f'@S{sample}_{token}\n{s}+\n{q}')
+                  if dst.stat().st_size==0: raise SystemExit(f'empty normalized FASTQ: {dst}')
+          PY
+          gzip -t "$root"/reads/*.norm.fastq.gz
+          printf '%s\n' "$PWD/$root/reads/S0_R1.norm.fastq.gz" "$PWD/$root/reads/S0_R2.norm.fastq.gz" "$PWD/$root/reads/S1_R1.norm.fastq.gz" "$PWD/$root/reads/S1_R2.norm.fastq.gz" > "$root/reads/short.list"
+          printf '%s\n' "$PWD/$root/reads/S0_long.norm.fastq.gz" "$PWD/$root/reads/S1_long.norm.fastq.gz" > "$root/reads/long.list"
+
+          isolate() {
+            local artifact="$1" method="$2" dir fasta
+            dir=$(find incoming/baselines -maxdepth 1 -type d -name "$artifact" -print -quit)
+            test -n "$dir"
+            fasta=$(find "$dir" -type f -name final_assembly.fasta -print -quit)
+            test -s "$fasta"
+            cp "$fasta" "$root/baselines/${method}.fasta"
+          }
+          isolate LANTERN_CAMI3_MULTIMODAL_metaspades_short_pair_20260820 metaspades_short_pair
+          isolate LANTERN_CAMI3_MULTIMODAL_metaspades_hybrid_pair_20260820 metaspades_hybrid_pair
+          isolate LANTERN_CAMI3_MULTIMODAL_megahit_short_pair_20260820 megahit_short_pair
+          isolate LANTERN_CAMI3_MULTIMODAL_flye_long_pair_20260820 flye_long_pair
+          rm -rf incoming
+
+          git rev-parse HEAD > "$root/provenance/RESEARCH_HEAD.txt"
+          uname -a > "$root/provenance/UNAME.txt"
+          python --version > "$root/provenance/PYTHON_VERSION.txt"
+          Ratatosk --version > "$root/provenance/RATATOSK_VERSION.txt" 2>&1 || true
+          metaMDBG --help > "$root/provenance/METAMDBG_HELP.txt" 2>&1 || true
+          flye --version > "$root/provenance/FLYE_VERSION.txt" 2>&1 || true
+          filtlong --version > "$root/provenance/FILTLONG_VERSION.txt" 2>&1 || true
+          micromamba list > "$root/provenance/MICROMAMBA_LIST.txt"
+          printf 'mode=%s\ncorrection=%s\nassembler=%s\ndevelopment_pair=0,1\nseed=%s\ngold_accessed=false\n' \
+            "$mode" '${{ matrix.correction }}' '${{ matrix.assembler }}' "$SEED" > "$root/provenance/BOUNDARY.txt"
+          sha256sum "$root"/reads/*.norm.fastq.gz "$root"/baselines/*.fasta > "$root/provenance/IMMUTABLE_INPUT_SHA256SUMS.txt"
+          seqkit stats -T "$root"/reads/*.norm.fastq.gz "$root"/baselines/*.fasta > "$root/provenance/INPUT_STATS.tsv"
+          rm -f "$root"/reads/*.raw.fastq.gz
+
+      - name: Correct or quality-filter long reads without gold access
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mode='${{ matrix.mode }}'; correction='${{ matrix.correction }}'; root="longcorr_${mode}"
+          case "$correction" in
+            quality_filter)
+              cat "$root/reads/S0_long.norm.fastq.gz" "$root/reads/S1_long.norm.fastq.gz" > "$root/correction/input_long.fastq.gz"
+              cp "$root/correction/input_long.fastq.gz" "$root/correction/corrected.fastq.gz"
+              ;;
+            filtlong_top50)
+              cat "$root/reads/S0_long.norm.fastq.gz" "$root/reads/S1_long.norm.fastq.gz" > "$root/correction/input_long.fastq.gz"
+              filtlong --min_length 1000 --keep_percent 50 "$root/correction/input_long.fastq.gz" 2> "$root/logs/FILTLONG.log" | gzip -c > "$root/correction/corrected.fastq.gz"
+              ;;
+            ratatosk)
+              set +e
+              /usr/bin/time -v timeout --signal=TERM --kill-after=120s 240m \
+                Ratatosk correct -v -G -c 4 -S 0.50 -s "$root/reads/short.list" -l "$root/reads/long.list" -o "$root/correction/ratatosk" \
+                > "$root/logs/RATATOSK.log" 2>&1
+              rc=$?
+              set -e
+              printf 'exit_code=%s\n' "$rc" > "$root/failure_audit/RATATOSK.status"
+              test "$rc" -eq 0
+              test -s "$root/correction/ratatosk.fastq.gz"
+              cp "$root/correction/ratatosk.fastq.gz" "$root/correction/corrected.fastq.gz"
+              ;;
+          esac
+          gzip -t "$root/correction/corrected.fastq.gz"
+          seqkit stats -T "$root/correction/corrected.fastq.gz" > "$root/correction/CORRECTED_READ_STATS.tsv"
+          sha256sum "$root/correction/corrected.fastq.gz" > "$root/correction/CORRECTED_READ_SHA256.txt"
+
+      - name: Assemble corrected reads and freeze output
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mode='${{ matrix.mode }}'; assembler='${{ matrix.assembler }}'; root="longcorr_${mode}"
+          set +e
+          if test "$assembler" = metamdbg; then
+            extra=()
+            if test '${{ matrix.correction }}' = quality_filter; then extra+=(--min-read-quality 10); else extra+=(--skip-correction); fi
+            /usr/bin/time -v timeout --signal=TERM --kill-after=120s 240m \
+              metaMDBG asm --out-dir "$root/assembly/run" --in-ont "$root/correction/corrected.fastq.gz" --threads 4 "${extra[@]}" \
+              > "$root/logs/ASSEMBLY.log" 2>&1
+          else
+            /usr/bin/time -v timeout --signal=TERM --kill-after=120s 240m \
+              flye --nano-hq "$root/correction/corrected.fastq.gz" --meta --threads 4 --out-dir "$root/assembly/run" \
+              > "$root/logs/ASSEMBLY.log" 2>&1
+          fi
+          rc=$?
+          set -e
+          printf 'assembler=%s\nexit_code=%s\n' "$assembler" "$rc" > "$root/failure_audit/ASSEMBLY.status"
+          test "$rc" -eq 0
+          fasta=$(find "$root/assembly/run" -maxdepth 3 -type f \( -name 'contigs.fasta.gz' -o -name 'contigs.fasta' -o -name 'assembly.fasta' \) -size +0c -print -quit)
+          test -n "$fasta"
+          if [[ "$fasta" = *.gz ]]; then gzip -cd "$fasta" > "$root/assembly/final_assembly.fasta"; else cp "$fasta" "$root/assembly/final_assembly.fasta"; fi
+          python lantern_cami3/scripts/verify_cami_assembly.py "$root/assembly/final_assembly.fasta" --out "$root/assembly/VALIDATION.json"
+          seqkit stats -T "$root/assembly/final_assembly.fasta" > "$root/assembly/ASSEMBLY_STATS.tsv"
+          sha256sum "$root/assembly/final_assembly.fasta" > "$root/assembly/ASSEMBLY_SHA256.txt"
+          python - "$root" "$mode" <<'PY'
+          import hashlib,json,sys,time
+          from pathlib import Path
+          root=Path(sys.argv[1]); mode=sys.argv[2]; fasta=root/'assembly/final_assembly.fasta'
+          obj={'mode':mode,'freeze_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'assembly_sha256':hashlib.sha256(fasta.read_bytes()).hexdigest(),'assembly_bytes':fasta.stat().st_size,'truth_accessed':False,'boundary':'Read correction/filtering, assembly and output hashes were completed before any Toy gold-standard file was downloaded.'}
+          (root/'provenance/TRUTH_BLIND_FREEZE.json').write_text(json.dumps(obj,indent=2)+'\n')
+          PY
+          sha256sum "$root/provenance/TRUTH_BLIND_FREEZE.json" > "$root/provenance/TRUTH_BLIND_FREEZE_SHA256.txt"
+
+      - name: Open development gold only after freeze and evaluate
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          mode='${{ matrix.mode }}'; root="longcorr_${mode}"
+          for s in 0 1; do
+            curl -fsSL --retry 8 --retry-all-errors "https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_${s}_gsa.tar.gz" -o "$root/truth_download/sample_${s}_gsa.tar.gz"
+          done
+          sha256sum "$root/truth_download"/*.tar.gz > "$root/provenance/GSA_SHA256SUMS.txt"
+          python lantern_cami3/scripts/extract_gsa_truth.py --gsa-tar "S0=$root/truth_download/sample_0_gsa.tar.gz" --gsa-tar "S1=$root/truth_download/sample_1_gsa.tar.gz" --out "$root/truth" > "$root/logs/EXTRACT_TRUTH.log" 2>&1
+          minimap2 -I 4G -d "$root/truth/toy_truth.mmi" "$root/truth/combined_truth.fasta" > "$root/logs/TRUTH_INDEX.stdout" 2> "$root/logs/TRUTH_INDEX.log"
+          printf 'method\tfasta\n' > "$root/provenance/EVALUATED_METHODS.tsv"
+          for method in metaspades_short_pair metaspades_hybrid_pair megahit_short_pair flye_long_pair; do printf '%s\t%s\n' "$method" "$root/baselines/${method}.fasta" >> "$root/provenance/EVALUATED_METHODS.tsv"; done
+          printf '%s\t%s\n' "$mode" "$root/assembly/final_assembly.fasta" >> "$root/provenance/EVALUATED_METHODS.tsv"
+          tail -n +2 "$root/provenance/EVALUATED_METHODS.tsv" | while IFS=$'\t' read -r method fasta; do
+            dir="$root/evaluation/$method"; mkdir -p "$dir"
+            minimap2 -x asm5 -c -N 100 -t 4 "$root/truth/toy_truth.mmi" "$fasta" > "$dir/assembly_to_truth.paf" 2> "$dir/minimap2.log"
+            python lantern_cami3/scripts/evaluate_gold_coverage.py --paf "$dir/assembly_to_truth.paf" --truth-mapping "$root/truth/truth_mapping.tsv" --assembly-fasta "$fasta" --min-identity 0.90 --min-alignment 500 --out "$dir" > "$dir/evaluate.log" 2>&1
+            rm -f "$dir/assembly_to_truth.paf"
+          done
+          python - "$root" "$mode" <<'PY'
+          import csv,json,sys
+          from pathlib import Path
+          root=Path(sys.argv[1]); mode=sys.argv[2]
+          methods=['metaspades_short_pair','metaspades_hybrid_pair','megahit_short_pair','flye_long_pair']
+          summaries={m:json.loads((root/f'evaluation/{m}/GOLD_COVERAGE_SUMMARY.json').read_text()) for m in methods+[mode]}
+          strongest=max(methods,key=lambda m:(summaries[m]['genome_fraction_percent'],summaries[m]['mean_genome_recovery']))
+          base=summaries[strongest]; test=summaries[mode]
+          result={'mode':mode,'strongest_baseline':strongest,'genome_fraction_gain_pp':test['genome_fraction_percent']-base['genome_fraction_percent'],'mean_recovery_gain_pp':100*(test['mean_genome_recovery']-base['mean_genome_recovery']),'assembly_total_bp':test['assembly_total_bp'],'assembly_contigs':test['assembly_contigs_total'],'cross_binid_chimera_fraction':test['cross_binid_chimeric_bp_fraction'],'claim_boundary':'Development-pair comparison only; no holdout or hidden-CAMI claim.'}
+          (root/'evaluation/DEVELOPMENT_COMPARISON.json').write_text(json.dumps(result,indent=2)+'\n')
+          print(json.dumps(result,indent=2))
+          PY
+
+      - name: Compact and hash evidence
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          mode='${{ matrix.mode }}'; root="longcorr_${mode}"
+          rm -rf "$root/reads" "$root/correction" "$root/assembly/run" "$root/truth_download" "$root/truth/references"
+          rm -f "$root/truth/combined_truth.fasta" "$root/truth/toy_truth.mmi" "$root/baselines"/*.fasta
+          find "$root" -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > "$root/SHA256SUMS.txt" || true
+          find "$root" -type f -printf '%P\t%s\n' | sort > "$root/CONTENTS.tsv" || true
+          du -sh "$root" > "$root/PACKAGE_SIZE.txt" || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: LANTERN_CAMI3_LONGCORR_${{ matrix.mode }}_20260820
+          path: longcorr_${{ matrix.mode }}
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
