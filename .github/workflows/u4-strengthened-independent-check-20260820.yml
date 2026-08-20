@@ -59,7 +59,8 @@ jobs:
       - name: Build and independently check the Lean environment
         id: lean
         continue-on-error: true
-        uses: leanprover/lean-action@v1
+        # Pin the official action commit that includes axiom-audit support.
+        uses: leanprover/lean-action@6835ef47e8423fa9e9eacfcbb8fdf83fae42c820
         with:
           lake-package-directory: u4_resolution/lean
           auto-config: false
@@ -118,6 +119,7 @@ jobs:
           } | tee artifact/u4-strengthened-20260820/VERIFICATION_STATUS.txt
           cp u4_resolution/lean/U4Formal.lean artifact/u4-strengthened-20260820/
           cp u4_resolution/lean/lakefile.lean artifact/u4-strengthened-20260820/
+          cp u4_resolution/lean/lake-manifest.json artifact/u4-strengthened-20260820/
           cp u4_resolution/lean/lean-toolchain artifact/u4-strengthened-20260820/
           cp u4_resolution/U4_FORMAL_SCOPE_20260820.md artifact/u4-strengthened-20260820/
           cp u4_resolution/REPRODUCE_U4_STRENGTHENED_20260820.md artifact/u4-strengthened-20260820/

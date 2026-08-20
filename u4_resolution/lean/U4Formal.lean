@@ -75,7 +75,7 @@ theorem interlocking {a b : Fml} (h : Pair a b) :
         have hb := Fml.size_pos b
         have hc := Fml.size_pos c
         have hw := Fml.size_pos w
-        simp [Fml.size] at hs
+        simp [C, Fml.size] at hs
         omega
       · intro w eq
         have leftEq := (arr_inj eq).1
@@ -83,7 +83,7 @@ theorem interlocking {a b : Fml} (h : Pair a b) :
         have ha := Fml.size_pos a
         have hb := Fml.size_pos b
         have hc := Fml.size_pos c
-        simp [C, Fml.size] at hs
+        simp [Fml.size] at hs
         omega
   | step h r ih =>
       constructor
