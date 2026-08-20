@@ -1,0 +1,19 @@
+{
+  "dataset": "CAMI III Toy Longitudinal Human Gut",
+  "correction_announced": "2026-08-10",
+  "source": "https://cami-challenge.org/datasets/toy-human-gut/",
+  "status": "sole_authoritative_mapping_for_this_audit",
+  "note": "The CAMI home page announces a revised sample-to-individual assignment. Stale sequential pair text must not be used.",
+  "pairs": [
+    {"individual_id": "Individual_01", "sample_a": 0, "sample_b": 1},
+    {"individual_id": "Individual_02", "sample_a": 2, "sample_b": 7},
+    {"individual_id": "Individual_03", "sample_a": 3, "sample_b": 5},
+    {"individual_id": "Individual_04", "sample_a": 4, "sample_b": 8},
+    {"individual_id": "Individual_05", "sample_a": 6, "sample_b": 19},
+    {"individual_id": "Individual_06", "sample_a": 9, "sample_b": 12},
+    {"individual_id": "Individual_07", "sample_a": 10, "sample_b": 15},
+    {"individual_id": "Individual_08", "sample_a": 11, "sample_b": 13},
+    {"individual_id": "Individual_09", "sample_a": 14, "sample_b": 16},
+    {"individual_id": "Individual_10", "sample_a": 17, "sample_b": 18}
+  ]
+}

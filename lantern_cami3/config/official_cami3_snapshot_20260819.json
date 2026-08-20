@@ -1,0 +1,47 @@
+{
+  "checked_utc_date": "2026-08-19",
+  "official_sources": {
+    "challenge": "https://cami-challenge.org/cami-iii-challenges/",
+    "toy_dataset": "https://cami-challenge.org/datasets/toy-human-gut/",
+    "challenge_dataset": "https://cami-challenge.org/datasets/human-gut/",
+    "submission": "https://cami-challenge.org/submit/",
+    "formats": "https://cami-challenge.org/file-formats/",
+    "reference_databases": "https://cami-challenge.org/reference-databases/"
+  },
+  "assembly_deadline": "2026-10-14",
+  "toy": {
+    "individuals": 10,
+    "timepoints_per_individual": 2,
+    "samples": 20,
+    "short_read_total_gbp": 100,
+    "long_read_total_gbp": 100,
+    "short_read_length": "2x150",
+    "long_read_mean_bp": 3998,
+    "gold_standards_public": true,
+    "public_genomes_only": true
+  },
+  "challenge": {
+    "individuals": 9,
+    "timepoints_per_individual": 4,
+    "samples": 36,
+    "short_read_total_gbp": 180,
+    "long_read_total_gbp": 180,
+    "short_read_length": "2x150",
+    "long_read_mean_bp": 2613,
+    "includes_unpublished_novel_genomes": true,
+    "domains": ["bacteria", "archaea", "fungi", "viruses", "plasmids", "host"],
+    "first_ten_subset_allowed": true,
+    "data_agreement_required": true
+  },
+  "accepted_assembly_modes": [
+    "global cross-sample",
+    "participant-specific cross-sample",
+    "single-sample"
+  ],
+  "accepted_data_modes": ["short", "long", "hybrid"],
+  "assembly_format": "FASTA; headers restricted to CAMI-accepted characters; sequence alphabet [ATCGN] uppercase",
+  "portal_evaluator": "MetaQUAST 5.2.0",
+  "reproducibility_required": true,
+  "reference_snapshot": "NCBI RefSeq 2026-07-01",
+  "challenge_data_boundary": "Restricted challenge downloads may be accessed only after the human participant logs in with a university email and accepts the CAMI data agreement; challenge data must not be redistributed or published."
+}

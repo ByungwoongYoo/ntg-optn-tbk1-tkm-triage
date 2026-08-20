@@ -1,0 +1,46 @@
+{
+  "algorithm_change_after_freeze": false,
+  "auxiliary_sources": [
+    "metaSPAdes hybrid participant-specific coassembly",
+    "MEGAHIT short-read participant-specific coassembly",
+    "Flye long-read participant-specific coassembly"
+  ],
+  "backbone": "metaSPAdes short-read participant-specific coassembly",
+  "candidate_name": "LANTERN-v7-frozen-terminal-extension",
+  "candidate_preparation": {
+    "exact_sequence_deduplication": true,
+    "max_n_fraction": 0.05,
+    "min_length": 500
+  },
+  "development_samples": [0, 1],
+  "development_winner_file_sha256": "fecae2983740ac8026d99a6b4a92f9900c5969a6298ca9eb51137635bbf75e30",
+  "extension_rule": {
+    "alignment_identity": 0.97,
+    "alignment_min_bp": 500,
+    "containment_fraction": 0.98,
+    "min_candidate_length": 500,
+    "min_source_count": 1,
+    "min_terminal_bp": 500,
+    "mode": "terminal",
+    "single_target_terminal": true,
+    "whole_max_aligned_fraction": 0.3
+  },
+  "backbone_alignment": {
+    "tool": "minimap2",
+    "preset": "asm5",
+    "command_options": ["-c", "-N", "100"],
+    "threads_runtime_parameter": true
+  },
+  "seed": 20260819,
+  "source_branch": "lantern-v7-multi-angle-20260820",
+  "source_commit": "d2f44b529d2198784ce7666ba1c98ae44709f981",
+  "versions": {
+    "flye": "2.9.6",
+    "megahit": "1.2.9",
+    "minimap2": "2.31",
+    "python": "3.11.15",
+    "seqkit": "2.13.0",
+    "spades": "4.3.0"
+  },
+  "claim_boundary": "Frozen candidate for active CAMI III blind execution. Public Toy results do not establish positive assembler superiority."
+}

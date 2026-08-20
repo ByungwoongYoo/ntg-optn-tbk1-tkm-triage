@@ -1,0 +1,56 @@
+{
+  "version": "LANTERN-v4-balanced-holdout-14-15-20260820",
+  "method_origin": "The v4_balanced configuration was selected on Toy samples 0/1 before this holdout was opened.",
+  "official_pairing_correction": {
+    "previous_invalid_pair": [14, 16],
+    "correct_pair": [14, 15],
+    "official_source": "https://cami-challenge.org/datasets/toy-human-gut/",
+    "official_statement": "Sample indices are grouped as (0,1), (2,3), ..., (18,19).",
+    "correction_boundary": "The sample pairing was corrected before any sample-14/15 reads, assemblies, gold standards, or performance results were accessed in this workflow."
+  },
+  "holdout_pair": [14, 15],
+  "read_input": {
+    "short_fraction": 0.08,
+    "long_fraction": 0.04,
+    "seed": 20260819
+  },
+  "backbone": "metaspades_hybrid_pair",
+  "auxiliary_sources": [
+    "megahit_short_pair",
+    "metaspades_short_pair",
+    "flye_long_pair",
+    "flye_long_s14",
+    "flye_long_s15"
+  ],
+  "frozen_config": {
+    "cluster_identity": 0.97,
+    "cluster_shorter_coverage": 0.85,
+    "maximum_n_fraction": 0.05,
+    "minimum_assembler_sources_for_consensus": 2,
+    "minimum_contig_length": 1000,
+    "minimum_rescue_timepoints": 2,
+    "minimum_unique_long_spans": 2,
+    "selection_score_minimum": 0.28,
+    "support_breadth": 0.5,
+    "support_depth": 0.75,
+    "truth_blind": true,
+    "version": "LANTERN-v4-balanced-20260820",
+    "weights": {
+      "length": 0.12,
+      "long_breadth": 0.10,
+      "long_spanning": 0.18,
+      "short_breadth": 0.12,
+      "source_consensus": 0.23,
+      "temporal_recurrence": 0.25
+    }
+  },
+  "strict_success_gates": {
+    "genome_fraction_gain_minimum_percentage_points": 0.5,
+    "mean_genome_recovery_gain_minimum_percentage_points": 1.0,
+    "relative_cross_binid_chimera_increase_maximum": 0.10,
+    "longitudinal_ablation_drop_minimum_percentage_points": 0.5,
+    "low_abundance_gain_minimum_percentage_points": 2.0,
+    "pseudo_novel_improvement_required_in_all_tiers": true
+  },
+  "claim_boundary": "A pass is one public Toy holdout validation. It is not a CAMI III hidden-challenge result, rank, or novel-organism discovery."
+}

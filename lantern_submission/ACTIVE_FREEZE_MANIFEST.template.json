@@ -1,0 +1,21 @@
+{
+  "status": "PAUSE_BLOCKED",
+  "algorithm_source_commit": "d2f44b529d2198784ce7666ba1c98ae44709f981",
+  "package_commit": "<fill after green CI>",
+  "container_digest": "<private preflight output>",
+  "rule_sha256": "<private preflight output>",
+  "mapping_sha256": "<private preflight output>",
+  "input_manifest_sha256": "<private preflight output>",
+  "run_plan_sha256": "<private preflight output>",
+  "expected_individuals": 9,
+  "expected_timepoints": 4,
+  "expected_samples": 36,
+  "threads_per_individual": "<confirmed private resource>",
+  "memory_gb_per_individual": "<confirmed private resource>",
+  "scratch_bytes_available": "<confirmed private resource>",
+  "restricted_storage": "private local/HPC only",
+  "active_data_agreement_accepted_by_human": false,
+  "restricted_run_authorized": false,
+  "portal_submission_authorized": false,
+  "post_result_tuning_allowed": false
+}

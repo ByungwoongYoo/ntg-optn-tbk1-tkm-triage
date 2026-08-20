@@ -1,0 +1,5 @@
+individual_id	sample_id	timepoint	r1_fastq_gz	r2_fastq_gz	long_fastq_gz
+INDIVIDUAL_A	SAMPLE_A_T1	T1	/absolute/path/A_T1_R1.fastq.gz	/absolute/path/A_T1_R2.fastq.gz	/absolute/path/A_T1_long.fastq.gz
+INDIVIDUAL_A	SAMPLE_A_T2	T2	/absolute/path/A_T2_R1.fastq.gz	/absolute/path/A_T2_R2.fastq.gz	/absolute/path/A_T2_long.fastq.gz
+INDIVIDUAL_A	SAMPLE_A_T3	T3	/absolute/path/A_T3_R1.fastq.gz	/absolute/path/A_T3_R2.fastq.gz	/absolute/path/A_T3_long.fastq.gz
+INDIVIDUAL_A	SAMPLE_A_T4	T4	/absolute/path/A_T4_R1.fastq.gz	/absolute/path/A_T4_R2.fastq.gz	/absolute/path/A_T4_long.fastq.gz

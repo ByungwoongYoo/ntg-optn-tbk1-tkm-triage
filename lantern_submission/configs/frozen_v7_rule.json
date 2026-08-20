@@ -1,0 +1,45 @@
+{
+  "candidate": "LANTERN-v7-short-terminal-500-s1",
+  "algorithm_source_commit": "d2f44b529d2198784ce7666ba1c98ae44709f981",
+  "assembly_protocol_source_commit": "26e06ceff4dc78c08424ac5c8e3c56ea8756961b",
+  "seed": 20260820,
+  "backbone": "metaspades_short_per_individual",
+  "candidate_sources": [
+    "metaspades_hybrid_per_individual",
+    "megahit_short_per_individual",
+    "flye_long_per_individual"
+  ],
+  "assembly_protocol": {
+    "megahit_short": {
+      "min_contig_len": 1000,
+      "memory_fraction": 0.8
+    },
+    "metaspades_short": {
+      "executable": "metaspades.py",
+      "only_assembler": true
+    },
+    "metaspades_hybrid": {
+      "executable": "metaspades.py",
+      "only_assembler": true,
+      "long_read_option": "--nanopore"
+    },
+    "flye_long": {
+      "read_mode": "--nano-hq",
+      "meta": true
+    }
+  },
+  "extension_parameters": {
+    "mode": "terminal",
+    "min_candidate_length": 500,
+    "min_terminal_bp": 500,
+    "alignment_identity": 0.97,
+    "alignment_min_bp": 500,
+    "whole_max_aligned_fraction": 0.30,
+    "containment_fraction": 0.98,
+    "min_source_count": 1,
+    "single_target_terminal": true
+  },
+  "post_result_tuning_allowed": false,
+  "public_toy_microtuning_stopped": true,
+  "claim_boundary": "Frozen engineering candidate only. No positive assembler, hidden-CAMI, rank, or novel-genome claim is established."
+}
