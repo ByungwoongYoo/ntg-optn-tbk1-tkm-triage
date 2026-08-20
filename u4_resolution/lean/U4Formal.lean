@@ -75,7 +75,7 @@ theorem interlocking {a b : Fml} (h : Pair a b) :
         have hb := Fml.size_pos b
         have hc := Fml.size_pos c
         have hw := Fml.size_pos w
-        simp [C, Fml.size] at hs
+        simp [Fml.size] at hs
         omega
       · intro w eq
         have leftEq := (arr_inj eq).1
@@ -94,7 +94,7 @@ theorem interlocking {a b : Fml} (h : Pair a b) :
         have leftEq := (arr_inj eq).1
         exact ih.1 r leftEq
 
-theorem no_D_eq_C {a b c d : Fml} (hab : Pair a b) (hcd : Pair c d)
+theorem no_D_eq_C {a b c d : Fml} (hab : Pair a b) (_hcd : Pair c d)
     (r s : Fml) : I a (I b r) ≠ C c d s := by
   intro eq
   have outer := arr_inj eq
@@ -121,7 +121,7 @@ theorem no_D_eq_Phi {a b : Fml} (hab : Pair a b) (r x y z u : Fml) :
       have hb := Fml.size_pos b
       have hc := Fml.size_pos c
       have hu := Fml.size_pos u
-      simp [Phi, C, Fml.size] at hsa hsy hsz
+      simp [Fml.size] at hsa hsy hsz
       omega
   | step hab s ih =>
       intro eq
@@ -143,7 +143,7 @@ theorem Phi_no_refl (x y z u q : Fml) : Phi x y z u ≠ I q q := by
   have hsy := congrArg Fml.size hy
   have hsz := congrArg Fml.size hz
   have hu := Fml.size_pos u
-  simp [C, Fml.size] at hsy hsz
+  simp [Fml.size] at hsy hsz
   omega
 
 theorem C_no_refl (a b r q : Fml) : C a b r ≠ I q q := by
@@ -238,7 +238,7 @@ Consequently no reflexive formula can be derived in the original system.
 abbrev Substitution := Sym → Fml
 
 def applySubst (s : Substitution) : Fml → Fml
-  | .v x => s x
+  | .v sym => s sym
   | .arr p q => I (applySubst s p) (applySubst s q)
 
 @[simp] theorem applySubst_arr (s : Substitution) (p q : Fml) :

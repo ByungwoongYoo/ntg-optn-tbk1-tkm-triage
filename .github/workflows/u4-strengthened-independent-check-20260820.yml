@@ -6,6 +6,7 @@ on:
     branches: [u4-resolution-20260818]
     paths:
       - 'u4_resolution/lean/**'
+      - 'u4_resolution/lean_check/**'
       - 'u4_resolution/u4_symbolic_checker.py'
       - 'u4_resolution/U4_FORMAL_SCOPE_20260820.md'
       - 'u4_resolution/REPRODUCE_U4_STRENGTHENED_20260820.md'
@@ -14,6 +15,7 @@ on:
   pull_request:
     paths:
       - 'u4_resolution/lean/**'
+      - 'u4_resolution/lean_check/**'
       - 'u4_resolution/u4_symbolic_checker.py'
       - 'u4_resolution/U4_FORMAL_SCOPE_20260820.md'
       - 'u4_resolution/REPRODUCE_U4_STRENGTHENED_20260820.md'
