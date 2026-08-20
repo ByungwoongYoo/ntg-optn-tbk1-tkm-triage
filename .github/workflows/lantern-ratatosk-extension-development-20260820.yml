@@ -1,0 +1,127 @@
+name: LANTERN Ratatosk-Flye extension rescue development
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/lantern-ratatosk-extension-development-20260820.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  RESEARCH_REF: 'lantern-v7-multi-angle-20260820'
+  LONGCORR_RUN_ID: '32356586238'
+  LONGCORR_ARTIFACT: 'LANTERN_CAMI3_LONGCORR_V2_ratatosk_flye_20260820'
+  MULTIMODAL_RUN_ID: '32312941523'
+
+jobs:
+  ratatosk-extension-development:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RESEARCH_REF }}
+          fetch-depth: 1
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.LONGCORR_ARTIFACT }}
+          path: incoming/ratatosk
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.LONGCORR_RUN_ID }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: LANTERN_CAMI3_MULTIMODAL_*_20260820
+          path: incoming/mm
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.MULTIMODAL_RUN_ID }}
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: lantern-ratatosk-extension
+          condarc: |
+            channels: [conda-forge, bioconda]
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            minimap2=2.31
+            mash=2.3
+            seqkit=2.13.0
+          cache-downloads: true
+          post-cleanup: all
+      - name: Isolate immutable sources
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=ratatosk_extension_development
+          mkdir -p "$root"/{inputs,candidates,alignments,variants,evaluation,pseudo,abundance,decision,truth_download,truth,provenance,logs}
+          rat=$(find incoming/ratatosk -type f -path '*/assembly/final_assembly.fasta' -size +0c -print -quit);test -s "$rat";cp "$rat" "$root/inputs/ratatosk_flye.fasta"
+          isolate(){ local artifact="$1" method="$2" pattern="$3" dir fasta;dir=$(find incoming/mm -type d -name "$artifact" -print -quit);test -n "$dir";fasta=$(find "$dir" -type f -path "$pattern" -size +0c -print -quit || true);test -s "$fasta";cp "$fasta" "$root/inputs/${method}.fasta";}
+          isolate LANTERN_CAMI3_MULTIMODAL_metaspades_short_pair_20260820 metaspades_short_pair '*/assembly/out/contigs.fasta'
+          isolate LANTERN_CAMI3_MULTIMODAL_metaspades_hybrid_pair_20260820 metaspades_hybrid_pair '*/assembly/out/contigs.fasta'
+          isolate LANTERN_CAMI3_MULTIMODAL_megahit_short_pair_20260820 megahit_short_pair '*/assembly/out/final.contigs.fa'
+          isolate LANTERN_CAMI3_MULTIMODAL_flye_long_pair_20260820 flye_long_pair '*/assembly/out/assembly.fasta'
+          rm -rf incoming
+          seqkit stats -T "$root/inputs"/*.fasta > "$root/provenance/INPUT_STATS.tsv";sha256sum "$root/inputs"/*.fasta > "$root/provenance/INPUT_SHA256SUMS.txt"
+          git rev-parse HEAD > "$root/provenance/RESEARCH_HEAD.txt";printf 'development_pair=0,1\ngold_accessed=false\nsource=Ratatosk-corrected Flye\n' > "$root/provenance/BOUNDARY.txt"
+      - name: Build predeclared corrected-long extension grid and freeze
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=ratatosk_extension_development
+          build(){ local set="$1";shift;python lantern_v6/prepare_extension_candidates.py "$@" --min-length 500 --max-n-fraction 0.05 --out "$root/candidates/$set" > "$root/logs/PREPARE_${set}.log" 2>&1;minimap2 -x asm5 -c -N 100 -t 4 "$root/inputs/metaspades_short_pair.fasta" "$root/candidates/$set/extension_candidates.fasta" > "$root/alignments/${set}.paf" 2> "$root/logs/ALIGN_${set}.log";}
+          build ratatosk --source "ratatosk=$root/inputs/ratatosk_flye.fasta"
+          build mixed --source "ratatosk=$root/inputs/ratatosk_flye.fasta" --source "hybrid=$root/inputs/metaspades_hybrid_pair.fasta" --source "megahit=$root/inputs/megahit_short_pair.fasta" --source "flye=$root/inputs/flye_long_pair.fasta"
+          construct(){ local name="$1" set="$2" mode="$3" minlen="$4" maxfrac="$5" single="$6";args=();test "$single" = true && args+=(--single-target-terminal);python lantern_v6/extension_union.py --backbone "$root/inputs/metaspades_short_pair.fasta" --candidates "$root/candidates/$set/extension_candidates.fasta" --metadata "$root/candidates/$set/extension_candidate_metadata.tsv" --candidate-to-backbone-paf "$root/alignments/${set}.paf" --mode "$mode" --min-candidate-length "$minlen" --min-terminal-bp 500 --alignment-identity 0.97 --alignment-min-bp 500 --whole-max-aligned-fraction "$maxfrac" --containment-fraction 0.98 --min-source-count 1 "${args[@]}" --out "$root/variants/$name" > "$root/logs/CONSTRUCT_${name}.log" 2>&1;python lantern_cami3/scripts/verify_cami_assembly.py "$root/variants/$name/LANTERN_V6_EXTENSION_UNION.fasta" --out "$root/variants/$name/VALIDATION.json";}
+          construct rat_terminal500 ratatosk terminal 500 0.30 true
+          construct rat_whole1000 ratatosk whole 1000 0.30 false
+          construct mixed_terminal500 mixed terminal 500 0.30 true
+          construct mixed_hybrid750 mixed hybrid 750 0.30 true
+          construct mixed_whole1000 mixed whole 1000 0.30 false
+          python - "$root" <<'PY'
+          import hashlib,json,sys,time
+          from pathlib import Path
+          root=Path(sys.argv[1]);paths=[root/'inputs/metaspades_short_pair.fasta']+sorted(root.glob('variants/*/LANTERN_V6_EXTENSION_UNION.fasta'));files=[{'path':str(p),'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()} for p in paths];(root/'provenance/PRE_GOLD_FREEZE.json').write_text(json.dumps({'status':'RATATOSK_EXTENSION_GRID_FROZEN','truth_accessed':False,'freeze_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'files':files},indent=2)+'\n')
+          PY
+      - name: Open development gold, evaluate and select safe winner
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=ratatosk_extension_development
+          for s in 0 1;do curl -fsSL --retry 8 --retry-all-errors "https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_${s}_gsa.tar.gz" -o "$root/truth_download/sample_${s}_gsa.tar.gz";done
+          python lantern_cami3/scripts/extract_gsa_truth.py --gsa-tar "S0=$root/truth_download/sample_0_gsa.tar.gz" --gsa-tar "S1=$root/truth_download/sample_1_gsa.tar.gz" --out "$root/truth" > "$root/logs/EXTRACT_TRUTH.log" 2>&1
+          minimap2 -I 4G -d "$root/truth/toy_truth.mmi" "$root/truth/combined_truth.fasta" > "$root/logs/TRUTH_INDEX.stdout" 2> "$root/logs/TRUTH_INDEX.log"
+          printf 'method\tfasta\n' > "$root/provenance/EVALUATED_METHODS.tsv";for m in metaspades_short_pair metaspades_hybrid_pair megahit_short_pair flye_long_pair ratatosk_flye;do printf '%s\t%s\n' "$m" "$root/inputs/${m}.fasta" >> "$root/provenance/EVALUATED_METHODS.tsv";done;for f in "$root"/variants/*/LANTERN_V6_EXTENSION_UNION.fasta;do printf '%s\t%s\n' "$(basename "$(dirname "$f")")" "$f" >> "$root/provenance/EVALUATED_METHODS.tsv";done
+          tail -n +2 "$root/provenance/EVALUATED_METHODS.tsv"|while IFS=$'\t' read -r m f;do d="$root/evaluation/$m";mkdir -p "$d";minimap2 -x asm5 -c -N 100 -t 4 "$root/truth/toy_truth.mmi" "$f" > "$d/a.paf" 2> "$d/minimap2.log";python lantern_cami3/scripts/evaluate_gold_coverage.py --paf "$d/a.paf" --truth-mapping "$root/truth/truth_mapping.tsv" --assembly-fasta "$f" --min-identity 0.90 --min-alignment 500 --out "$d" > "$d/evaluate.log" 2>&1;rm -f "$d/a.paf";done
+          python - "$root" <<'PY'
+          import csv,json,sys
+          from pathlib import Path
+          root=Path(sys.argv[1]);base=json.loads((root/'evaluation/metaspades_hybrid_pair/GOLD_COVERAGE_SUMMARY.json').read_text());rows=[]
+          for p in sorted((root/'variants').glob('*/EXTENSION_SUMMARY.json')):
+              m=p.parent.name;s=json.loads((root/f'evaluation/{m}/GOLD_COVERAGE_SUMMARY.json').read_text());bc=float(base['cross_binid_chimeric_bp_fraction'] or 0);xc=float(s['cross_binid_chimeric_bp_fraction'] or 0);rel=(xc-bc)/bc if bc else (0 if xc==0 else None);r={'variant':m,'gf_gain_pp':s['genome_fraction_percent']-base['genome_fraction_percent'],'mean_gain_pp':100*(s['mean_genome_recovery']-base['mean_genome_recovery']),'relative_chimera_change':rel,**json.loads(p.read_text())};r['safe']=r['gf_gain_pp']>0 and rel is not None and rel<=0.10;rows.append(r)
+          safe=[r for r in rows if r['safe']];winner=max(safe,key=lambda r:(r['gf_gain_pp'],r['mean_gain_pp'],-r['relative_chimera_change'])) if safe else None
+          fields=[]
+          for r in rows:
+              for k in r:
+                  if k not in fields:fields.append(k)
+          with (root/'decision/COMPARISON.csv').open('w',newline='') as f:w=csv.DictWriter(f,fieldnames=fields);w.writeheader();w.writerows(rows)
+          out={'status':'WINNER_FROZEN_FOR_FUTURE_HOLDOUT' if winner else 'NO_SAFE_WINNER','winner':winner,'claim_boundary':'Development-only corrected-long extension audit.'};(root/'decision/FROZEN_RATATOSK_EXTENSION_WINNER.json').write_text(json.dumps(out,indent=2)+'\n');print(json.dumps(out,indent=2))
+          PY
+      - name: Compact and upload
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          root=ratatosk_extension_development;rm -rf "$root/inputs" "$root/candidates" "$root/alignments" "$root/truth_download" "$root/truth/references";rm -f "$root/truth/combined_truth.fasta" "$root/truth/toy_truth.mmi";for d in "$root"/variants/*;do rm -f "$d/LANTERN_V6_EXTENSION_UNION.fasta";done;find "$root" -type f ! -name SHA256SUMS.txt -print0|sort -z|xargs -0 sha256sum > "$root/SHA256SUMS.txt"||true;du -sh "$root">"$root/PACKAGE_SIZE.txt"||true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: LANTERN_CAMI3_RATATOSK_EXTENSION_DEVELOPMENT_20260820
+          path: ratatosk_extension_development
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
