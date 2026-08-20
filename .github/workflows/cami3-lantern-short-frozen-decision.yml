@@ -1,0 +1,140 @@
+name: CAMI III LANTERN corrected frozen short-read decision
+
+on:
+  pull_request:
+    branches: [cami3-lantern-20260819]
+    paths:
+      - '.github/workflows/cami3-lantern-short-frozen-decision.yml'
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  UPSTREAM_RUN_ID: '32314185029'
+  UPSTREAM_ARTIFACT: 'LANTERN_CAMI3_RESUMED_GOLD_EVALUATION_20260820'
+
+jobs:
+  corrected-decision:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download immutable resumed gold evaluation
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.UPSTREAM_ARTIFACT }}
+          path: input
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.UPSTREAM_RUN_ID }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build method manifest and pseudo-novel split table
+        run: |
+          set -euo pipefail
+          mkdir -p corrected_decision/{provenance,results}
+          root=$(find input -type f -name INDEPENDENT_AUDIT.json -printf '%h\n' | head -1)
+          test -n "$root"
+          printf '%s\n' "$root" > /tmp/input_root
+          test -s "$root/evaluation/megahit_pair/GOLD_COVERAGE_SUMMARY.json"
+          test -s "$root/evaluation/LANTERN_full/GOLD_COVERAGE_SUMMARY.json"
+          test -s "$root/evaluation/LANTERN_no_longitudinal/GOLD_COVERAGE_SUMMARY.json"
+          test -s "$root/pseudo_novel/PSEUDO_NOVEL_TARGETS.tsv"
+          test -s "$root/provenance/decision_gate_v1.json"
+
+          cat > corrected_decision/METHOD_MANIFEST.tsv <<'EOF'
+          method	role	mode	scope	ablation	eligible_primary_baseline
+          megahit_s0	baseline	short	single	none	true
+          megahit_s1	baseline	short	single	none	true
+          megahit_pair	baseline	short	longitudinal	none	true
+          LANTERN_full	lantern	short	longitudinal	full	false
+          LANTERN_no_longitudinal	ablation	short	longitudinal	no_longitudinal	false
+          LANTERN_no_consensus	ablation	short	longitudinal	no_consensus	false
+          EOF
+
+          python - "$root/pseudo_novel/PSEUDO_NOVEL_TARGETS.tsv" <<'PY'
+          import csv,sys
+          source=sys.argv[1]
+          tiers=['exact_target_withheld','species_neighbour_withheld','genus_neighbour_withheld','deep_neighbour_withheld']
+          with open(source,newline='') as f: rows=list(csv.DictReader(f,delimiter='\t'))
+          with open('corrected_decision/PSEUDO_SPLITS.tsv','w',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=['genome_id','tier'],delimiter='\t'); w.writeheader()
+              for row in rows:
+                  for tier in tiers:
+                      if str(row.get(tier,'')).lower()=='true': w.writerow({'genome_id':row['genome_id'],'tier':tier})
+          PY
+
+          cp "$root/provenance/decision_gate_v1.json" corrected_decision/provenance/
+          cp "$root/provenance/lantern_frozen_v1.json" corrected_decision/provenance/
+          cp "$root/INDEPENDENT_AUDIT.json" corrected_decision/provenance/
+          sha256sum corrected_decision/METHOD_MANIFEST.tsv corrected_decision/PSEUDO_SPLITS.tsv \
+            corrected_decision/provenance/decision_gate_v1.json \
+            corrected_decision/provenance/lantern_frozen_v1.json \
+            > corrected_decision/provenance/INPUT_SHA256.txt
+          printf 'upstream_run=%s\nupstream_artifact=%s\nupstream_root=%s\n' \
+            "$UPSTREAM_RUN_ID" "$UPSTREAM_ARTIFACT" "$root" > corrected_decision/provenance/UPSTREAM.txt
+          git rev-parse HEAD > corrected_decision/provenance/GIT_HEAD.txt
+
+      - name: Apply current frozen decision implementation
+        run: |
+          set -euo pipefail
+          root=$(cat /tmp/input_root)
+          args=()
+          for name in megahit_s0 megahit_s1 megahit_pair LANTERN_full LANTERN_no_longitudinal LANTERN_no_consensus; do
+            dir="$root/evaluation/$name"
+            test -s "$dir/GOLD_COVERAGE_SUMMARY.json"
+            test -s "$dir/per_genome_recovery.tsv"
+            args+=(--method "$name=$dir")
+          done
+          PYTHONPATH="$PWD/lantern_cami3/scripts" python lantern_cami3/scripts/summarize_benchmark.py \
+            "${args[@]}" \
+            --manifest corrected_decision/METHOD_MANIFEST.tsv \
+            --decision-config corrected_decision/provenance/decision_gate_v1.json \
+            --full-method LANTERN_full \
+            --no-longitudinal-method LANTERN_no_longitudinal \
+            --pseudo-splits corrected_decision/PSEUDO_SPLITS.tsv \
+            --seed 20260819 --bootstrap 5000 \
+            --out corrected_decision/results \
+            2>&1 | tee corrected_decision/DECISION_CONSOLE.log
+          test -s corrected_decision/results/FINAL_DECISION.json
+          test -s corrected_decision/results/FINAL_DECISION.md
+          cat corrected_decision/results/FINAL_DECISION.md
+
+      - name: Independent arithmetic and integrity verification
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv,hashlib,json
+          from pathlib import Path
+          root=Path('corrected_decision')
+          d=json.loads((root/'results/FINAL_DECISION.json').read_text())
+          rows={r['method']:r for r in csv.DictReader((root/'results/METHOD_COMPARISON.csv').open())}
+          full=rows['LANTERN_full']; base=rows[d['strongest_baseline']]; ab=rows['LANTERN_no_longitudinal']
+          gf=float(full['genome_fraction_percent'])-float(base['genome_fraction_percent'])
+          mean=float(full['mean_genome_recovery_percent'])-float(base['mean_genome_recovery_percent'])
+          abl=float(full['genome_fraction_percent'])-float(ab['genome_fraction_percent'])
+          assert abs(gf-float(d['genome_fraction_gain_percentage_points']))<1e-10
+          assert abs(mean-float(d['mean_genome_recovery_gain_percentage_points']))<1e-10
+          assert abs(abl-float(d['longitudinal_ablation_drop_percentage_points']))<1e-10
+          audit={'status':d['status'],'strongest_baseline':d['strongest_baseline'],'arithmetic_verified':True,'claim_boundary':d['claim_boundary']}
+          (root/'INDEPENDENT_DECISION_AUDIT.json').write_text(json.dumps(audit,indent=2)+'\n')
+          lines=[]
+          for p in sorted(root.rglob('*')):
+              if p.is_file() and p.name!='SHA256SUMS_ALL.txt': lines.append(f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.relative_to(root)}')
+          (root/'SHA256SUMS_ALL.txt').write_text('\n'.join(lines)+'\n')
+          PY
+          find corrected_decision -type f -printf '%P\t%s\n' | sort > corrected_decision/CONTENTS.tsv
+          du -ah corrected_decision | sort -h > corrected_decision/FILE_SIZES.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LANTERN_CAMI3_CORRECTED_SHORT_DECISION_20260820
+          path: corrected_decision
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
