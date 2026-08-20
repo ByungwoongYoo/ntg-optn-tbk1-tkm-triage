@@ -1,0 +1,394 @@
+name: CAMI III LANTERN v6 frozen extension holdout 14-15
+
+on:
+  pull_request:
+    branches: [lantern-v6-isolated-20260820]
+    paths:
+      - '.github/workflows/cami3-lantern-v6-extension-holdout-14-15.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  DEVELOPMENT_RUN_ID: '32343864798'
+  DEVELOPMENT_ARTIFACT: 'LANTERN_CAMI3_V6_EXTENSION_DEVELOPMENT_20260820'
+  HOLDOUT_BASELINE_RUN_ID: '32332720846'
+  SEED: '20260819'
+
+jobs:
+  frozen-holdout:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download frozen development decision
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.DEVELOPMENT_ARTIFACT }}
+          path: upstream/development
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.DEVELOPMENT_RUN_ID }}
+
+      - name: Download independently frozen holdout baseline assemblies
+        uses: actions/download-artifact@v4
+        with:
+          pattern: LANTERN_CAMI3_V4_HOLDOUT_BASELINE_*_20260820
+          path: upstream/baselines
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.HOLDOUT_BASELINE_RUN_ID }}
+
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: lantern-v6-holdout
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            minimap2=2.31
+            mash=2.3
+            seqkit=2.13.0
+          cache-downloads: true
+          post-cleanup: all
+
+      - name: Isolate immutable assembly-only inputs before holdout gold access
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=v6_extension_holdout_14_15
+          mkdir -p "$root"/{inputs,candidates,alignments,variants,evaluation,pseudo,abundance,decision,submission,validation,truth_download,truth,provenance,logs,failure_audit}
+
+          winner=$(find upstream/development -type f -name FROZEN_EXTENSION_WINNER.json -print -quit)
+          test -s "$winner"
+          cp "$winner" "$root/provenance/FROZEN_EXTENSION_WINNER.json"
+          cp "$(find upstream/development -type f -name EXTENSION_DEVELOPMENT_COMPARISON.csv -print -quit)" "$root/provenance/EXTENSION_DEVELOPMENT_COMPARISON.csv"
+
+          python - "$winner" "$root/provenance/WINNER_PARAMETERS.json" <<'PY'
+          import json,sys
+          from pathlib import Path
+          source=json.loads(Path(sys.argv[1]).read_text())
+          assert source['status']=='EXTENSION_RULE_FROZEN_FOR_UNTOUCHED_VALIDATION',source
+          assert source['winner']=='hybrid_500_loose',source
+          c=source['construction']; p=c['parameters']
+          expected={
+            'mode':'hybrid',
+            'min_candidate_length':500,
+            'min_terminal_bp':500,
+            'alignment_identity':0.97,
+            'alignment_min_bp':500,
+            'whole_max_aligned_fraction':0.7,
+            'containment_fraction':0.98,
+            'min_source_count':1,
+            'single_target_terminal':True,
+          }
+          actual={'mode':c['mode'],**p}
+          for key,value in expected.items():
+              assert actual[key]==value,(key,actual[key],value)
+          Path(sys.argv[2]).write_text(json.dumps(expected,indent=2,sort_keys=True)+'\n')
+          PY
+
+          isolate() {
+            local method="$1" required="$2"
+            local dir
+            dir=$(find upstream/baselines -maxdepth 1 -type d -name "LANTERN_CAMI3_V4_HOLDOUT_BASELINE_${method}_20260820" -print -quit)
+            if [[ -z "$dir" ]]; then
+              if [[ "$required" == true ]]; then echo "missing artifact directory for $method" >&2; exit 1; else return 0; fi
+            fi
+            local fasta
+            fasta=$(find "$dir" -type f -name final_assembly.fasta -print -quit)
+            if [[ -z "$fasta" || ! -s "$fasta" ]]; then
+              if [[ "$required" == true ]]; then echo "missing final assembly for $method" >&2; exit 1; else return 0; fi
+            fi
+            cp "$fasta" "$root/inputs/${method}.fasta"
+          }
+          isolate metaspades_hybrid_pair true
+          isolate metaspades_short_pair true
+          isolate megahit_short_pair true
+          isolate flye_long_pair true
+          isolate flye_long_s14 false
+          isolate flye_long_s15 false
+
+          python - "$root/inputs" <<'PY'
+          import hashlib,json,sys
+          from pathlib import Path
+          root=Path(sys.argv[1]); rows={}
+          for p in sorted(root.glob('*.fasta')):
+              rows[p.stem]={'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()}
+          required={'metaspades_hybrid_pair','metaspades_short_pair','megahit_short_pair','flye_long_pair'}
+          if not required.issubset(rows): raise SystemExit(f'missing required inputs: {sorted(required-set(rows))}')
+          (root.parent/'provenance/INPUT_ASSEMBLIES.json').write_text(json.dumps(rows,indent=2,sort_keys=True)+'\n')
+          PY
+          seqkit stats -T "$root"/inputs/*.fasta > "$root/provenance/INPUT_ASSEMBLY_STATS.tsv"
+          sha256sum "$root"/inputs/*.fasta > "$root/provenance/INPUT_ASSEMBLY_SHA256.txt"
+          sha256sum "$root/provenance/FROZEN_EXTENSION_WINNER.json" > "$root/provenance/WINNER_SHA256.txt"
+          git rev-parse HEAD > "$root/provenance/GIT_HEAD.txt"
+          uname -a > "$root/provenance/UNAME.txt"
+          python --version > "$root/provenance/PYTHON_VERSION.txt"
+          minimap2 --version > "$root/provenance/MINIMAP2_VERSION.txt"
+          mash --version > "$root/provenance/MASH_VERSION.txt"
+          micromamba list > "$root/provenance/MICROMAMBA_LIST.txt"
+          printf 'development_run=%s\ndevelopment_artifact=%s\nholdout_baseline_run=%s\nholdout_samples=14,15\ngold_accessed=false\n' \
+            "$DEVELOPMENT_RUN_ID" "$DEVELOPMENT_ARTIFACT" "$HOLDOUT_BASELINE_RUN_ID" > "$root/provenance/UPSTREAM.txt"
+          rm -rf upstream
+
+      - name: Apply the exact frozen extension rule without holdout truth
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=v6_extension_holdout_14_15
+          python lantern_v6/prepare_extension_candidates.py \
+            --source "metaspades_short=$root/inputs/metaspades_short_pair.fasta" \
+            --source "megahit_short=$root/inputs/megahit_short_pair.fasta" \
+            --source "flye_long=$root/inputs/flye_long_pair.fasta" \
+            --min-length 500 --max-n-fraction 0.05 --out "$root/candidates" \
+            > "$root/logs/PREPARE_CANDIDATES.log" 2>&1
+          minimap2 -x asm5 -c -N 100 -t 4 \
+            "$root/inputs/metaspades_hybrid_pair.fasta" \
+            "$root/candidates/extension_candidates.fasta" \
+            > "$root/alignments/candidate_to_backbone.paf" \
+            2> "$root/logs/CANDIDATE_TO_BACKBONE.log"
+          test -s "$root/alignments/candidate_to_backbone.paf"
+
+          python lantern_v6/extension_union.py \
+            --backbone "$root/inputs/metaspades_hybrid_pair.fasta" \
+            --candidates "$root/candidates/extension_candidates.fasta" \
+            --metadata "$root/candidates/extension_candidate_metadata.tsv" \
+            --candidate-to-backbone-paf "$root/alignments/candidate_to_backbone.paf" \
+            --mode hybrid --min-candidate-length 500 --min-terminal-bp 500 \
+            --alignment-identity 0.97 --alignment-min-bp 500 \
+            --whole-max-aligned-fraction 0.70 --containment-fraction 0.98 \
+            --min-source-count 1 --single-target-terminal \
+            --out "$root/variants/v6_frozen_full" \
+            > "$root/logs/CONSTRUCT_FULL.log" 2>&1
+          cp "$root/inputs/metaspades_hybrid_pair.fasta" "$root/variants/v6_no_extension.fasta"
+          python lantern_cami3/scripts/verify_cami_assembly.py \
+            "$root/variants/v6_frozen_full/LANTERN_V6_EXTENSION_UNION.fasta" \
+            --out "$root/variants/v6_frozen_full/VALIDATION.json"
+          python lantern_cami3/scripts/verify_cami_assembly.py \
+            "$root/variants/v6_no_extension.fasta" \
+            --out "$root/variants/V6_NO_EXTENSION_VALIDATION.json"
+
+          python - "$root" <<'PY'
+          import hashlib,json,time
+          from pathlib import Path
+          root=Path(sys.argv[1]) if False else Path('v6_extension_holdout_14_15')
+          files={
+            'v6_frozen_full':root/'variants/v6_frozen_full/LANTERN_V6_EXTENSION_UNION.fasta',
+            'v6_no_extension':root/'variants/v6_no_extension.fasta',
+          }
+          freeze={
+            'status':'UNTOUCHED_HOLDOUT_OUTPUTS_FROZEN_BEFORE_GOLD',
+            'holdout_samples':[14,15],
+            'freeze_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),
+            'winner_sha256':hashlib.sha256((root/'provenance/FROZEN_EXTENSION_WINNER.json').read_bytes()).hexdigest(),
+            'outputs':{name:{'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()} for name,p in files.items()},
+            'truth_accessed':False,
+            'boundary':'The frozen development rule was applied unchanged to independently assembled Toy samples 14/15 and all output hashes were fixed before holdout gold access.'
+          }
+          (root/'provenance/HOLDOUT_TRUTH_BLIND_FREEZE.json').write_text(json.dumps(freeze,indent=2,sort_keys=True)+'\n')
+          PY
+          sha256sum "$root/provenance/HOLDOUT_TRUTH_BLIND_FREEZE.json" > "$root/provenance/HOLDOUT_FREEZE_SHA256.txt"
+
+      - name: Open public holdout gold only after output freeze
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=v6_extension_holdout_14_15
+          test -s "$root/provenance/HOLDOUT_TRUTH_BLIND_FREEZE.json"
+          for s in 14 15; do
+            curl -fsSL --retry 8 --retry-all-errors \
+              "https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_${s}_gsa.tar.gz" \
+              -o "$root/truth_download/sample_${s}_gsa.tar.gz"
+          done
+          sha256sum "$root"/truth_download/*.tar.gz > "$root/provenance/GSA_SHA256SUMS.txt"
+          python lantern_cami3/scripts/extract_gsa_truth.py \
+            --gsa-tar "sample14=$root/truth_download/sample_14_gsa.tar.gz" \
+            --gsa-tar "sample15=$root/truth_download/sample_15_gsa.tar.gz" \
+            --out "$root/truth" > "$root/logs/EXTRACT_TRUTH.log" 2>&1
+          minimap2 -I 4G -d "$root/truth/toy_truth.mmi" "$root/truth/combined_truth.fasta" \
+            > "$root/logs/TRUTH_INDEX.stdout" 2> "$root/logs/TRUTH_INDEX.log"
+
+      - name: Evaluate all frozen baselines and the untouched v6 method
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=v6_extension_holdout_14_15
+          cat > "$root/provenance/METHOD_MANIFEST.tsv" <<'EOF'
+          method	role	mode	scope	ablation	eligible_primary_baseline
+          metaspades_hybrid_pair	baseline	hybrid	longitudinal	none	true
+          metaspades_short_pair	baseline	short	longitudinal	none	true
+          megahit_short_pair	baseline	short	longitudinal	none	true
+          flye_long_pair	baseline	long	longitudinal	none	true
+          flye_long_s14	baseline	long	single	none	true
+          flye_long_s15	baseline	long	single	none	true
+          v6_frozen_full	lantern	hybrid	longitudinal	full	false
+          v6_no_extension	ablation	hybrid	longitudinal	no_extension	false
+          EOF
+          cat > "$root/provenance/EVALUATED_METHODS.tsv" <<EOF
+          method	fasta
+          metaspades_hybrid_pair	$root/inputs/metaspades_hybrid_pair.fasta
+          metaspades_short_pair	$root/inputs/metaspades_short_pair.fasta
+          megahit_short_pair	$root/inputs/megahit_short_pair.fasta
+          flye_long_pair	$root/inputs/flye_long_pair.fasta
+          EOF
+          for method in flye_long_s14 flye_long_s15; do
+            test -s "$root/inputs/${method}.fasta" && printf '%s\t%s\n' "$method" "$root/inputs/${method}.fasta" >> "$root/provenance/EVALUATED_METHODS.tsv"
+          done
+          printf '%s\t%s\n' v6_frozen_full "$root/variants/v6_frozen_full/LANTERN_V6_EXTENSION_UNION.fasta" >> "$root/provenance/EVALUATED_METHODS.tsv"
+          printf '%s\t%s\n' v6_no_extension "$root/variants/v6_no_extension.fasta" >> "$root/provenance/EVALUATED_METHODS.tsv"
+
+          tail -n +2 "$root/provenance/EVALUATED_METHODS.tsv" | while IFS=$'\t' read -r method fasta; do
+            dir="$root/evaluation/$method"; mkdir -p "$dir"
+            minimap2 -x asm5 -c -N 100 -t 4 "$root/truth/toy_truth.mmi" "$fasta" \
+              > "$dir/assembly_to_truth.paf" 2> "$dir/minimap2.log"
+            python lantern_cami3/scripts/evaluate_gold_coverage.py \
+              --paf "$dir/assembly_to_truth.paf" \
+              --truth-mapping "$root/truth/truth_mapping.tsv" \
+              --assembly-fasta "$fasta" --min-identity 0.90 --min-alignment 500 --out "$dir" \
+              > "$dir/evaluate.log" 2>&1
+            test -s "$dir/GOLD_COVERAGE_SUMMARY.json"
+            rm -f "$dir/assembly_to_truth.paf"
+          done
+
+      - name: Build untouched-holdout pseudo-novel and abundance tables
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=v6_extension_holdout_14_15
+          python - "$root" <<'PY'
+          import csv,sys
+          from pathlib import Path
+          root=Path(sys.argv[1]); rows=list(csv.DictReader(open(root/'truth/genome_reference_manifest.tsv'),delimiter='\t'))
+          paths=[]
+          for row in rows:
+              if int(row['truth_bp'])<50000: continue
+              path=root/'truth/references'/Path(row['reference_path']).name
+              if path.is_file(): paths.append(str(path))
+          (root/'pseudo/mash_reference_files.txt').write_text('\n'.join(paths)+'\n')
+          PY
+          test $(wc -l < "$root/pseudo/mash_reference_files.txt") -ge 2
+          mash sketch -k 21 -s 1000 -l "$root/pseudo/mash_reference_files.txt" \
+            -o "$root/pseudo/truth_genomes" > "$root/logs/MASH_SKETCH.log" 2>&1
+          mash dist "$root/pseudo/truth_genomes.msh" "$root/pseudo/truth_genomes.msh" \
+            > "$root/pseudo/truth_genome_distances.tsv"
+          recovery_args=()
+          while IFS=$'\t' read -r method fasta; do
+            test "$method" = method && continue
+            recovery_args+=(--recovery "$method=$root/evaluation/$method/per_genome_recovery.tsv")
+          done < "$root/provenance/EVALUATED_METHODS.tsv"
+          python lantern_cami3/scripts/build_pseudo_novel_audit.py \
+            --manifest "$root/truth/genome_reference_manifest.tsv" \
+            --mash "$root/pseudo/truth_genome_distances.tsv" \
+            "${recovery_args[@]}" --min-truth-bp 50000 --out "$root/pseudo/results" \
+            > "$root/logs/PSEUDO_NOVEL.log" 2>&1
+          for s in 14 15; do
+            python lantern_cami3/scripts/extract_read_abundance.py \
+              --url "https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_${s}_reads.tar.gz" \
+              --sample-id "sample${s}" --paired --out "$root/abundance/sample${s}_abundance.tsv" \
+              > "$root/logs/ABUNDANCE_S${s}.log" 2>&1
+          done
+          python lantern_cami3/scripts/summarize_abundance_recovery.py \
+            --abundance "$root/abundance/sample14_abundance.tsv" \
+            --abundance "$root/abundance/sample15_abundance.tsv" \
+            "${recovery_args[@]}" --low-percent 0.01 --high-percent 0.1 \
+            --out "$root/abundance/results" > "$root/logs/ABUNDANCE_SUMMARY.log" 2>&1
+
+      - name: Apply the unchanged strict holdout gates
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=v6_extension_holdout_14_15
+          cat > "$root/provenance/HOLDOUT_CONFIG.json" <<'EOF'
+          {
+            "holdout_pair": [14, 15],
+            "strict_success_gates": {
+              "genome_fraction_gain_minimum_percentage_points": 0.5,
+              "mean_genome_recovery_gain_minimum_percentage_points": 1.0,
+              "low_abundance_gain_minimum_percentage_points": 2.0,
+              "relative_cross_binid_chimera_increase_maximum": 0.10,
+              "longitudinal_ablation_drop_minimum_percentage_points": 0.5
+            },
+            "claim_boundary": "Untouched public Toy participant-pair validation of one frozen development rule. The no-extension ablation tests the paired-assembly extension layer, not temporal causality by itself. This is not an official hidden CAMI III result or a novel-organism discovery."
+          }
+          EOF
+          method_args=()
+          while IFS=$'\t' read -r method fasta; do
+            test "$method" = method && continue
+            method_args+=(--method "$method=$root/evaluation/$method")
+          done < "$root/provenance/EVALUATED_METHODS.tsv"
+          python lantern_cami3/scripts/evaluate_frozen_holdout.py \
+            "${method_args[@]}" --manifest "$root/provenance/METHOD_MANIFEST.tsv" \
+            --holdout-config "$root/provenance/HOLDOUT_CONFIG.json" \
+            --full-method v6_frozen_full --no-longitudinal-method v6_no_extension \
+            --abundance-summary "$root/abundance/results/ABUNDANCE_STRATIFIED_SUMMARY.tsv" \
+            --pseudo-summary "$root/pseudo/results/PSEUDO_NOVEL_RECOVERY_SUMMARY.tsv" \
+            --seed "$SEED" --out "$root/decision" > "$root/logs/HOLDOUT_DECISION.log" 2>&1
+          test -s "$root/decision/HOLDOUT_DECISION.json"
+          cat "$root/decision/HOLDOUT_DECISION.md"
+          cp "$root/variants/v6_frozen_full/LANTERN_V6_EXTENSION_UNION.fasta" \
+            "$root/submission/LANTERN_V6_EXTENSION_HOLDOUT_14_15.fasta"
+          python lantern_cami3/scripts/verify_cami_assembly.py \
+            "$root/submission/LANTERN_V6_EXTENSION_HOLDOUT_14_15.fasta" \
+            --out "$root/validation/SUBMISSION_FASTA_VALIDATION.json"
+          sha256sum "$root/submission/LANTERN_V6_EXTENSION_HOLDOUT_14_15.fasta" \
+            > "$root/validation/SUBMISSION_FASTA_SHA256.txt"
+
+      - name: Independent final audit and compact evidence package
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          root=v6_extension_holdout_14_15
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('v6_extension_holdout_14_15'); errors=[]
+          for rel in [
+            'provenance/FROZEN_EXTENSION_WINNER.json',
+            'provenance/HOLDOUT_TRUTH_BLIND_FREEZE.json',
+            'decision/HOLDOUT_DECISION.json',
+            'decision/HOLDOUT_DECISION.md',
+            'validation/SUBMISSION_FASTA_VALIDATION.json',
+            'validation/SUBMISSION_FASTA_SHA256.txt',
+          ]:
+              if not (root/rel).is_file(): errors.append(f'missing {rel}')
+          if (root/'decision/HOLDOUT_DECISION.json').is_file():
+              decision=json.loads((root/'decision/HOLDOUT_DECISION.json').read_text())
+              if decision.get('holdout_pair') != [14,15]: errors.append('holdout pair mismatch')
+              if decision.get('full_method') != 'v6_frozen_full': errors.append('full method mismatch')
+          validation={}
+          if (root/'validation/SUBMISSION_FASTA_VALIDATION.json').is_file():
+              validation=json.loads((root/'validation/SUBMISSION_FASTA_VALIDATION.json').read_text())
+              if validation.get('status')!='PASS': errors.append('submission FASTA validation failed')
+          audit={
+            'status':'PASS' if not errors else 'FAIL',
+            'errors':errors,
+            'decision_status':decision.get('status') if 'decision' in locals() else None,
+            'strict_success':decision.get('strict_success') if 'decision' in locals() else None,
+            'boundary':'Independent artifact-consistency audit; no claim beyond the frozen public Toy holdout.'
+          }
+          (root/'INDEPENDENT_AUDIT.json').write_text(json.dumps(audit,indent=2,sort_keys=True)+'\n')
+          if errors: raise SystemExit(errors)
+          PY
+          rm -rf "$root/inputs" "$root/candidates" "$root/alignments" "$root/truth_download" "$root/truth/references"
+          rm -f "$root/truth/combined_truth.fasta" "$root/truth/toy_truth.mmi"
+          rm -f "$root/pseudo/truth_genomes.msh" "$root/pseudo/truth_genome_distances.tsv"
+          rm -f "$root/variants/v6_no_extension.fasta"
+          find "$root" -type f ! -name SHA256SUMS_ALL.txt -print0 | sort -z | xargs -0 sha256sum > "$root/SHA256SUMS_ALL.txt" || true
+          du -ah "$root" | sort -h > "$root/FILE_SIZES.txt" || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: LANTERN_CAMI3_V6_EXTENSION_HOLDOUT_14_15_20260820
+          path: v6_extension_holdout_14_15
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
