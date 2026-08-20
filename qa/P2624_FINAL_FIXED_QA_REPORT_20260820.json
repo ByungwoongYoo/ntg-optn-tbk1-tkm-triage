@@ -2,6 +2,7 @@
   "schema": "p2624-final-fixed-publication-qa-v1",
   "date": "2026-08-20",
   "status": "PASS",
+  "path_display_note": "Repository copy uses portable filenames instead of environment-specific absolute build paths.",
   "source_fixes": [
     {
       "file": "p2624_certified_reconstruction/EXACT_RECONSTRUCTION_RESULTS.md",
@@ -13,7 +14,7 @@
     }
   ],
   "logical_zip": {
-    "path": "/workspace/scratch/a808bcba97f5/P2624_independent_certified_reconstruction_FINAL_FIXED_20260820.zip",
+    "path": "P2624_independent_certified_reconstruction_FINAL_FIXED_20260820.zip",
     "bytes": 93453983,
     "sha256": "83d80155ef4b2dba5a4def970d13317413b763b3447c00a931f4c624b9e45cb5",
     "members": 66,
@@ -40,7 +41,7 @@
   },
   "transport": {
     "readme": {
-      "path": "/workspace/scratch/a808bcba97f5/zenodo_split10_final_fixed/P2624_FINAL_FIXED_TRANSPORT_README.txt",
+      "path": "P2624_FINAL_FIXED_TRANSPORT_README.txt",
       "bytes": 4291,
       "sha256": "78e449aea9e605d1afbbfa973cde19ef7f2ae370b19cd176b76792114afe8906"
     },
@@ -58,9 +59,9 @@
     ]
   },
   "compact_packages": [
-    {"path": "/workspace/scratch/a808bcba97f5/b2_z100_reconstructed/B2_Z100_FINAL_PROOF_AUDIT_PUBLIC_FIXED_20260820.zip", "bytes": 115896, "sha256": "ae781ccd6d191e1e1a4e66fbe383a864aa7b65a049bf93cf1a335db57136620f"},
-    {"path": "/workspace/scratch/a808bcba97f5/b2_z100_reconstructed/B2_Z100_PUBLIC_AUDIT_AUXILIARIES_PUBLIC_FIXED_20260820.zip", "bytes": 88271, "sha256": "47f37758c1f8bd3e7b40efabf2d788113b96b2968ad469e87c3818b02502f60c"},
-    {"path": "/workspace/scratch/a808bcba97f5/b2_z100_reconstructed/B2_Z100_FRESH_REPLAY_AUDIT_BUNDLE_PUBLIC_FIXED_20260820.zip", "bytes": 1087657, "sha256": "052357754e9a04ddf6983f24b59f6575114f371e850cedb3c918e6d842bcf9fb"}
+    {"path": "B2_Z100_FINAL_PROOF_AUDIT_PUBLIC_FIXED_20260820.zip", "bytes": 115896, "sha256": "ae781ccd6d191e1e1a4e66fbe383a864aa7b65a049bf93cf1a335db57136620f"},
+    {"path": "B2_Z100_PUBLIC_AUDIT_AUXILIARIES_PUBLIC_FIXED_20260820.zip", "bytes": 88271, "sha256": "47f37758c1f8bd3e7b40efabf2d788113b96b2968ad469e87c3818b02502f60c"},
+    {"path": "B2_Z100_FRESH_REPLAY_AUDIT_BUNDLE_PUBLIC_FIXED_20260820.zip", "bytes": 1087657, "sha256": "052357754e9a04ddf6983f24b59f6575114f371e850cedb3c918e6d842bcf9fb"}
   ],
   "publication_qa": {
     "privacy_secret_absolute_path_scan": "PASS_NO_MATCH",

@@ -2,6 +2,7 @@
   "schema": "b2-z100-public-fixed-package-qa-v1",
   "status": "PASS",
   "scope_note": "This report governs the three PUBLIC_FIXED compact packages. The current reconstruction is FINAL_FIXED and is governed separately by P2624_FINAL_FIXED_QA_REPORT_20260820.json.",
+  "command_display_note": "Repository copy shows portable command equivalents; environment-specific absolute build paths were removed after execution.",
   "packages": {
     "B2_Z100_FINAL_PROOF_AUDIT_PUBLIC_FIXED_20260820.zip": {
       "bytes": 115896,
@@ -39,9 +40,9 @@
       },
       "compact_verifier": {
         "command": [
-          "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
-          "/workspace/scratch/a808bcba97f5/b2_z100_public_fixed_build_20260820/qa_extract/B2_Z100_FINAL_PROOF_AUDIT_PUBLIC_FIXED_20260820/tools/verify_compact_packet.py",
-          "/workspace/scratch/a808bcba97f5/b2_z100_public_fixed_build_20260820/qa_extract/B2_Z100_FINAL_PROOF_AUDIT_PUBLIC_FIXED_20260820"
+          "python3",
+          "B2_Z100_FINAL_PROOF_AUDIT_PUBLIC_FIXED_20260820/tools/verify_compact_packet.py",
+          "B2_Z100_FINAL_PROOF_AUDIT_PUBLIC_FIXED_20260820"
         ],
         "returncode": 0,
         "stdout": "{\n  \"schema\": \"b2-z100-compact-packet-verification-v1\",\n  \"status\": \"PASS\",\n  \"package_name\": \"B2_Z100_FINAL_PROOF_AUDIT_PUBLIC_FIXED_20260820\",\n  \"file_count\": 66,\n  \"manifest_sha256\": \"8a138bced85debac924b5cdf8db4520a27de54a8897e768d068cb392be6e8511\",\n  \"errors\": []\n}",
@@ -49,8 +50,8 @@
       },
       "corrected_result_check": {
         "command": [
-          "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
-          "/workspace/scratch/a808bcba97f5/b2_z100_public_fixed_build_20260820/qa_extract/B2_Z100_FINAL_PROOF_AUDIT_PUBLIC_FIXED_20260820/verification/verify_corrected_result.py"
+          "python3",
+          "B2_Z100_FINAL_PROOF_AUDIT_PUBLIC_FIXED_20260820/verification/verify_corrected_result.py"
         ],
         "returncode": 0,
         "stdout": "{\n  \"schema\": \"b2-z100-corrected-result-check-v1\",\n  \"status\": \"PASS\",\n  \"claim_file\": \"claim/B2_Z100_FINAL_RESULTS_CORRECTED_20260820.json\",\n  \"witness_cardinality\": 13,\n  \"max_ordered_difference_multiplicity\": 2,\n  \"mod10_supports_checked\": 67,\n  \"normalized_third_branches_recorded\": 44,\n  \"distinct_third_party_audit_records\": 3,\n  \"scope\": \"elementary checks plus internal consistency of recorded run map; no solver replay\"\n}",
@@ -130,9 +131,9 @@
       },
       "compact_verifier": {
         "command": [
-          "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
-          "/workspace/scratch/a808bcba97f5/b2_z100_public_fixed_build_20260820/qa_extract/B2_Z100_PUBLIC_AUDIT_AUXILIARIES_PUBLIC_FIXED_20260820/tools/verify_compact_packet.py",
-          "/workspace/scratch/a808bcba97f5/b2_z100_public_fixed_build_20260820/qa_extract/B2_Z100_PUBLIC_AUDIT_AUXILIARIES_PUBLIC_FIXED_20260820"
+          "python3",
+          "B2_Z100_PUBLIC_AUDIT_AUXILIARIES_PUBLIC_FIXED_20260820/tools/verify_compact_packet.py",
+          "B2_Z100_PUBLIC_AUDIT_AUXILIARIES_PUBLIC_FIXED_20260820"
         ],
         "returncode": 0,
         "stdout": "{\n  \"schema\": \"b2-z100-compact-packet-verification-v1\",\n  \"status\": \"PASS\",\n  \"package_name\": \"B2_Z100_PUBLIC_AUDIT_AUXILIARIES_PUBLIC_FIXED_20260820\",\n  \"file_count\": 47,\n  \"manifest_sha256\": \"4d8b180231f570b120094de00b46d33dd517ac82455335020658b03b0f16fcc3\",\n  \"errors\": []\n}",
@@ -140,8 +141,8 @@
       },
       "corrected_result_check": {
         "command": [
-          "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3",
-          "/workspace/scratch/a808bcba97f5/b2_z100_public_fixed_build_20260820/qa_extract/B2_Z100_PUBLIC_AUDIT_AUXILIARIES_PUBLIC_FIXED_20260820/verification/verify_corrected_result.py"
+          "python3",
+          "B2_Z100_PUBLIC_AUDIT_AUXILIARIES_PUBLIC_FIXED_20260820/verification/verify_corrected_result.py"
         ],
         "returncode": 0,
         "stdout": "{\n  \"schema\": \"b2-z100-corrected-result-check-v1\",\n  \"status\": \"PASS\",\n  \"claim_file\": \"claim/B2_Z100_FINAL_RESULTS_CORRECTED_20260820.json\",\n  \"witness_cardinality\": 13,\n  \"max_ordered_difference_multiplicity\": 2,\n  \"mod10_supports_checked\": 67,\n  \"normalized_third_branches_recorded\": 44,\n  \"distinct_third_party_audit_records\": 3,\n  \"scope\": \"elementary checks plus internal consistency of recorded run map; no solver replay\"\n}",

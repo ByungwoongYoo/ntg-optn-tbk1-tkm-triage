@@ -105,8 +105,8 @@
     },
     "final_fixed_publication_qa": {
       "artifact_file": "P2624_FINAL_FIXED_QA_REPORT_20260820.json",
-      "bytes": 5021,
-      "sha256": "58c66d37ffb2dea0efe800b21a00acda7f029fea83f5c1e4864ad7e31b981559",
+      "bytes": 4888,
+      "sha256": "0b1cb10a3e7de07e91065da7c724654ebf9fb8156b41bcc248e6de4cff06bbc3",
       "repository_path": "qa/P2624_FINAL_FIXED_QA_REPORT_20260820.json",
       "distribution": "Git-branch QA record; not counted among the 13 physical files in DOI 10.5281/zenodo.22026665"
     }
@@ -121,7 +121,7 @@
     "THIRD_PARTY_NOTICES.md"
   ],
   "file_count": 69,
-  "total_bytes": 360398,
+  "total_bytes": 359680,
   "pii_scan": {
     "email_match_count": 0,
     "email_matches": [],
@@ -290,8 +290,8 @@
     },
     {
       "path": "qa/B2_Z100_PUBLIC_FIXED_PACKAGES_QA_20260820.json",
-      "bytes": 7441,
-      "sha256": "a751c3705396d63f643d2bb674e2a13eb216d94815a81a0c2fd4cb0bf0adce65"
+      "bytes": 6856,
+      "sha256": "1cb0dfea3cc19946b27a53971c1e4633ee29510a06b914d749f457b09d626bcc"
     },
     {
       "path": "qa/B2_Z100_PUBLIC_FIXED_PACKAGES_QA_20260820.md",
@@ -300,13 +300,13 @@
     },
     {
       "path": "qa/P2624_FINAL_FIXED_QA_REPORT_20260820.json",
-      "bytes": 5021,
-      "sha256": "58c66d37ffb2dea0efe800b21a00acda7f029fea83f5c1e4864ad7e31b981559"
+      "bytes": 4888,
+      "sha256": "0b1cb10a3e7de07e91065da7c724654ebf9fb8156b41bcc248e6de4cff06bbc3"
     },
     {
       "path": "release/ARTIFACTS.json",
       "bytes": 7475,
-      "sha256": "f00d5eb72cabc8f0650aca95acaa6b8f86309794e2428eddd5c6cd1006fb30a0"
+      "sha256": "abbe87bf3e8a26ae29cc51a6c9a7b2f6b8b78168602cbe92e9cffee61b31d947"
     },
     {
       "path": "release/ARTIFACT_SHA256SUMS.txt",
