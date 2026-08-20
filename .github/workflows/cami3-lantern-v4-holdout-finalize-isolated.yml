@@ -81,7 +81,7 @@ jobs:
             d=$(dirname "$r1")
             for kind in R1 R2 long; do
               src="$d/S${s}_${kind}.fastq.gz"; test -s "$src"
-              ln -s "$PWD/$src" "$root/reads/S${s}_${kind}.fastq.gz"
+              cp "$src" "$root/reads/S${s}_${kind}.fastq.gz"
               gzip -t "$root/reads/S${s}_${kind}.fastq.gz"
             done
           done
