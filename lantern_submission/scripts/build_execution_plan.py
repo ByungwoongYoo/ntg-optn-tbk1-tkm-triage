@@ -8,6 +8,19 @@ import json
 import shlex
 from pathlib import Path
 
+EXPECTED_ALGORITHM_COMMIT = "d2f44b529d2198784ce7666ba1c98ae44709f981"
+EXPECTED_ASSEMBLY_PROTOCOL_COMMIT = "26e06ceff4dc78c08424ac5c8e3c56ea8756961b"
+EXPECTED_PROTOCOL = {
+    "megahit_short": {"min_contig_len": 1000, "memory_fraction": 0.8},
+    "metaspades_short": {"executable": "metaspades.py", "only_assembler": True},
+    "metaspades_hybrid": {
+        "executable": "metaspades.py",
+        "only_assembler": True,
+        "long_read_option": "--nanopore",
+    },
+    "flye_long": {"read_mode": "--nano-hq", "meta": True},
+}
+
 
 def sha256_file(path: Path) -> str:
     h = hashlib.sha256()
@@ -29,6 +42,21 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
+def validate_rule(rule: dict) -> None:
+    if rule.get("candidate") != "LANTERN-v7-short-terminal-500-s1":
+        raise ValueError("unexpected candidate identity")
+    if rule.get("algorithm_source_commit") != EXPECTED_ALGORITHM_COMMIT:
+        raise ValueError("algorithm source commit drift")
+    if rule.get("assembly_protocol_source_commit") != EXPECTED_ASSEMBLY_PROTOCOL_COMMIT:
+        raise ValueError("assembly protocol source commit drift")
+    if rule.get("assembly_protocol") != EXPECTED_PROTOCOL:
+        raise ValueError("assembly protocol drift")
+    if rule.get("post_result_tuning_allowed") is not False:
+        raise ValueError("rule does not prohibit post-result tuning")
+    if rule.get("public_toy_microtuning_stopped") is not True:
+        raise ValueError("public Toy microtuning is not frozen off")
+
+
 def main() -> None:
     a = parse_args()
     if a.threads <= 0 or a.memory_gb <= 0:
@@ -38,10 +66,13 @@ def main() -> None:
     rule = json.loads(a.rule.read_text(encoding="utf-8"))
     if mapping.get("mapping_method") != "explicit_metadata_only":
         raise ValueError("non-explicit mapping rejected")
+    if mapping.get("sequential_pairing_used") is not False:
+        raise ValueError("sequential pairing flag is not false")
+    if mapping.get("similarity_pairing_used") is not False:
+        raise ValueError("similarity pairing flag is not false")
     if inputs.get("status") != "ACTIVE_INPUT_MANIFEST_FROZEN":
         raise ValueError("input manifest is not frozen")
-    if rule.get("post_result_tuning_allowed") is not False:
-        raise ValueError("rule does not prohibit post-result tuning")
+    validate_rule(rule)
     if set(mapping["sample_ids"]) != set(inputs["sample_ids"]):
         raise ValueError("mapping and input sample sets differ")
 
@@ -50,27 +81,40 @@ def main() -> None:
     for group in mapping["groups"]:
         individual = str(group["individual_id"])
         command = [
-            "python", str(runner),
-            "--individual-id", individual,
-            "--mapping-freeze", str(a.mapping_freeze),
-            "--input-freeze", str(a.input_freeze),
-            "--rule", str(a.rule),
-            "--out", str(a.work_dir),
-            "--threads", str(a.threads),
-            "--memory-gb", str(a.memory_gb),
+            "python",
+            str(runner),
+            "--individual-id",
+            individual,
+            "--mapping-freeze",
+            str(a.mapping_freeze),
+            "--input-freeze",
+            str(a.input_freeze),
+            "--rule",
+            str(a.rule),
+            "--out",
+            str(a.work_dir),
+            "--threads",
+            str(a.threads),
+            "--memory-gb",
+            str(a.memory_gb),
         ]
-        commands.append({
-            "individual_id": individual,
-            "samples": list(group["samples"]),
-            "command": command,
-            "shell": shlex.join(command),
-        })
+        commands.append(
+            {
+                "individual_id": individual,
+                "samples": list(group["samples"]),
+                "timepoints": list(group["timepoints"]),
+                "command": command,
+                "shell": shlex.join(command),
+            }
+        )
 
     a.out.mkdir(parents=True, exist_ok=True)
     plan = {
         "status": "PREREGISTERED_EXECUTION_PLAN",
         "candidate": rule["candidate"],
         "algorithm_source_commit": rule["algorithm_source_commit"],
+        "assembly_protocol_source_commit": rule["assembly_protocol_source_commit"],
+        "assembly_protocol": rule["assembly_protocol"],
         "threads_per_individual": a.threads,
         "memory_gb_per_individual": a.memory_gb,
         "work_dir": str(a.work_dir),
@@ -85,11 +129,14 @@ def main() -> None:
         "restricted_storage": "private local/HPC only",
     }
     json_path = a.out / "RUN_PLAN.json"
-    json_path.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    json_path.write_text(
+        json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     shell_path = a.out / "RUN_PLAN.sh"
     shell_path.write_text(
-        "#!/usr/bin/env bash\nset -euo pipefail\n\n" +
-        "\n".join(item["shell"] for item in commands) + "\n",
+        "#!/usr/bin/env bash\nset -euo pipefail\n\n"
+        + "\n".join(item["shell"] for item in commands)
+        + "\n",
         encoding="utf-8",
     )
     shell_path.chmod(0o755)
