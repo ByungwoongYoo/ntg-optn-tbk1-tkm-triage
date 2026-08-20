@@ -1,0 +1,70 @@
+{
+  "version": "LANTERN-hybrid-backbone-v4-predeclared-grid-20260820",
+  "development_pair": "CAMI III Toy official individual 1: samples 0 and 1",
+  "backbone": "metaSPAdes hybrid assembly from frozen short and long reads",
+  "candidate_sources": [
+    "metaSPAdes short-read longitudinal assembly",
+    "MEGAHIT short-read longitudinal assembly",
+    "metaFlye nano-raw single-sample 0 assembly",
+    "metaFlye nano-raw single-sample 1 assembly",
+    "metaFlye nano-raw longitudinal assembly"
+  ],
+  "common": {
+    "method": "LANTERN-hybrid-backbone-rescue-v4",
+    "minimum_contig_length": 2000,
+    "maximum_n_fraction": 0.05,
+    "minimum_v1_score": 0.52,
+    "minimum_timepoints_supported": 2,
+    "minimum_short_breadth": 0.9,
+    "minimum_source_count": 1,
+    "minimum_assembler_count": 1,
+    "require_single_scope": true,
+    "exclude_source_ids": [],
+    "require_any_source_ids": [],
+    "require_v1_selected": true,
+    "redundancy_minimum_identity": 0.97,
+    "redundancy_minimum_query_coverage": 0.85,
+    "maximum_rescue_contigs": 0,
+    "maximum_rescue_bp": 0
+  },
+  "configurations": [
+    {
+      "config_id": "V4A_UNCHANGED_V3_GATE",
+      "minimum_long_breadth": 0.0,
+      "minimum_long_spanning_reads": 0
+    },
+    {
+      "config_id": "V4B_LONG_BREADTH_050_OR_SPAN_1",
+      "minimum_long_breadth": 0.5,
+      "minimum_long_spanning_reads": 1
+    },
+    {
+      "config_id": "V4C_LONG_BREADTH_080_OR_SPAN_1",
+      "minimum_long_breadth": 0.8,
+      "minimum_long_spanning_reads": 1
+    },
+    {
+      "config_id": "V4D_LONG_BREADTH_090_OR_SPAN_2",
+      "minimum_long_breadth": 0.9,
+      "minimum_long_spanning_reads": 2
+    }
+  ],
+  "training_selection_rule": {
+    "feasibility_constraints": [
+      "relative cross-BINID chimera proxy increase <= 0.10, unless genome-fraction gain >= 2.0 percentage points",
+      "genomes_recovered_90 not lower than hybrid backbone",
+      "assembly total bp <= 1.50 times hybrid backbone"
+    ],
+    "ranking": [
+      "highest genome-fraction gain",
+      "highest mean-recovery gain",
+      "largest longitudinal-ablation drop",
+      "lower chimera proxy",
+      "fewer rescue contigs",
+      "lexicographically smaller config_id"
+    ]
+  },
+  "strict_success_thresholds_source": "lantern_cami3/config/decision_gate_v1.json",
+  "holdout_requirement": "The selected configuration is frozen unchanged before evaluation on the nine officially corrected held-out Toy participant pairs and before any active CAMI III challenge data are processed.",
+  "claim_boundary": "This is a predeclared public-Toy development grid. It is not hidden-challenge validation and does not permit retuning from held-out outcomes."
+}
