@@ -1,0 +1,128 @@
+name: LANTERN isolated metaMDBG holdout 14-15 pair
+
+on:
+  pull_request:
+    branches: [cami3-lantern-20260819]
+    paths:
+      - '.github/workflows/cami3-lantern-metamdbg-holdout-pair-isolated.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  HOLDOUT_RUN_ID: '32332720846'
+
+jobs:
+  metamdbg-pair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download frozen holdout reads from pre-gold run
+        uses: actions/download-artifact@v4
+        with:
+          pattern: LANTERN_CAMI3_V4_HOLDOUT_READS_S*_20260820
+          path: read_artifacts
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.HOLDOUT_RUN_ID }}
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: metamdbg-holdout-isolated
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+            channel_priority: strict
+          create-args: >-
+            python=3.11
+            metamdbg=1.4
+            minimap2=2.31
+            seqkit=2.13.0
+          cache-downloads: true
+          post-cleanup: all
+      - name: Run and freeze paired metaMDBG assembly
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=metamdbg_holdout_pair
+          mkdir -p "$root"/{inputs,assembly,evaluation,truth_download,truth,provenance,logs,failure_audit}
+          for s in 14 15; do
+            f=$(find read_artifacts -type f -name "S${s}_long.fastq.gz" -print -quit)
+            test -s "$f"
+            ln -s "$PWD/$f" "$root/inputs/S${s}_long.fastq.gz"
+          done
+          gzip -t "$root"/inputs/*.fastq.gz
+          seqkit stats -T "$root"/inputs/*.fastq.gz > "$root/provenance/READ_STATS.tsv"
+          sha256sum "$root"/inputs/*.fastq.gz > "$root/provenance/READ_SHA256.txt"
+          git rev-parse HEAD > "$root/provenance/GIT_HEAD.txt"
+          uname -a > "$root/provenance/UNAME.txt"
+          micromamba list > "$root/provenance/MICROMAMBA_LIST.txt"
+          printf 'method=metamdbg_pair\nholdout_pair=14,15\nholdout_run=%s\ngold_accessed=false\n' "$HOLDOUT_RUN_ID" > "$root/provenance/FROZEN_INPUTS.txt"
+          set +e
+          /usr/bin/time -v timeout --signal=TERM --kill-after=120s 300m \
+            metaMDBG asm --out-dir "$root/assembly/out" \
+            --in-ont "$root/inputs/S14_long.fastq.gz" "$root/inputs/S15_long.fastq.gz" --threads 4 \
+            > "$root/logs/METAMDBG.log" 2>&1
+          rc=$?
+          set -e
+          printf 'exit_code=%s\n' "$rc" > "$root/failure_audit/METAMDBG.status"
+          contigs=$(find "$root/assembly/out" -maxdepth 3 -type f \( -name 'contigs.fasta.gz' -o -name 'contigs.fasta' -o -name 'assembly.fasta' \) -print -quit)
+          test -n "$contigs"
+          if [[ "$contigs" == *.gz ]]; then gzip -cd "$contigs" > "$root/assembly/final_assembly.fasta"; else cp "$contigs" "$root/assembly/final_assembly.fasta"; fi
+          test -s "$root/assembly/final_assembly.fasta"
+          python lantern_cami3/scripts/verify_cami_assembly.py "$root/assembly/final_assembly.fasta" --out "$root/assembly/VALIDATION.json"
+          seqkit stats -T "$root/assembly/final_assembly.fasta" > "$root/assembly/ASSEMBLY_STATS.tsv"
+          sha256sum "$root/assembly/final_assembly.fasta" > "$root/assembly/ASSEMBLY_SHA256.txt"
+          python - "$root" <<'PY'
+          import hashlib,json,sys,time
+          from pathlib import Path
+          root=Path(sys.argv[1]); p=root/'assembly/final_assembly.fasta'
+          x={'method':'metamdbg_pair','holdout_pair':[14,15],'freeze_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'assembly_sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'assembly_bytes':p.stat().st_size,'truth_accessed':False,'boundary':'Paired metaMDBG holdout assembly was complete and hashed before Toy gold was downloaded.'}
+          (root/'provenance/TRUTH_BLIND_FREEZE.json').write_text(json.dumps(x,indent=2)+'\n')
+          PY
+      - name: Open public gold after freeze and evaluate
+        shell: micromamba-shell {0}
+        run: |
+          set -euo pipefail
+          root=metamdbg_holdout_pair
+          for s in 14 15; do
+            curl -fsSL --retry 8 --retry-all-errors \
+              "https://s3.bi.denbi.de/swift/v1/cami/cami3_toydata/human-gut-toy/sample_${s}_gsa.tar.gz" \
+              -o "$root/truth_download/sample${s}_gsa.tar.gz"
+          done
+          sha256sum "$root"/truth_download/*.tar.gz > "$root/provenance/GSA_SHA256SUMS.txt"
+          python lantern_cami3/scripts/extract_gsa_truth.py \
+            --gsa-tar "sample14=$root/truth_download/sample14_gsa.tar.gz" \
+            --gsa-tar "sample15=$root/truth_download/sample15_gsa.tar.gz" \
+            --out "$root/truth" > "$root/logs/EXTRACT_TRUTH.log" 2>&1
+          minimap2 -x asm5 -c -N 100 -t 4 "$root/truth/combined_truth.fasta" "$root/assembly/final_assembly.fasta" \
+            > "$root/evaluation/assembly_to_truth.paf" 2> "$root/logs/MINIMAP2.log"
+          python lantern_cami3/scripts/evaluate_gold_coverage.py \
+            --paf "$root/evaluation/assembly_to_truth.paf" \
+            --truth-mapping "$root/truth/truth_mapping.tsv" \
+            --assembly-fasta "$root/assembly/final_assembly.fasta" \
+            --min-identity 0.90 --min-alignment 500 --out "$root/evaluation" \
+            > "$root/logs/EVALUATE.log" 2>&1
+          test -s "$root/evaluation/GOLD_COVERAGE_SUMMARY.json"
+          cat "$root/evaluation/GOLD_COVERAGE_SUMMARY.json"
+      - name: Compact evidence
+        if: always()
+        shell: micromamba-shell {0}
+        run: |
+          root=metamdbg_holdout_pair
+          rm -rf "$root/inputs" "$root/assembly/out" "$root/truth_download" "$root/truth/references"
+          rm -f "$root/truth/combined_truth.fasta" "$root/evaluation/assembly_to_truth.paf"
+          find "$root" -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > "$root/SHA256SUMS.txt" || true
+          du -ah "$root" | sort -h > "$root/FILE_SIZES.txt" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: LANTERN_CAMI3_METAMDBG_PAIR_HOLDOUT_14_15_ISOLATED_20260820
+          path: metamdbg_holdout_pair
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
