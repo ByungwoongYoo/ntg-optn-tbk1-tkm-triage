@@ -1,0 +1,29 @@
+name: Dispatch isolated CAMI III LANTERN v4 development
+
+on:
+  push:
+    branches: [cami3-lantern-v4-hybrid-20260820]
+    paths:
+      - '.github/workflows/cami3-lantern-v4-isolated-dispatch.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Dispatch only the v4 workflow on this isolated branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh api --method POST \
+            "repos/${REPO}/actions/workflows/cami3-lantern-hybrid-v4-development.yml/dispatches" \
+            -f ref="$REF"
+          printf 'dispatched_workflow=%s\nref=%s\n' \
+            'cami3-lantern-hybrid-v4-development.yml' "$REF"
