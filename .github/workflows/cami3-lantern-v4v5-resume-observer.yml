@@ -1,0 +1,104 @@
+name: Observe isolated LANTERN v4-v5 resume
+
+on:
+  push:
+    branches: [lantern-v4v5-resume-20260820]
+    paths:
+      - '.github/workflows/cami3-lantern-v4v5-resume-observer.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+env:
+  TARGET_WORKFLOW: cami3-lantern-v4v5-resume-holdout.yml
+  TARGET_BRANCH: lantern-v4v5-resume-20260820
+
+jobs:
+  observe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 0
+
+      - name: Locate target run and wait for terminal state
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          run_id=''
+          for attempt in $(seq 1 60); do
+            run_id=$(gh run list --repo "$REPO" --workflow "$TARGET_WORKFLOW" --branch "$TARGET_BRANCH" --limit 20 \
+              --json databaseId,createdAt,event,status,headSha \
+              --jq '[.[] | select(.event=="push")] | sort_by(.createdAt) | reverse | .[0].databaseId // empty')
+            if test -n "$run_id"; then break; fi
+            sleep 10
+          done
+          test -n "$run_id"
+          printf '%s\n' "$run_id" > TARGET_RUN_ID.txt
+          for attempt in $(seq 1 720); do
+            gh run view "$run_id" --repo "$REPO" --json databaseId,status,conclusion,url,headSha,createdAt,updatedAt > TARGET_RUN.json
+            status=$(python - <<'PY'
+          import json
+          print(json.load(open('TARGET_RUN.json'))['status'])
+          PY
+            )
+            if test "$status" = completed; then break; fi
+            sleep 30
+          done
+          test "$(python - <<'PY'
+          import json
+          print(json.load(open('TARGET_RUN.json'))['status'])
+          PY
+          )" = completed
+          cat TARGET_RUN.json
+
+      - name: Download compact result artifact when available
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          run_id=$(cat TARGET_RUN_ID.txt)
+          mkdir -p observed
+          set +e
+          gh run download "$run_id" --repo "$REPO" --name LANTERN_CAMI3_V4V5_RESUMED_HOLDOUT_14_15_20260820 --dir observed
+          rc=$?
+          set -e
+          printf '%s\n' "$rc" > ARTIFACT_DOWNLOAD_EXIT_CODE.txt
+          find observed -type f -printf '%P\t%s\n' | sort > OBSERVED_CONTENTS.tsv || true
+
+      - name: Build and commit compact machine status
+        env:
+          BRANCH: ${{ env.TARGET_BRANCH }}
+        run: |
+          set -euo pipefail
+          mkdir -p lantern_status/v4v5_resume_14_15
+          cp TARGET_RUN_ID.txt TARGET_RUN.json ARTIFACT_DOWNLOAD_EXIT_CODE.txt OBSERVED_CONTENTS.tsv lantern_status/v4v5_resume_14_15/
+          find observed -type f \( -name 'HOLDOUT_DECISION.json' -o -name 'HOLDOUT_DECISION.md' -o -name 'V5_SUBMISSION_VALIDATION.json' -o -name 'V4V5_RESUME_TRUTH_BLIND_FREEZE.json' \) -exec cp -a {} lantern_status/v4v5_resume_14_15/ \; || true
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          root=Path('lantern_status/v4v5_resume_14_15')
+          run=json.loads((root/'TARGET_RUN.json').read_text())
+          decisions=[]
+          for p in sorted(root.glob('*DECISION.json')):
+              try: decisions.append({'file':p.name,**json.loads(p.read_text())})
+              except Exception as e: decisions.append({'file':p.name,'parse_error':str(e)})
+          status={'run':run,'artifact_download_exit_code':int((root/'ARTIFACT_DOWNLOAD_EXIT_CODE.txt').read_text().strip()),'decisions':decisions,'files':[]}
+          for p in sorted(root.iterdir()):
+              if p.is_file() and p.name!='STATUS.json':
+                  status['files'].append({'name':p.name,'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()})
+          (root/'STATUS.json').write_text(json.dumps(status,indent=2,sort_keys=True)+'\n')
+          PY
+          find lantern_status/v4v5_resume_14_15 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > lantern_status/v4v5_resume_14_15/SHA256SUMS.txt
+          git config user.name 'LANTERN result observer'
+          git config user.email 'yoonge3@gmail.com'
+          git add lantern_status/v4v5_resume_14_15
+          git commit -m 'Record isolated v4-v5 holdout result status'
+          git push origin "HEAD:${BRANCH}"
