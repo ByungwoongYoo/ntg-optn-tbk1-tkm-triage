@@ -2,22 +2,65 @@
 
 ## Decision
 
-The analysis is worth continuing, but it is not submission-ready. The defensible article type is a reproducible computational virus-discovery Original Article or Short Report based on public transcriptome reanalysis. The present evidence does not support a report of three novel viruses or species.
+The six-library reproducibility audit is complete and successful, but the study
+is not yet submission-ready. All three predefined candidates (A1, A2, and B)
+passed both the enhanced fragment-support gate and the mapping-seed-free de novo
+recovery gate. The defensible article type remains a reproducible computational
+sequence-discovery Original Article or Short Report based on public
+transcriptome reanalysis. The evidence does not support a report of three novel
+viruses or species.
 
 Working title:
 
 > Partial Picornavirales-like RdRP sequence clusters recovered from public *Panax notoginseng* root transcriptomes: a reproducible computational audit
 
-Working claim allowed only if the enhanced fragment, mapping-seed-free de novo,
-and current-database gates retain all three clusters:
+Working claim allowed only after the current-database, competitive-decoy, and
+deposition blockers below are closed:
 
 > Three divergent partial RdRP-containing sequence clusters with Picornavirales-like homology were recovered and raw-read-supported in public *Panax notoginseng*-associated root RNA-seq libraries.
 
-Current conservative statement: three predefined clusters received support in
-the legacy candidate-panel mapping audit; the enhanced retained count is
-pending and may be lower.
+Current conservative statement:
+
+> Three predefined partial RdRP-containing sequence clusters passed independent raw-read fragment-support and mapping-seed-free de novo recovery gates across six public *Panax*-associated root RNA-seq libraries.
+
+This is a sequence-cluster reproducibility result. It is not evidence that the
+clusters are three virus species, that they infect *Panax notoginseng*, or that
+they are associated with disease.
 
 The three labels denote computational sequence clusters. A1 and A2 are not counted as two virus species: their selected 408-aa RdRP segments are 82.353% identical, and the available partial region is not a taxonomic delimiter.
+
+## Verified gate status
+
+The enhanced six-library workflow run [`32482881928`](https://github.com/ByungwoongYoo/ntg-optn-tbk1-tkm-triage/actions/runs/32482881928)
+completed successfully. Its aggregate artifact,
+`PANAX_SIX_LIBRARY_ENHANCED_AUDIT_20260821` (`9457903511`), had independently
+verified ZIP SHA-256
+`875c013ad25b3486400c7e65ed359b6774b4cf42564c890543e663431a29afa3`.
+The evidence-integrity, fragment-audit, fragment-candidate, de novo-audit, and
+de novo-candidate components passed. The aggregate publication gate correctly
+remained `technical_incomplete` because the competitive decoy, separate
+current-database, and durable-deposition components are still open.
+
+| Candidate | Independent fragment runs, validated / strong | De novo source recovery | De novo non-source recoveries | Six-library disposition |
+|---|---:|---|---|---|
+| A1 | 3 / 2 | DRR853912 | DRR853910, DRR853911 | Pass |
+| A2 | 6 / 4 | DRR853912 | DRR853907, DRR853910, DRR853911 | Pass |
+| B | 3 / 2 | DRR853910 | DRR853912 | Pass |
+
+The separate current-sequence workflow run `32482881859` is still technically
+incomplete. Local database/contamination checks, PF00680 domain analysis, and
+UniVec screening passed; phylogenetic QC completed technically with no recorded
+failure. Among the A1/A2/B candidate queries, no hit in the technically
+complete remote modes met the workflow-defined near-identical criterion of
+query coverage >=80% with protein identity >=90% or nucleotide identity
+>=95%; the positive controls succeeded where included. However,
+`protein_nonviral` attempts 1-6 produced structurally
+invalid remote archives, attempt 7 ended with a transient remote-transport
+failure, and the search budget was then exhausted. Remaining nucleotide modes
+have not produced a complete validated gate. Those remote technical failures
+are neither biological negative results nor evidence of novelty. No
+current-database absence or novelty claim is allowed until the entire gate
+completes with valid controls and provenance.
 
 ## Claims excluded
 
@@ -30,13 +73,11 @@ The three labels denote computational sequence clusters. A1 and A2 are not count
 
 ## P0 submission blockers
 
-1. Complete and freeze the current nr, nt, TSA, environmental, viral, and nonviral search gate with validated controls, search dates, parameters, and database provenance.
-2. Perform mapping-seed-free per-library assembly and recover non-source assemblies. A2 requires an independent second assembly; if that fails, downgrade or remove it from the primary discovery count.
-3. Add proper-pair, insert/orientation, duplicate-aware, candidate-diagnostic read, endpoint, soft-clip, chimera, and coverage-discontinuity checks.
-4. Compete reads against *Panax* nuclear and organellar sequences, known *Panax* viruses, fungal/oomycete/root-community and other plausible eukaryotic decoys, plus UniVec/adapters.
-5. Treat the `Zh/Bh` phenotype crosswalk as unresolved unless an authoritative mapping is obtained. If it remains unresolved, omit every healthy/root-rot comparison. Retain the HiSeq 4000 versus NovaSeq 6000 platform discrepancy.
-6. Extend sequence architecture where possible to Pro-Pol, capsid proteins, additional ORFs, and putative segments. Rebuild the homolog panel with current top hits and disclose B's unstable tree context.
-7. Obtain a durable data-release plan: permanent DOI archive for evidence/code and an appropriate INSDC/TSA/TPA accession route for public-read-derived sequences. Expiring GitHub Actions artifacts are not a Data Availability solution.
+1. Complete and freeze the current nr, nt, TSA, environmental, viral, and nonviral search gate with validated controls, search dates, parameters, and database provenance. The present `protein_nonviral` failure is a remote structural/technical failure and must not be reported as a no-hit result.
+2. Complete competitive read assignment against *Panax* nuclear and organellar sequences, known *Panax* viruses, fungal/oomycete/root-community and other plausible eukaryotic decoys. The passed UniVec/local-contamination checks do not replace this broader decoy analysis.
+3. Obtain a durable data-release plan: a permanent DOI archive for evidence/code and an appropriate INSDC/TSA/TPA accession route for public-read-derived sequences. GitHub Actions artifact `9457903511` is verified analysis evidence, but an expiring workflow artifact is not a Data Availability solution.
+4. Freeze phenotype-neutral metadata and wording. Treat the `Zh/Bh` phenotype crosswalk as unresolved unless an authoritative mapping is obtained; otherwise omit every healthy/root-rot comparison. Retain the HiSeq 4000 versus NovaSeq 6000 platform discrepancy.
+5. Finalize the current homolog/architecture context, including Pro-Pol, capsid/additional-ORF or putative-segment evidence where recoverable, and disclose the uncertainty of B's phylogenetic placement.
 
 ## P1 analyses
 
@@ -51,9 +92,9 @@ The three labels denote computational sequence clusters. A1 and A2 are not count
 
 | Candidate | Current disposition | Why | Publication condition |
 |---|---|---|---|
-| A1 | Legacy retain; enhanced pending | Strong PF00680 evidence and multi-run mapping support; an older artifact contains a related RdRP, but that assembly has not yet passed the mapping-seed-free per-library gate | Resolve proper-pair/duplicate sensitivity, obtain non-source mapping-seed-free assembly context, and explain cross-run sequence heterogeneity. |
-| A2 | Provisional | Broadest mapping support and computationally separable from A1 | Must obtain a credible independent non-source assembly; otherwise downgrade or exclude from the primary count. |
-| B | Legacy strongest mapping candidate; enhanced pending | Longest partial ORF and near-full high-identity non-source **masked-consensus mapping** reproduction; this is not yet a de novo recovery claim | Complete de novo, decoy, and proper-pair checks and broaden architecture/homolog analyses because phylogenetic context is unstable. |
+| A1 | Retain as a partial sequence cluster; publication conditional | Fragment gate passed in 3 independent runs (2 strong); mapping-seed-free de novo recovery passed in source DRR853912 and non-source DRR853910/DRR853911 | Close the study-wide current-database, decoy, architecture/context, and deposition blockers; explain cross-run sequence heterogeneity without assigning a species. |
+| A2 | Retain as a partial sequence cluster; publication conditional | Fragment gate passed in all 6 runs (4 strong); de novo recovery passed in source DRR853912 and non-source DRR853907/DRR853910/DRR853911 | Close the study-wide blockers and keep A1/A2 as computationally distinct clusters rather than asserting two species. |
+| B | Retain as a partial sequence cluster; publication conditional | Fragment gate passed in 3 independent runs (2 strong); de novo recovery passed in source DRR853910 and non-source DRR853912 | Close the study-wide blockers and broaden architecture/homolog sensitivity because phylogenetic placement remains uncertain. |
 
 ## Tables required
 
