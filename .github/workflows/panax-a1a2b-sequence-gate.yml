@@ -107,12 +107,12 @@ jobs:
       max-parallel: 1
       matrix:
         mode:
-          - protein_nr
           - protein_viral
           - protein_nonviral
           - protein_tsa
           - protein_environmental
-          - nt_standard
+          - nt_viral
+          - nt_nonviral
           - nt_megablast
           - nt_panax
           - nt_tsa

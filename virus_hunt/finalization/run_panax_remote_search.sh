@@ -14,11 +14,10 @@ if find "$OUT" -mindepth 1 -maxdepth 1 -print -quit | grep -q .; then
   exit 2
 fi
 
+# Standard-task nr/nt coverage is split into explicit viral and nonviral
+# Entrez partitions. The unfiltered remote service can emit zero-statistic
+# archives that look successful but contain no usable search result.
 case "$MODE" in
-  protein_nr)
-    program=blastp; query="$QUERY_ROOT/panax_candidates_plus_controls_orfs.faa"; database=nr
-    extra=(-entrez_query 'all[filter]' -seg yes -comp_based_stats 2)
-    ;;
   protein_viral)
     program=blastp; query="$QUERY_ROOT/panax_candidates_plus_controls_orfs.faa"; database=nr
     extra=(-entrez_query 'txid10239[ORGN]' -seg yes -comp_based_stats 2)
@@ -35,9 +34,13 @@ case "$MODE" in
     program=blastp; query="$QUERY_ROOT/panax_three_partial_orfs.faa"; database=env_nr
     extra=(-seg yes -comp_based_stats 2)
     ;;
-  nt_standard)
+  nt_viral)
     program=blastn; query="$QUERY_ROOT/panax_candidates_plus_controls_contigs.fna"; database=nt
-    extra=(-task blastn -entrez_query 'all[filter]' -dust yes -soft_masking true)
+    extra=(-task blastn -entrez_query 'txid10239[ORGN]' -dust yes -soft_masking true)
+    ;;
+  nt_nonviral)
+    program=blastn; query="$QUERY_ROOT/panax_three_contigs.fna"; database=nt
+    extra=(-task blastn -entrez_query 'NOT txid10239[ORGN]' -dust yes -soft_masking true)
     ;;
   nt_megablast)
     program=blastn; query="$QUERY_ROOT/panax_candidates_plus_controls_contigs.fna"; database=nt
@@ -157,7 +160,7 @@ else:
         hit_counts[qid]=len(hits)
 if observed != expected_lengths:
     errors.append(f'query reports mismatch: observed={observed}, expected={expected_lengths}')
-control_modes={'protein_nr','protein_viral','nt_standard','nt_megablast'}
+control_modes={'protein_viral','nt_viral','nt_megablast'}
 if mode in control_modes:
     for control in ('PNX_Duplo_A_control','PNX_Duplo_B_control'):
         if hit_counts.get(control,0) < 1:

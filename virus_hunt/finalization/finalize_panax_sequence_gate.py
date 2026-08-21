@@ -13,10 +13,10 @@ from pathlib import Path
 CANDIDATES = ("PNX_Picorna_A1", "PNX_Picorna_A2", "PNX_Picorna_B")
 CONTROLS = ("PNX_Duplo_A_control", "PNX_Duplo_B_control")
 REMOTE_MODES = (
-    "protein_nr", "protein_viral", "protein_nonviral", "protein_tsa",
-    "protein_environmental", "nt_standard", "nt_megablast", "nt_panax", "nt_tsa",
+    "protein_viral", "protein_nonviral", "protein_tsa", "protein_environmental",
+    "nt_viral", "nt_nonviral", "nt_megablast", "nt_panax", "nt_tsa",
 )
-CONTROL_MODES = {"protein_nr", "protein_viral", "nt_standard", "nt_megablast"}
+CONTROL_MODES = {"protein_viral", "nt_viral", "nt_megablast"}
 
 
 def sha(path: Path) -> str:
@@ -237,14 +237,14 @@ def main() -> int:
         "technical_complete": technical_complete, "failures": failures,
         "expected_artifacts": expected_artifacts, "observed_artifacts": observed_artifacts,
         "upstream_results": upstream,
-        "database_coverage_caveat": "NCBI nt excludes bulk WGS and some project-based TSA/environmental sequence. Generic remote WGS/env_nt aliases were not treated as valid databases; therefore absence of a near-identical hit is not an exhaustive GenBank novelty proof.",
+        "database_coverage_caveat": "Standard-task nr/nt coverage is split into explicit viral and nonviral Entrez partitions because the unfiltered remote service returned structurally invalid zero-statistic archives. Records without usable taxonomy can fall outside those partitions. NCBI nt also excludes bulk WGS and some project-based TSA/environmental sequence; therefore absence of a near-identical hit is not an exhaustive GenBank novelty proof.",
         "claim_boundary": "A passing result retains a hash-locked partial Picornavirales-like sequence candidate for read-support analysis. It does not establish a formal new species, true Panax host, active replication, root-rot association, causality, pathogenicity, transmission, or agricultural/medical effect.",
     }
     (args.out / "TECHNICAL_COMPLETENESS.json").write_text(json.dumps(completeness, indent=2) + "\n")
     (args.out / "CLAIM_BOUNDARY.md").write_text(
         "# Claim boundary\n\n"
         "A passing sequence gate supports only this statement: hash-locked partial RNA-sequence candidates with Picornavirales-like PF00680/RdRP evidence were recovered from Panax notoginseng-associated root RNA-seq data. It does not establish formal virus species, the true biological host, active replication, root-rot association or causation, pathogenicity, transmission, or agricultural/medical effects. No-hit and sequence divergence are not taxonomic novelty proofs.\n\n"
-        "The NCBI nucleotide collection does not provide one universal remote alias covering all bulk WGS, TSA, and environmental project sequence; that coverage gap is retained explicitly rather than hidden.\n"
+        "Standard-task nr/nt coverage is partitioned into explicit viral and nonviral Entrez searches because the unfiltered remote service returned structurally invalid zero-statistic archives. Records lacking usable taxonomy can fall outside those partitions. The NCBI nucleotide collection also does not provide one universal remote alias covering all bulk WGS, TSA, and environmental project sequence; these coverage gaps are retained explicitly rather than hidden.\n"
     )
     report = [
         "# Panax A1/A2/B final sequence gate", "",
