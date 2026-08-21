@@ -177,7 +177,7 @@ def extract_references(args: argparse.Namespace) -> int:
                 f"current RefSeq product mismatch for {accession}: expected fragment "
                 f"{row['expected_product_fragment']!r}; observed {header!r}"
             )
-        if not re.fullmatch(r"[ABCDEFGHIKLMNPQRSTVWXYZ*]+", sequence):
+        if not re.fullmatch(r"[ABCDEFGHIKJLMNPQRSTVWXYZ*]+", sequence):
             raise SystemExit(f"invalid amino-acid character in curated reference {accession}")
         sequence = sequence.rstrip("*")
         if "*" in sequence or len(sequence) < 300 or len(sequence) != int(row["expected_aa_length"]):
