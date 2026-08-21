@@ -1,0 +1,342 @@
+name: Panax A1 A2 B final sequence gate
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/panax-a1a2b-sequence-gate.yml'
+      - 'virus_hunt/finalization/**'
+      - 'virus_hunt/validation_inputs/**'
+  workflow_dispatch:
+
+concurrency:
+  group: panax-a1a2b-sequence-gate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  SOURCE_COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  NCBI_BLAST_VERSION: '2.17.0'
+  NCBI_BLAST_LINUX_X64_SHA256: 3888112d8207831aa47371d93583c601f058f88b5db22dc782438b039a3a411b
+
+jobs:
+  preflight:
+    name: build exact immutable queries
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout immutable source head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Test remote archive failure classification
+        run: |
+          python -m unittest discover \
+            -s virus_hunt/finalization/tests \
+            -p 'test_*.py' -v
+
+      - name: Rebuild and verify A1 A2 B queries
+        shell: bash
+        run: |
+          set -euo pipefail
+          python virus_hunt/finalization/build_panax_three_queries.py \
+            --out queries \
+            --contig-part virus_hunt/validation_inputs/all_member_contigs.part1.fna \
+            --contig-part virus_hunt/validation_inputs/all_member_contigs.part2.fna \
+            --contig-part virus_hunt/validation_inputs/all_member_contigs.part3.fna \
+            --rdrp virus_hunt/validation_inputs/all_member_rdrp.faa \
+            --control-contigs virus_hunt/validation_inputs/candidate_contigs.fna \
+            --candidate-manifest virus_hunt/validation_inputs/candidate_manifest.json \
+            --strict-members virus_hunt/validation_inputs/strict_candidate_members.tsv
+          printf 'repository\tevent\tsource_commit_sha\tevent_sha\trun_id\trun_attempt\n%s\t%s\t%s\t%s\t%s\t%s\n' \
+            "$GITHUB_REPOSITORY" "$GITHUB_EVENT_NAME" "$SOURCE_COMMIT_SHA" "$GITHUB_SHA" \
+            "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > queries/WORKFLOW_PROVENANCE.tsv
+          rm queries/SHA256SUMS.txt
+          (cd queries && find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt)
+          (cd queries && sha256sum -c SHA256SUMS.txt)
+
+      - name: Upload immutable query bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: panax-query-preflight
+          path: queries
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 9
+          # A failed-job rerun keeps the same workflow-run ID. Replace the
+          # prior attempt rather than leaving duplicate same-name evidence.
+          overwrite: true
+
+  blast_tool:
+    name: pinned current NCBI BLAST+ client
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download and verify NCBI BLAST+ 2.17.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="ncbi-blast-${NCBI_BLAST_VERSION}+-x64-linux.tar.gz"
+          source_url="https://ftp.ncbi.nlm.nih.gov/blast/executables/blast+/${NCBI_BLAST_VERSION}/${archive}"
+          curl --fail --show-error --location --retry 5 --retry-all-errors \
+            --connect-timeout 20 \
+            --output "$archive" "$source_url"
+          printf '%s  %s\n' "$NCBI_BLAST_LINUX_X64_SHA256" "$archive" | sha256sum -c -
+          tar --no-same-owner -xzf "$archive"
+          mkdir -p blast-tool/bin
+          cp "ncbi-blast-${NCBI_BLAST_VERSION}+"/bin/{blastp,blastn,blast_formatter} \
+            blast-tool/bin/
+          blast-tool/bin/blastp -version | grep -F "blastp: ${NCBI_BLAST_VERSION}+"
+          blast-tool/bin/blastn -version | grep -F "blastn: ${NCBI_BLAST_VERSION}+"
+          blast-tool/bin/blast_formatter -version | grep -F "blast_formatter: ${NCBI_BLAST_VERSION}+"
+          for tool in blastp blastn blast_formatter; do
+            ! ldd "blast-tool/bin/$tool" | grep -q 'not found'
+          done
+          printf 'version\tsource_url\tarchive_sha256\n%s\t%s\t%s\n' \
+            "$NCBI_BLAST_VERSION" "$source_url" "$NCBI_BLAST_LINUX_X64_SHA256" \
+            > blast-tool/PROVENANCE.tsv
+          (cd blast-tool && find . -type f ! -name SHA256SUMS.txt -print0 | \
+            sort -z | xargs -0 sha256sum > SHA256SUMS.txt)
+          (cd blast-tool && sha256sum -c SHA256SUMS.txt)
+
+      - name: Upload pinned BLAST+ client
+        uses: actions/upload-artifact@v4
+        with:
+          name: ncbi-blast-2.17.0-linux-x64
+          path: blast-tool
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 9
+          overwrite: true
+
+  local_evidence:
+    name: current local databases and contamination gate
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - name: Checkout immutable source head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Download and verify exact queries
+        uses: actions/download-artifact@v4
+        with:
+          name: panax-query-preflight
+          path: queries
+
+      - name: Install local audit tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq curl ncbi-blast+ hmmer
+
+      - name: Run current RefSeq Pfam UniVec audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd queries && sha256sum -c SHA256SUMS.txt)
+          mkdir -p "$RUNNER_TEMP/panax-local-cache"
+          bash virus_hunt/finalization/run_panax_local_evidence.sh \
+            queries virus_hunt/finalization/panax_rdrp_curated_references.tsv \
+            local-evidence "$RUNNER_TEMP/panax-local-cache"
+
+      - name: Upload local evidence whether pass or fail
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: panax-local-evidence
+          path: local-evidence
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 9
+          overwrite: true
+
+  remote_search:
+    name: remote current DB ${{ matrix.mode }}
+    needs: [preflight, blast_tool]
+    runs-on: ubuntu-24.04
+    # Minute-scale transport backoff is intentional. Scientific validation
+    # remains fail-closed after the bounded retry schedule is exhausted.
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        mode:
+          - protein_viral
+          - protein_nonviral
+          - protein_tsa
+          - protein_environmental
+          - nt_viral
+          - nt_nonviral
+          - nt_megablast
+          - nt_panax
+          - nt_tsa
+    steps:
+      - name: Checkout immutable source head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Download and verify exact queries
+        uses: actions/download-artifact@v4
+        with:
+          name: panax-query-preflight
+          path: queries
+
+      - name: Download pinned current BLAST+ client
+        uses: actions/download-artifact@v4
+        with:
+          name: ncbi-blast-2.17.0-linux-x64
+          path: blast-tool
+
+      - name: Verify and activate pinned current BLAST+ client
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd blast-tool && sha256sum -c SHA256SUMS.txt)
+          chmod 0755 blast-tool/bin/{blastp,blastn,blast_formatter}
+          blast-tool/bin/blastp -version | grep -F "blastp: ${NCBI_BLAST_VERSION}+"
+          blast-tool/bin/blastn -version | grep -F "blastn: ${NCBI_BLAST_VERSION}+"
+          blast-tool/bin/blast_formatter -version | grep -F "blast_formatter: ${NCBI_BLAST_VERSION}+"
+          for tool in blastp blastn blast_formatter; do
+            ! ldd "blast-tool/bin/$tool" | grep -q 'not found'
+          done
+          echo "$GITHUB_WORKSPACE/blast-tool/bin" >> "$GITHUB_PATH"
+
+      - name: Run failure-aware remote search
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd queries && sha256sum -c SHA256SUMS.txt)
+          bash virus_hunt/finalization/run_panax_remote_search.sh \
+            '${{ matrix.mode }}' queries 'remote-${{ matrix.mode }}'
+
+      - name: Upload remote evidence whether pass or fail
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: panax-remote-${{ matrix.mode }}
+          path: remote-${{ matrix.mode }}
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 9
+          overwrite: true
+
+  phylogeny:
+    name: homologous PF00680 core phylogeny
+    needs: local_evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      TRIMAL_SOURCE_REPOSITORY: https://github.com/inab/trimal.git
+      TRIMAL_SOURCE_COMMIT: d637091abe33595775f40480970d1a18d87a7bcb
+    steps:
+      - name: Checkout immutable source head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Download and verify local evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: panax-local-evidence
+          path: local-evidence
+
+      - name: Install phylogenetic tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq mafft iqtree build-essential
+          trimal_root="$RUNNER_TEMP/trimal-d637091abe33595775f40480970d1a18d87a7bcb"
+          git init -q "$trimal_root"
+          git -C "$trimal_root" remote add origin "$TRIMAL_SOURCE_REPOSITORY"
+          git -C "$trimal_root" fetch --depth=1 origin "$TRIMAL_SOURCE_COMMIT"
+          git -C "$trimal_root" checkout -q --detach FETCH_HEAD
+          observed_commit="$(git -C "$trimal_root" rev-parse HEAD)"
+          [[ "$observed_commit" == "$TRIMAL_SOURCE_COMMIT" ]]
+          make -C "$trimal_root/source" -j2
+          sudo install -m 0755 "$trimal_root/source/trimal" /usr/local/bin/trimal
+          trimal --version
+
+      - name: Run unrooted trimmed and untrimmed sensitivity trees
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd local-evidence && sha256sum -c SHA256SUMS.txt)
+          bash virus_hunt/finalization/run_panax_phylogeny.sh \
+            local-evidence/RDRP_CORES.faa \
+            virus_hunt/finalization/panax_rdrp_curated_references.tsv \
+            virus_hunt/finalization/current_nr_top_hit_proteins.tsv phylogeny
+
+      - name: Upload phylogeny whether pass or fail
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: panax-rdrp-phylogeny
+          path: phylogeny
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 9
+          overwrite: true
+
+  finalize:
+    name: strict aggregate and claim boundary
+    if: always()
+    needs: [preflight, local_evidence, remote_search, phylogeny]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout immutable source head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Download every available gate artifact
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: panax-*
+          path: collected
+          merge-multiple: false
+
+      - name: Record upstream job results
+        shell: bash
+        env:
+          PREFLIGHT_RESULT: ${{ needs.preflight.result }}
+          LOCAL_RESULT: ${{ needs.local_evidence.result }}
+          REMOTE_RESULT: ${{ needs.remote_search.result }}
+          PHYLOGENY_RESULT: ${{ needs.phylogeny.result }}
+        run: |
+          python - <<'PY'
+          import json,os
+          payload={
+              'preflight':os.environ['PREFLIGHT_RESULT'],
+              'local_evidence':os.environ['LOCAL_RESULT'],
+              'remote_search':os.environ['REMOTE_RESULT'],
+              'phylogeny':os.environ['PHYLOGENY_RESULT'],
+          }
+          open('UPSTREAM_RESULTS.json','w').write(json.dumps(payload,indent=2)+'\n')
+          PY
+
+      - name: Build final sequence gate and enforce completeness
+        shell: bash
+        run: |
+          set -euo pipefail
+          python virus_hunt/finalization/finalize_panax_sequence_gate.py \
+            --collected collected --upstream-results UPSTREAM_RESULTS.json --out final-sequence-gate
+
+      - name: Upload final sequence gate whether pass or fail
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PANAX_A1_A2_B_FINAL_SEQUENCE_GATE_20260821
+          path: final-sequence-gate
+          if-no-files-found: warn
+          retention-days: 30
+          compression-level: 9
+          overwrite: true

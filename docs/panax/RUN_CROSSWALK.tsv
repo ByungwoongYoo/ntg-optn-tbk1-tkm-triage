@@ -1,0 +1,7 @@
+archive_token	ddbj_ena_run	ngdc_run	ddbj_experiment	ngdc_experiment	biosample	ena_sample	ngdc_sample	run_source_url	retrieval_date_utc	source_snapshot_sha256	article_condition_label_mapping	article_platform	archive_platform	plants_pooled_per_replicate_article
+ZhA	DRR853907	CRR2105996	DRX831960	CRX1962292	SAMD01772848	DRS610865	SAMC5870565	https://www.ebi.ac.uk/ena/browser/view/DRR853907	2026-08-21	not_frozen	unresolved	Illumina HiSeq 4000	Illumina NovaSeq 6000	5
+ZhB	DRR853908	CRR2105997	DRX831961	CRX1962293	SAMD01772849	DRS610866	SAMC5870566	https://www.ebi.ac.uk/ena/browser/view/DRR853908	2026-08-21	not_frozen	unresolved	Illumina HiSeq 4000	Illumina NovaSeq 6000	5
+ZhC	DRR853909	CRR2105998	DRX831962	CRX1962294	SAMD01772850	DRS610867	SAMC5870567	https://www.ebi.ac.uk/ena/browser/view/DRR853909	2026-08-21	not_frozen	unresolved	Illumina HiSeq 4000	Illumina NovaSeq 6000	5
+BhA	DRR853910	CRR2105999	DRX831963	CRX1962295	SAMD01772851	DRS610868	SAMC5870568	https://www.ebi.ac.uk/ena/browser/view/DRR853910	2026-08-21	not_frozen	unresolved	Illumina HiSeq 4000	Illumina NovaSeq 6000	5
+BhB	DRR853911	CRR2106000	DRX831964	CRX1962296	SAMD01772852	DRS610869	SAMC5870569	https://www.ebi.ac.uk/ena/browser/view/DRR853911	2026-08-21	not_frozen	unresolved	Illumina HiSeq 4000	Illumina NovaSeq 6000	5
+BhC	DRR853912	CRR2106001	DRX831965	CRX1962297	SAMD01772853	DRS610870	SAMC5870570	https://www.ebi.ac.uk/ena/browser/view/DRR853912	2026-08-21	not_frozen	unresolved	Illumina HiSeq 4000	Illumina NovaSeq 6000	5
