@@ -265,13 +265,27 @@ else:
 if observed != expected_lengths:
     errors.append(f'query reports mismatch: observed={observed}, expected={expected_lengths}')
 hit_rows=[]
+hit_fields=['qseqid','saccver','sallacc','sallseqid','pident','length','qlen','slen',
+            'qstart','qend','sstart','send','evalue','bitscore','qcovs','staxids',
+            'sscinames','stitle','sseq']
 for raw in hits_path.read_text(errors='replace').splitlines():
-    fields=raw.split('\t')
-    if len(fields) >= 13:
-        hit_rows.append({
-            'qseqid':fields[0], 'saccver':fields[1], 'pident':float(fields[2]),
-            'qcovs':float(fields[12]),
-        })
+    values=raw.split('\t')
+    if len(values) != len(hit_fields):
+        errors.append(f'malformed BLAST result row with {len(values)} fields')
+        continue
+    row=dict(zip(hit_fields,values))
+    try:
+        row['pident']=float(row['pident'])
+        row['qcovs']=float(row['qcovs'])
+    except ValueError:
+        errors.append('malformed numeric value in BLAST result row')
+        continue
+    hit_rows.append(row)
+def exact_accessions(row):
+    accessions={row['saccver']}
+    for identifier in row['sallseqid'].split(';'):
+        accessions.update(token for token in identifier.split('|') if token)
+    return accessions
 for spec in control_specs:
     control=spec['id']
     if hit_counts.get(control,0) < 1:
@@ -282,6 +296,7 @@ for spec in control_specs:
         matches=[
             row for row in hit_rows
             if row['qseqid']==control
+            and accession in exact_accessions(row)
             and row['pident']>=float(spec['min_identity'])
             and row['qcovs']>=float(spec['min_query_coverage'])
         ]
@@ -301,29 +316,158 @@ PY
 success=0
 attempts=0
 success_attempt=0
-for attempt in 1 2; do
-  attempts="$attempt"
+# A short immediate retry is insufficient for a shared remote service.  The
+# 2026-08-21 audit saw six otherwise unrelated matrix cells return the same
+# Blast4 transport exception in a 20-minute window, while sibling modes later
+# completed.  Keep the scientific gate fail-closed, but retry the transport on
+# a bounded minute-scale schedule that stays well below NCBI's request-rate
+# guidance.  The schedule is deterministic so the provenance is auditable.
+max_attempts="${PANAX_REMOTE_MAX_ATTEMPTS:-8}"
+[[ "$max_attempts" =~ ^[1-8]$ ]] || {
+  echo "PANAX_REMOTE_MAX_ATTEMPTS must be an integer from 1 through 8" >&2
+  exit 2
+}
+attempt_timeout_seconds="${PANAX_REMOTE_ATTEMPT_TIMEOUT_SECONDS:-6300}"
+[[ "$attempt_timeout_seconds" =~ ^[0-9]+$ ]] && \
+  (( attempt_timeout_seconds >= 60 && attempt_timeout_seconds <= 6300 )) || {
+  echo "PANAX_REMOTE_ATTEMPT_TIMEOUT_SECONDS must be an integer from 60 through 6300" >&2
+  exit 2
+}
+# GitHub-hosted jobs have a hard six-hour ceiling.  Stop network work after a
+# five-hour internal budget so logs, status, checksums, and the failure artifact
+# are always finalized before the outer 360-minute job timeout.
+search_budget_seconds="${PANAX_REMOTE_SEARCH_BUDGET_SECONDS:-18000}"
+[[ "$search_budget_seconds" =~ ^[0-9]+$ ]] && \
+  (( search_budget_seconds >= 300 && search_budget_seconds <= 19800 )) || {
+  echo "PANAX_REMOTE_SEARCH_BUDGET_SECONDS must be an integer from 300 through 19800" >&2
+  exit 2
+}
+minimum_attempt_seconds=60
+backoff_seconds=(0 120 300 600 900 1200 1800 2700)
+search_start_epoch="$(date +%s)"
+search_deadline_epoch=$((search_start_epoch + search_budget_seconds))
+termination_reason=max_attempts_exhausted
+printf '%s\n' "$search_budget_seconds" > "$OUT/SEARCH_BUDGET_SECONDS.txt"
+printf 'attempt\tstart_utc\tend_utc\tbackoff_before_seconds\tattempt_timeout_seconds\tblast_rc\tjson_formatter_rc\ttsv_formatter_rc\tvalidator_rc\tfailure_stage\tfailure_class\tretryable\tresult_archive_bytes\tresult_archive_sha256\n' \
+  > "$OUT/REMOTE_ATTEMPTS.tsv"
+for attempt in $(seq 1 "$max_attempts"); do
   attempt_stdout="$OUT/STDOUT.attempt${attempt}.txt"
   attempt_stderr="$OUT/STDERR.attempt${attempt}.txt"
-  printf '[%s] attempt=%s\n' "$(date -u +%FT%TZ)" "$attempt" > "$attempt_stderr"
-  : > "$attempt_stdout"
-  rm -f "$OUT/RESULTS.asn" "$OUT/RESULTS.json" "$OUT/HITS.tsv"
-  if timeout 105m "${cmd[@]}" >> "$attempt_stdout" 2>> "$attempt_stderr" && \
-     [[ -s "$OUT/RESULTS.asn" ]] && \
-     blast_formatter -archive "$OUT/RESULTS.asn" -outfmt 15 -out "$OUT/RESULTS.json" \
-       >> "$attempt_stdout" 2>> "$attempt_stderr" && \
-     blast_formatter -archive "$OUT/RESULTS.asn" \
-       -outfmt '6 qseqid saccver pident length qlen slen qstart qend sstart send evalue bitscore qcovs staxids sscinames stitle sseq' \
-       -out "$OUT/HITS.tsv" >> "$attempt_stdout" 2>> "$attempt_stderr" && \
-     [[ -s "$OUT/RESULTS.json" ]] && \
-     validate_remote_archive "$OUT/RESULTS.json" "$OUT/EXPECTED_QUERIES.json" "$MODE" "$OUT/HITS.tsv" \
-       >> "$attempt_stdout" 2>> "$attempt_stderr"; then
-    success=1
-    success_attempt="$attempt"
+  backoff="${backoff_seconds[$((attempt-1))]}"
+
+  now_epoch="$(date +%s)"
+  remaining_seconds=$((search_deadline_epoch - now_epoch))
+  if (( remaining_seconds < backoff + minimum_attempt_seconds )); then
+    termination_reason=search_budget_exhausted_before_attempt
     break
   fi
-  (( attempt < 2 )) && sleep $((attempt * 30))
+  if (( backoff > 0 )); then
+    sleep "$backoff"
+  fi
+  now_epoch="$(date +%s)"
+  remaining_seconds=$((search_deadline_epoch - now_epoch))
+  current_timeout_seconds="$attempt_timeout_seconds"
+  if (( current_timeout_seconds > remaining_seconds )); then
+    current_timeout_seconds="$remaining_seconds"
+  fi
+  if (( current_timeout_seconds < minimum_attempt_seconds )); then
+    termination_reason=search_budget_exhausted_before_attempt
+    break
+  fi
+
+  attempts="$attempt"
+  start_utc="$(date -u +%FT%TZ)"
+  printf '[%s] attempt=%s backoff_before_seconds=%s timeout_seconds=%s\n' \
+    "$start_utc" "$attempt" "$backoff" "$current_timeout_seconds" > "$attempt_stderr"
+  : > "$attempt_stdout"
+  rm -f "$OUT/RESULTS.asn" "$OUT/RESULTS.json" "$OUT/HITS.tsv"
+  blast_rc=0
+  json_formatter_rc=-1
+  tsv_formatter_rc=-1
+  validator_rc=-1
+  failure_stage=none
+  failure_class=none
+  retryable=1
+
+  timeout --signal=TERM --kill-after=60s "${current_timeout_seconds}s" "${cmd[@]}" \
+    >> "$attempt_stdout" 2>> "$attempt_stderr" || blast_rc=$?
+  if (( blast_rc != 0 )); then
+    failure_stage=blast
+    if (( blast_rc == 124 || blast_rc == 137 )); then
+      failure_class=transient_timeout
+    elif grep -Eiq \
+      'unknown argument|invalid argument|command line argument error|query is empty|fasta-reader|cannot open|no such file|BLAST query/options error' \
+      "$attempt_stderr"; then
+      failure_class=deterministic_input_error
+      retryable=0
+    elif grep -Eiq \
+      'Blast4-request|CRPCClientException|connection stream is in bad state|timed out|timeout|temporar|try again|connection (reset|closed|refused)|service unavailable|HTTP[^0-9]*(429|5[0-9][0-9])' \
+      "$attempt_stderr"; then
+      failure_class=transient_remote_transport
+    else
+      failure_class=remote_process_error
+    fi
+  elif [[ ! -s "$OUT/RESULTS.asn" ]]; then
+    failure_stage=blast
+    failure_class=missing_remote_archive
+  else
+    json_formatter_rc=0
+    blast_formatter -archive "$OUT/RESULTS.asn" -outfmt 15 -out "$OUT/RESULTS.json" \
+      >> "$attempt_stdout" 2>> "$attempt_stderr" || json_formatter_rc=$?
+    if (( json_formatter_rc != 0 )) || [[ ! -s "$OUT/RESULTS.json" ]]; then
+      failure_stage=json_formatter
+      failure_class=structural_remote_archive
+    else
+      tsv_formatter_rc=0
+      blast_formatter -archive "$OUT/RESULTS.asn" \
+        -outfmt '6 qseqid saccver sallacc sallseqid pident length qlen slen qstart qend sstart send evalue bitscore qcovs staxids sscinames stitle sseq' \
+        -out "$OUT/HITS.tsv" >> "$attempt_stdout" 2>> "$attempt_stderr" || tsv_formatter_rc=$?
+      if (( tsv_formatter_rc != 0 )); then
+        failure_stage=tsv_formatter
+        failure_class=structural_remote_archive
+      else
+        validator_rc=0
+        validate_remote_archive \
+          "$OUT/RESULTS.json" "$OUT/EXPECTED_QUERIES.json" "$MODE" "$OUT/HITS.tsv" \
+          >> "$attempt_stdout" 2>> "$attempt_stderr" || validator_rc=$?
+        if (( validator_rc != 0 )); then
+          failure_stage=validator
+          if grep -Eiq 'positive control' "$attempt_stderr"; then
+            failure_class=deterministic_control_failure
+            retryable=0
+          else
+            failure_class=structural_remote_archive
+          fi
+        fi
+      fi
+    fi
+  fi
+
+  archive_bytes=0
+  archive_sha256=NA
+  [[ -f "$OUT/RESULTS.asn" ]] && archive_bytes=$(stat -c '%s' "$OUT/RESULTS.asn")
+  [[ -f "$OUT/RESULTS.asn" ]] && archive_sha256=$(sha256sum "$OUT/RESULTS.asn" | cut -d' ' -f1)
+  if (( blast_rc == 0 && json_formatter_rc == 0 && tsv_formatter_rc == 0 && validator_rc == 0 )); then
+    success=1
+    success_attempt="$attempt"
+    retryable=0
+    termination_reason=success
+  fi
+  end_utc="$(date -u +%FT%TZ)"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$attempt" "$start_utc" "$end_utc" "$backoff" "$current_timeout_seconds" \
+    "$blast_rc" "$json_formatter_rc" "$tsv_formatter_rc" "$validator_rc" \
+    "$failure_stage" "$failure_class" "$retryable" "$archive_bytes" "$archive_sha256" \
+    >> "$OUT/REMOTE_ATTEMPTS.tsv"
+  if (( success == 1 )); then
+    break
+  fi
+  if (( retryable == 0 )); then
+    termination_reason=nonretryable_failure
+    break
+  fi
 done
+printf '%s\n' "$termination_reason" > "$OUT/TERMINATION_REASON.txt"
 for log in "$OUT"/STDOUT.attempt*.txt; do [[ -f "$log" ]] && { printf '===== %s =====\n' "$(basename "$log")"; cat "$log"; }; done > "$OUT/STDOUT.txt"
 for log in "$OUT"/STDERR.attempt*.txt; do [[ -f "$log" ]] && { printf '===== %s =====\n' "$(basename "$log")"; cat "$log"; }; done > "$OUT/STDERR.txt"
 printf '%s\n' "$success" > "$OUT/SEARCH_SUCCESS.txt"
@@ -340,7 +484,7 @@ expected=json.loads((out/'EXPECTED_QUERIES.json').read_text())
 expected_lengths={x['id']:x['length'] for x in expected['queries']}
 validation_controls=expected.get('validation_control_ids',[])
 validation_control_specs=expected.get('validation_controls',[])
-fields=['qseqid','saccver','pident','length','qlen','slen','qstart','qend','sstart','send',
+fields=['qseqid','saccver','sallacc','sallseqid','pident','length','qlen','slen','qstart','qend','sstart','send',
         'evalue','bitscore','qcovs','staxids','sscinames','stitle','sseq']
 rows=[]
 for values in csv.reader((out/'HITS.tsv').open(errors='replace'),delimiter='\t'):
@@ -348,6 +492,8 @@ for values in csv.reader((out/'HITS.tsv').open(errors='replace'),delimiter='\t')
     if len(values) != len(fields):
         raise SystemExit(f'malformed BLAST result row with {len(values)} fields')
     rows.append(dict(zip(fields,values)))
+with (out/'REMOTE_ATTEMPTS.tsv').open(errors='replace') as handle:
+    attempt_history=list(csv.DictReader(handle,delimiter='\t'))
 success=(out/'SEARCH_SUCCESS.txt').read_text().strip()=='1'
 json_queries={}
 json_error=''
@@ -390,12 +536,18 @@ for candidate in expected_lengths:
         'top_hit':None if top is None else {k:top[k] for k in fields if k!='sseq'},
     }
 control_results={}
+def exact_accessions(row):
+    accessions={row['saccver']}
+    for identifier in row['sallseqid'].split(';'):
+        accessions.update(token for token in identifier.split('|') if token)
+    return accessions
 for spec in validation_control_specs:
     control=spec['id']
     accession=spec.get('expected_accession')
     matches=[
         row for row in rows
         if row['qseqid']==control
+        and (not accession or accession in exact_accessions(row))
         and float(row['pident'])>=float(spec.get('min_identity',0))
         and float(row['qcovs'])>=float(spec.get('min_query_coverage',0))
     ]
@@ -403,7 +555,10 @@ for spec in validation_control_specs:
         'expected_accession':accession,
         'min_query_coverage':spec.get('min_query_coverage'),
         'min_identity':spec.get('min_identity'),
-        'validated_accessions':sorted({row['saccver'] for row in matches})[:10],
+        'validated_accessions':sorted(
+            {row['saccver'] for row in matches}
+            | ({accession} if matches and accession else set())
+        )[:10],
         'validated':bool(matches),
     }
 status={
@@ -414,6 +569,9 @@ status={
     'validation_control_results':control_results,
     'expected_query_lengths':expected_lengths, 'json_query_lengths':json_queries,
     'command_completed_successfully':success, 'result_archive_valid':valid_json,
+    'attempt_count':len(attempt_history), 'attempt_history':attempt_history,
+    'termination_reason':(out/'TERMINATION_REASON.txt').read_text().strip(),
+    'search_budget_seconds':int((out/'SEARCH_BUDGET_SECONDS.txt').read_text().strip()),
     'fatal_stderr_markers':fatal_markers, 'unexpected_result_query_ids':unexpected,
     'result_query_length_mismatches':bad_qlen, 'technical_complete':command_valid,
     'result_row_count':len(rows), 'per_query':per_query,

@@ -152,7 +152,9 @@ jobs:
     name: remote current DB ${{ matrix.mode }}
     needs: [preflight, blast_tool]
     runs-on: ubuntu-24.04
-    timeout-minutes: 230
+    # Minute-scale transport backoff is intentional. Scientific validation
+    # remains fail-closed after the bounded retry schedule is exhausted.
+    timeout-minutes: 360
     strategy:
       fail-fast: false
       max-parallel: 1
