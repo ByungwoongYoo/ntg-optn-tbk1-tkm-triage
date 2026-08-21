@@ -6,6 +6,14 @@ on:
     paths:
       - '.github/workflows/panax-sixrun-clean-final.yml'
       - 'virus_hunt/finalization/DRR853911_FASTQ_URLS.txt'
+      - 'virus_hunt/finalization/audit_panax_denovo.py'
+      - 'virus_hunt/finalization/audit_panax_fragments.py'
+      - 'virus_hunt/finalization/aggregate_panax_denovo.py'
+      - 'virus_hunt/finalization/aggregate_panax_fragment_audit.py'
+      - 'virus_hunt/finalization/summarize_panax_fragment_depth.py'
+      - 'virus_hunt/finalization/panax_candidate_structure.tsv'
+      - 'virus_hunt/finalization/panax_decoy_scope.json'
+      - 'virus_hunt/finalization/panax_enhanced_audit_thresholds.json'
       - 'virus_hunt/validation_inputs/all_member_contigs.part2.fna'
       - 'virus_hunt/validation_inputs/all_member_contigs.part3.fna'
   workflow_dispatch:
@@ -22,7 +30,10 @@ jobs:
   map:
     name: raw-map ${{ matrix.run }} (${{ matrix.alias }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 210
+    # Full paired FASTQ validation plus mapping-seed-free assembly is bounded
+    # just below the GitHub-hosted job ceiling. Assembly failures are preserved
+    # as technical_incomplete evidence instead of being converted to no-hit.
+    timeout-minutes: 355
     strategy:
       fail-fast: false
       # ENA transfers were unstable when six jobs each opened four TLS streams.
@@ -42,10 +53,10 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
-      - name: Install mapping and variant tools
+      - name: Install mapping, assembly, search, and variant tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq curl pigz minimap2 samtools bcftools
+          sudo apt-get install -y -qq curl pigz minimap2 samtools bcftools megahit ncbi-blast+
 
       - name: Build three-way competitive reference
         shell: bash
@@ -56,7 +67,7 @@ jobs:
               virus_hunt/validation_inputs/all_member_contigs.part3.fna > work/all_members.fna
           python - <<'PY'
           from pathlib import Path
-          import hashlib
+          import csv,hashlib
           wanted = {
               'DRR853912_10707': (
                   'PNX_Picorna_A1_ref',1988,'62c9bf75a32cbf28d74295350bda538ce702f5702722af0c8d56f0eada56d0b3',
@@ -70,6 +81,11 @@ jobs:
                   'PNX_Picorna_B_ref',3458,'d3db01132aacf3e860ef247496969f7df0c39d178ceb6a77e9966e866dc82a29',
                   'AGACGTGTGCTCTTCCGATCTC',3436,'d7dfe0868911ab9fb8bad8b98a4872878ef55f45f550725f801ffd96b7e14bc9',
               ),
+          }
+          source_runs = {
+              'PNX_Picorna_A1_ref':'DRR853912',
+              'PNX_Picorna_A2_ref':'DRR853912',
+              'PNX_Picorna_B_ref':'DRR853910',
           }
           seqs = {}
           current = None
@@ -118,6 +134,24 @@ jobs:
                       f'{old}\t{new}\t{len(source)}\t{observed_source_sha}\t'
                       f'{len(trim_prefix)}\t{len(s)}\t{observed_reference_sha}\n'
                   )
+          with Path('virus_hunt/finalization/panax_candidate_structure.tsv').open(newline='') as handle:
+              crosswalk={row['reference']:row for row in csv.DictReader(handle,delimiter='\t')}
+          if set(crosswalk)!={value[0] for value in wanted.values()}:
+              raise SystemExit(f'candidate crosswalk reference set mismatch: {sorted(crosswalk)}')
+          for old,(new,source_length,source_sha,trim_prefix,reference_length,reference_sha) in wanted.items():
+              row=crosswalk[new]
+              expected={
+                  'source_run':source_runs[new],
+                  'source_contig':old,
+                  'source_length_nt':str(source_length),
+                  'source_sha256':source_sha,
+                  'reference_length_nt':str(reference_length),
+                  'removed_5prime_nt':str(len(trim_prefix)),
+                  'reference_sha256':reference_sha,
+              }
+              mismatches={field:(row.get(field),value) for field,value in expected.items() if row.get(field)!=value}
+              if mismatches:
+                  raise SystemExit(f'candidate crosswalk mismatch for {new}: {mismatches}')
           PY
           samtools faidx work/refs.fna
           (cd work && sha256sum refs.fna refs.fna.fai REFERENCE_METADATA.tsv > REFERENCE_SHA256.txt)
@@ -135,6 +169,8 @@ jobs:
             printf 'minimap2\t'; minimap2 --version
             printf 'samtools\t'; samtools --version | sed -n '1p'
             printf 'bcftools\t'; bcftools --version | sed -n '1p'
+            printf 'megahit\t'; megahit --version 2>&1 | sed -n '1p'
+            printf 'blastn\t'; blastn -version | sed -n '1p'
           } > "work/${RUN}/TOOL_VERSIONS.txt"
 
       - name: Download and integrity-check complete paired FASTQ files
@@ -168,6 +204,11 @@ jobs:
                   raise SystemExit(f'invalid FTP URL in manifest: {run}/{mate}')
           PY
           printf 'run\tmate\tattempt\tprotocol\tstart_bytes\texit_code\tend_bytes\tutc\n' > "work/${RUN}/DOWNLOAD_ATTEMPTS.tsv"
+          # Reserve a deterministic 120-minute wall-clock budget for both
+          # mates, leaving time inside the 355-minute job for mapping, the
+          # fixed 120-minute assembly, audit, compaction, and artifact upload.
+          download_deadline_epoch=$(( $(date +%s) + 7200 ))
+          printf '%s\n' 7200 > "work/${RUN}/DOWNLOAD_BUDGET_SECONDS.txt"
 
           download_and_verify() {
             local mate="$1" https_url="$2" ftp_url="$3" expected_md5="$4" expected_bytes="$5"
@@ -177,13 +218,22 @@ jobs:
             for protocol in https ftp; do
               if [[ "$protocol" == https ]]; then url="$https_url"; else url="$ftp_url"; fi
               for attempt in $(seq 1 15); do
+                remaining_seconds=$(( download_deadline_epoch - $(date +%s) ))
+                if (( remaining_seconds < 60 )); then
+                  echo "Shared two-mate download budget exhausted for ${RUN}" >&2
+                  return 1
+                fi
+                attempt_timeout_seconds=1200
+                (( attempt_timeout_seconds > remaining_seconds )) && \
+                  attempt_timeout_seconds="$remaining_seconds"
                 start_bytes=0
                 [[ -f "$file" ]] && start_bytes=$(stat -c '%s' "$file")
                 rc=0
                 protocol_args=()
                 [[ "$protocol" == https ]] && protocol_args+=(--http1.1)
                 curl --fail --location "${protocol_args[@]}" --silent --show-error \
-                  --connect-timeout 30 --max-time 1800 --speed-limit 1024 --speed-time 120 \
+                  --connect-timeout 30 --max-time "$attempt_timeout_seconds" \
+                  --speed-limit 1024 --speed-time 120 \
                   --continue-at - --output "$file" "$url" || rc=$?
                 end_bytes=0
                 [[ -f "$file" ]] && end_bytes=$(stat -c '%s' "$file")
@@ -243,20 +293,20 @@ jobs:
           set -euo pipefail
           r1="work/${RUN}/fastq/${RUN}_1.fastq.gz"
           r2="work/${RUN}/fastq/${RUN}_2.fastq.gz"
-          # Exclude unmapped, secondary, and supplementary records before every
-          # downstream count, depth, and variant operation.
+          # Exclude unmapped, secondary, QC-fail, and supplementary records
+          # before every downstream count, depth, and variant operation.
           minimap2 -t 4 -ax sr --secondary=no work/refs.fna "$r1" "$r2" 2>"work/${RUN}/minimap2.log" \
-            | samtools view -@ 2 -b -F 2308 - \
+            | samtools view -@ 2 -b -F 2820 - \
             | samtools sort -@ 2 -o "work/${RUN}/mapped.primary.bam" -
           samtools index "work/${RUN}/mapped.primary.bam"
           samtools flagstat "work/${RUN}/mapped.primary.bam" > "work/${RUN}/flagstat.txt"
           pairs=$(cat "work/${RUN}/INPUT_READ_PAIRS.txt")
           total_reads=$((pairs * 2))
-          printf 'run\talias\treference\treference_length\tread_pairs\ttotal_reads\tmapped_primary\tmapped_mapq20\tproper_pair_primary\tbreadth_mapq20_1x\tbreadth_mapq20_5x\tbreadth_mapq20_10x\tmean_depth_mapq20\tmedian_depth_mapq20\tdepth_mapq20_p10\tdepth_mapq20_p90\tzero_bases_mapq20\tread_rpm_mapq20\n' > "work/${RUN}/metrics.tsv"
+          printf 'run\talias\treference\treference_length\tread_pairs\ttotal_reads\tmapped_primary\tmapped_mapq20\tproper_pair_primary_unfiltered_mapq\tbreadth_mapq20_1x\tbreadth_mapq20_5x\tbreadth_mapq20_10x\tmean_depth_mapq20\tmedian_depth_mapq20\tdepth_mapq20_p10\tdepth_mapq20_p90\tzero_bases_mapq20\tread_rpm_mapq20\n' > "work/${RUN}/metrics.tsv"
           while read -r ref len rest; do
-            mapped=$(samtools view -c -F 2308 "work/${RUN}/mapped.primary.bam" "$ref")
-            mapq20=$(samtools view -c -q 20 -F 2308 "work/${RUN}/mapped.primary.bam" "$ref")
-            proper=$(samtools view -c -f 2 -F 2308 "work/${RUN}/mapped.primary.bam" "$ref")
+            mapped=$(samtools view -c -F 2820 "work/${RUN}/mapped.primary.bam" "$ref")
+            mapq20=$(samtools view -c -q 20 -F 2820 "work/${RUN}/mapped.primary.bam" "$ref")
+            proper=$(samtools view -c -f 2 -F 2820 "work/${RUN}/mapped.primary.bam" "$ref")
             # Match the variant/consensus evidence floor: mapping quality >=20,
             # base quality >=20, with overlapping mates counted once.
             samtools depth -aa -Q 20 -q 20 -s -r "$ref" \
@@ -284,13 +334,88 @@ jobs:
           done < work/refs.fna.fai
           cat "work/${RUN}/metrics.tsv"
 
-      - name: Call variants and build depth-masked consensus
+      - name: Audit both-mate MAPQ30 proper fragments and duplicate sensitivity
+        shell: bash
+        env:
+          RUN: ${{ matrix.run }}
+          ALIAS: ${{ matrix.alias }}
+        run: |
+          set -euo pipefail
+          raw="work/${RUN}/fragment_raw"
+          audit="work/${RUN}/fragment_audit"
+          depth="work/${RUN}/fragment_depth"
+          mkdir -p "$audit" "$depth"
+
+          # Name-collate, repair mate tags, coordinate-sort, then mark optical/PCR
+          # duplicates without removing them. The source BAM contains only
+          # mapped primary non-QC-fail candidate-panel alignments.
+          samtools collate -@ 2 -O -u "work/${RUN}/mapped.primary.bam" \
+            | samtools fixmate -@ 2 -m -u - - \
+            | samtools sort -@ 2 -u - \
+            | samtools markdup -@ 2 -s -f "work/${RUN}/DUPLICATE_STATS.txt" \
+                - "work/${RUN}/mapped.markdup.bam"
+          samtools index "work/${RUN}/mapped.markdup.bam"
+
+          samtools view "work/${RUN}/mapped.markdup.bam" \
+            | python virus_hunt/finalization/audit_panax_fragments.py \
+                --sam - \
+                --reference work/refs.fna \
+                --run "$RUN" \
+                --alias "$ALIAS" \
+                --minimum-mapq 30 \
+                --k 31 \
+                --write-qualifying-qnames \
+                --out "$raw"
+
+          samtools view -@ 2 -b \
+            -N "$raw/QUALIFYING_QNAMES_PRE_DUPLICATE.txt" \
+            -o "$audit/proper.preduplicate.bam" \
+            "work/${RUN}/mapped.markdup.bam"
+          samtools view -@ 2 -b \
+            -N "$raw/QUALIFYING_QNAMES_NON_DUPLICATE.txt" \
+            -o "$audit/proper.nonduplicate.bam" \
+            "work/${RUN}/mapped.markdup.bam"
+          samtools index "$audit/proper.preduplicate.bam"
+          samtools index "$audit/proper.nonduplicate.bam"
+          samtools flagstat "$audit/proper.preduplicate.bam" \
+            > "$audit/proper.preduplicate.flagstat.txt"
+          samtools flagstat "$audit/proper.nonduplicate.bam" \
+            > "$audit/proper.nonduplicate.flagstat.txt"
+
+          while read -r ref len rest; do
+            # samtools depth excludes DUP by default. Re-enable it only for
+            # the preduplicate sensitivity BAM; -Q is MAPQ and -q is base Q.
+            samtools depth -g DUP -aa -Q 30 -q 20 -s -r "$ref" \
+              "$audit/proper.preduplicate.bam" \
+              > "$depth/${ref}.preduplicate.depth.tsv"
+            samtools depth -aa -Q 30 -q 20 -s -r "$ref" \
+              "$audit/proper.nonduplicate.bam" \
+              > "$depth/${ref}.nonduplicate.depth.tsv"
+          done < work/refs.fna.fai
+
+          python virus_hunt/finalization/summarize_panax_fragment_depth.py \
+            --metrics "$raw/FRAGMENT_METRICS.tsv" \
+            --reference work/refs.fna \
+            --depth-dir "$depth" \
+            --out "$audit/FRAGMENT_METRICS.tsv"
+          cp "$raw/FRAGMENT_HASHES.tsv" "$audit/FRAGMENT_HASHES.tsv"
+          cp "$raw/CONTINUITY_SCAN.tsv" "$audit/CONTINUITY_SCAN.tsv"
+          mv "$raw/QUALIFYING_QNAMES_PRE_DUPLICATE.txt" \
+            "$audit/QUALIFYING_QNAMES.preduplicate.txt"
+          mv "$raw/QUALIFYING_QNAMES_NON_DUPLICATE.txt" \
+            "$audit/QUALIFYING_QNAMES.nonduplicate.txt"
+          rm -rf "$raw"
+          cat "$audit/FRAGMENT_METRICS.tsv"
+
+      - name: Call variants and build proper nonduplicate depth-masked consensus
         shell: bash
         env:
           RUN: ${{ matrix.run }}
         run: |
           set -euo pipefail
-          bcftools mpileup -f work/refs.fna -q 20 -Q 20 -a FORMAT/DP,FORMAT/AD -Ou "work/${RUN}/mapped.primary.bam" \
+          bam="work/${RUN}/fragment_audit/proper.nonduplicate.bam"
+          [[ -f "$bam" ]] || { echo "Missing proper nonduplicate BAM: $bam" >&2; exit 2; }
+          bcftools mpileup -f work/refs.fna -q 20 -Q 20 -a FORMAT/DP,FORMAT/AD -Ou "$bam" \
             | bcftools call --ploidy 1 -mv -Oz -o "work/${RUN}/variants.vcf.gz"
           bcftools index -t "work/${RUN}/variants.vcf.gz"
           bcftools view -v snps -Oz -o "work/${RUN}/variants.snps.vcf.gz" "work/${RUN}/variants.vcf.gz"
@@ -299,7 +424,7 @@ jobs:
             "work/${RUN}/variants.vcf.gz" > "work/${RUN}/variants.tsv"
           # SNP-only consensus preserves reference coordinates; indels remain in
           # variants.vcf.gz for audit but cannot shift the depth-mask coordinates.
-          bcftools consensus -f work/refs.fna "work/${RUN}/variants.snps.vcf.gz" > "work/${RUN}/consensus.unmasked.fna"
+          bcftools consensus -f work/refs.fna "work/${RUN}/variants.snps.vcf.gz" > "work/${RUN}/consensus.proper_nonduplicate.unmasked.fna"
           python - "$RUN" <<'PY'
           from pathlib import Path
           import sys
@@ -313,14 +438,14 @@ jobs:
                   else: chunks.append(line.strip())
               if name is not None: d[name]=''.join(chunks)
               return d
-          seqs=read_fa(f'work/{run}/consensus.unmasked.fna')
+          seqs=read_fa(f'work/{run}/consensus.proper_nonduplicate.unmasked.fna')
           expected={'PNX_Picorna_A1_ref','PNX_Picorna_A2_ref','PNX_Picorna_B_ref'}
           if set(seqs) != expected:
               raise SystemExit(f'consensus reference set mismatch: {sorted(seqs)}')
-          with open(f'work/{run}/consensus.masked_min5x.fna','w') as out:
+          with open(f'work/{run}/consensus.proper_nonduplicate.masked_min5x.fna','w') as out:
               for ref,seq in seqs.items():
                   depths=[]
-                  with open(f'work/{run}/{ref}.depth.tsv') as f:
+                  with open(f'work/{run}/fragment_depth/{ref}.nonduplicate.depth.tsv') as f:
                       for line in f: depths.append(int(line.rstrip().split('\t')[2]))
                   if len(seq) != len(depths):
                       raise SystemExit(f'coordinate-length mismatch for {run}/{ref}: consensus={len(seq)}, depth={len(depths)}')
@@ -328,41 +453,282 @@ jobs:
                   out.write(f'>{run}|{ref}|mask=depth_lt_5\n')
                   for i in range(0,len(masked),80): out.write(masked[i:i+80]+'\n')
           PY
+
+      - name: Run mapping-seed-free per-library de novo assembly
+        shell: bash
+        env:
+          RUN: ${{ matrix.run }}
+          ALIAS: ${{ matrix.alias }}
+        run: |
+          set -euo pipefail
+          r1="work/${RUN}/fastq/${RUN}_1.fastq.gz"
+          r2="work/${RUN}/fastq/${RUN}_2.fastq.gz"
+          out="work/${RUN}/de_novo"
+          mkdir -p "$out"
+          {
+            printf 'stage\tutc\npre_assembly\t%s\n' "$(date -u +%FT%TZ)"
+            df -h .
+            free -h
+          } > "$out/RESOURCE_AUDIT.pre.txt"
+          read_length=$(python - "$r1" <<'PY'
+          import gzip,sys
+          with gzip.open(sys.argv[1], 'rt') as handle:
+              header=handle.readline()
+              sequence=handle.readline().strip()
+          if not header.startswith('@') or not sequence:
+              raise SystemExit('unable to read first FASTQ record')
+          print(len(sequence))
+          PY
+          )
+          klist=$(python - "$read_length" <<'PY'
+          import sys
+          read_length=int(sys.argv[1])
+          values=[21,29,39,59,79,99,119,141]
+          usable=[value for value in values if value < read_length]
+          if not usable:
+              raise SystemExit(f'read length {read_length} is too short for the fixed k-mer panel')
+          print(','.join(map(str,usable)))
+          PY
+          )
+          printf 'run\talias\tassembler\tinput_policy\tread_length_first_record\tk_list\tcommand_timeout_minutes\n%s\t%s\tMEGAHIT\tcomplete_paired_FASTQ_no_candidate_bait_or_mapping_seed\t%s\t%s\t120\n' \
+            "$RUN" "$ALIAS" "$read_length" "$klist" > "$out/ASSEMBLY_METHOD.tsv"
+
+          assembly_rc=0
+          set +e
+          timeout --signal=TERM --kill-after=5m 120m megahit \
+            -1 "$r1" -2 "$r2" \
+            -o "$out/megahit" \
+            -t 4 -m 0.65 \
+            --min-count 2 \
+            --min-contig-len 300 \
+            --k-list "$klist" \
+            > "$out/megahit.stdout.log" \
+            2> "$out/megahit.stderr.log"
+          assembly_rc=$?
+          set -e
+          printf '%s\n' "$assembly_rc" > "$out/ASSEMBLY_EXIT_CODE.txt"
+
+          search_rc=not_run
+          : > "$out/assembly_vs_candidates.tsv"
+          if [[ "$assembly_rc" == 0 && -s "$out/megahit/final.contigs.fa" ]]; then
+            database_rc=0
+            makeblastdb -in "$out/megahit/final.contigs.fa" -dbtype nucl \
+              -out "$out/megahit_db" > "$out/makeblastdb.log" 2>&1 || database_rc=$?
+            if [[ "$database_rc" == 0 ]]; then
+              search_rc=0
+              blastn \
+                -query work/refs.fna \
+                -db "$out/megahit_db" \
+                -task dc-megablast \
+                -word_size 11 \
+                -dust no \
+                -soft_masking false \
+                -evalue 1e-10 \
+                -max_target_seqs 100 \
+                -max_hsps 100 \
+                -outfmt '6 qseqid sseqid pident length nident mismatch gapopen gaps qlen slen qstart qend sstart send qseq sseq evalue bitscore' \
+                -out "$out/assembly_vs_candidates.tsv" || search_rc=$?
+            else
+              search_rc="makeblastdb_${database_rc}"
+            fi
+          else
+            printf 'makeblastdb was not run because assembly was incomplete\n' > "$out/makeblastdb.log"
+          fi
+          printf '%s\n' "$search_rc" > "$out/SEARCH_EXIT_CODE.txt"
+          {
+            printf 'stage\tutc\npost_assembly\t%s\n' "$(date -u +%FT%TZ)"
+            df -h .
+            free -h
+          } > "$out/RESOURCE_AUDIT.post.txt"
+
+      - name: Audit de novo recovery and preserve technical failures
+        shell: bash
+        env:
+          RUN: ${{ matrix.run }}
+          ALIAS: ${{ matrix.alias }}
+        run: |
+          set -euo pipefail
+          raw="work/${RUN}/de_novo"
+          assembly="$raw/megahit/final.contigs.fa"
+          if [[ ! -s "$assembly" ]]; then
+            assembly="$raw/EMPTY_OR_INCOMPLETE_ASSEMBLY.fna"
+            : > "$assembly"
+          fi
+          python - "$RUN" "$ALIAS" "$assembly" "$raw" <<'PY'
+          import hashlib,json,subprocess,sys
+          from pathlib import Path
+          run,alias,assembly_text,out_text=sys.argv[1:]
+          assembly=Path(assembly_text)
+          out=Path(out_text)
+          digest=hashlib.sha256(assembly.read_bytes()).hexdigest()
+          version=subprocess.run(
+              ['megahit','--version'], text=True, stdout=subprocess.PIPE,
+              stderr=subprocess.STDOUT, check=False,
+          ).stdout.strip().splitlines()
+          provenance={
+              'run':run,
+              'alias':alias,
+              'assembly_sha256':digest,
+              'assembly_file':str(assembly.relative_to(out)),
+              'retained_assembly_file':'FULL_ASSEMBLY.fna.gz',
+              'retained_assembly_manifest':'FULL_ASSEMBLY_MANIFEST.tsv',
+              'retained_assembly_compression':'gzip_nondeterministic_metadata_disabled',
+              'input_scope':'complete_paired_fastq',
+              'candidate_baiting':False,
+              'mapping_seeded':False,
+              'reference_guided':False,
+              'target_read_selection':False,
+              'assembler':'MEGAHIT',
+              'assembler_version':version[0] if version else 'version_command_no_output',
+              'assembly_exit_code':(out/'ASSEMBLY_EXIT_CODE.txt').read_text().strip(),
+              'search_exit_code':(out/'SEARCH_EXIT_CODE.txt').read_text().strip(),
+              'fastq_sha256_manifest':'../FASTQ_SHA256.txt',
+              'fastq_sha256_manifest_sha256':hashlib.sha256(
+                  (out.parent/'FASTQ_SHA256.txt').read_bytes()
+              ).hexdigest(),
+              'assembly_method_manifest':'ASSEMBLY_METHOD.tsv',
+              'assembly_method_manifest_sha256':hashlib.sha256(
+                  (out/'ASSEMBLY_METHOD.tsv').read_bytes()
+              ).hexdigest(),
+              'candidate_query_sha256':hashlib.sha256(
+                  Path('work/refs.fna').read_bytes()
+              ).hexdigest(),
+              'candidate_structure_sha256':hashlib.sha256(
+                  Path('virus_hunt/finalization/panax_candidate_structure.tsv').read_bytes()
+              ).hexdigest(),
+          }
+          (out/'ASSEMBLY_PROVENANCE.json').write_text(json.dumps(provenance,indent=2)+'\n')
+          PY
+          failure_args=()
+          assembly_rc=$(<"$raw/ASSEMBLY_EXIT_CODE.txt")
+          search_rc=$(<"$raw/SEARCH_EXIT_CODE.txt")
+          if [[ "$assembly_rc" != 0 ]]; then
+            failure_args+=(--declared-technical-failure "assembler_exit_${assembly_rc}")
+          elif [[ "$search_rc" != 0 ]]; then
+            failure_args+=(--declared-technical-failure "assembly_search_exit_${search_rc}")
+          fi
+          audit_rc=0
+          python virus_hunt/finalization/audit_panax_denovo.py \
+            --run "$RUN" \
+            --queries work/refs.fna \
+            --assembly "$assembly" \
+            --blast "$raw/assembly_vs_candidates.tsv" \
+            --structure virus_hunt/finalization/panax_candidate_structure.tsv \
+            --thresholds virus_hunt/finalization/panax_enhanced_audit_thresholds.json \
+            --provenance "$raw/ASSEMBLY_PROVENANCE.json" \
+            "${failure_args[@]}" \
+            --out "work/${RUN}/de_novo_audit" || audit_rc=$?
+          printf '%s\n' "$audit_rc" > "$raw/AUDIT_EXIT_CODE.txt"
+          cat "work/${RUN}/de_novo_audit/DE_NOVO_AUDIT.json"
+
+      - name: Compact and hash per-library evidence
+        if: always()
+        shell: bash
+        env:
+          RUN: ${{ matrix.run }}
+        run: |
+          set -euo pipefail
+          mkdir -p "work/${RUN}"
+          cp virus_hunt/finalization/panax_candidate_structure.tsv \
+            "work/${RUN}/CANDIDATE_STRUCTURE.tsv"
+          cp virus_hunt/finalization/panax_enhanced_audit_thresholds.json \
+            "work/${RUN}/METHODS_AND_THRESHOLDS.json"
+          cp virus_hunt/finalization/panax_decoy_scope.json \
+            "work/${RUN}/DECOY_SCOPE.json"
+          provenance="work/${RUN}/de_novo/ASSEMBLY_PROVENANCE.json"
+          if [[ -f "$provenance" ]]; then
+            assembly=$(python - "$provenance" <<'PY'
+          import json,sys
+          from pathlib import Path
+          path=Path(sys.argv[1])
+          value=json.loads(path.read_text())
+          assembly=(path.parent/value['assembly_file']).resolve()
+          try:
+              assembly.relative_to(path.parent.resolve())
+          except ValueError:
+              raise SystemExit('assembly_file escapes de_novo directory')
+          print(assembly)
+          PY
+            )
+            if [[ -s "$assembly" ]]; then
+              retained="work/${RUN}/de_novo/FULL_ASSEMBLY.fna.gz"
+              manifest="work/${RUN}/de_novo/FULL_ASSEMBLY_MANIFEST.tsv"
+              rm -f "${retained}.tmp" "${manifest}.tmp"
+              gzip -n -9 -c "$assembly" > "${retained}.tmp"
+              mv "${retained}.tmp" "$retained"
+              printf 'uncompressed_sha256\tcompressed_sha256\tuncompressed_bytes\tcompressed_bytes\n%s\t%s\t%s\t%s\n' \
+                "$(sha256sum "$assembly" | cut -d' ' -f1)" \
+                "$(sha256sum "$retained" | cut -d' ' -f1)" \
+                "$(stat -c '%s' "$assembly")" \
+                "$(stat -c '%s' "$retained")" \
+                > "${manifest}.tmp"
+              mv "${manifest}.tmp" "$manifest"
+            fi
+          fi
           rm -rf "work/${RUN}/fastq"
+          rm -f \
+            "work/${RUN}/mapped.primary.bam" \
+            "work/${RUN}/mapped.primary.bam.bai" \
+            "work/${RUN}/mapped.markdup.bam" \
+            "work/${RUN}/mapped.markdup.bam.bai" \
+            "work/${RUN}/fragment_audit/proper.preduplicate.bam" \
+            "work/${RUN}/fragment_audit/proper.preduplicate.bam.bai" \
+            "work/${RUN}/fragment_audit/proper.nonduplicate.bam" \
+            "work/${RUN}/fragment_audit/proper.nonduplicate.bam.bai"
+          rm -rf "work/${RUN}/de_novo/megahit"
+          rm -f \
+            "work/${RUN}/de_novo/megahit_db.ndb" \
+            "work/${RUN}/de_novo/megahit_db.nhr" \
+            "work/${RUN}/de_novo/megahit_db.nin" \
+            "work/${RUN}/de_novo/megahit_db.not" \
+            "work/${RUN}/de_novo/megahit_db.nsq" \
+            "work/${RUN}/de_novo/megahit_db.ntf" \
+            "work/${RUN}/de_novo/megahit_db.nto"
           (
             cd "work/${RUN}"
-            sha256sum \
-              RUN_INPUT.tsv INPUT_READ_PAIRS.txt TOOL_VERSIONS.txt \
-              metrics.tsv ./*.depth.tsv variants.vcf.gz variants.vcf.gz.tbi \
-              variants.snps.vcf.gz variants.snps.vcf.gz.tbi variants.tsv \
-              consensus.unmasked.fna consensus.masked_min5x.fna flagstat.txt minimap2.log \
-              FASTQ_SHA256.txt FASTQ_MANIFEST.tsv DOWNLOAD_ATTEMPTS.tsv \
-              > EVIDENCE_SHA256.txt
+            find . -type f ! -name EVIDENCE_SHA256.txt -print0 \
+              | sort -z \
+              | xargs -0 sha256sum > EVIDENCE_SHA256.txt
+          )
+
+      - name: Remove raw or oversized transients before any upload
+        if: always()
+        shell: bash
+        env:
+          RUN: ${{ matrix.run }}
+        run: |
+          set -euo pipefail
+          run_root="work/${RUN}"
+          mkdir -p "$run_root"
+          rm -rf \
+            "$run_root/fastq" \
+            "$run_root/fragment_raw" \
+            "$run_root/de_novo/megahit"
+          rm -f \
+            "$run_root/mapped.primary.bam" \
+            "$run_root/mapped.primary.bam.bai" \
+            "$run_root/mapped.markdup.bam" \
+            "$run_root/mapped.markdup.bam.bai" \
+            "$run_root/fragment_audit/proper.preduplicate.bam" \
+            "$run_root/fragment_audit/proper.preduplicate.bam.bai" \
+            "$run_root/fragment_audit/proper.nonduplicate.bam" \
+            "$run_root/fragment_audit/proper.nonduplicate.bam.bai" \
+            "$run_root/de_novo/FULL_ASSEMBLY.fna.gz.tmp" \
+            "$run_root/de_novo/FULL_ASSEMBLY_MANIFEST.tsv.tmp"
+          (
+            cd "$run_root"
+            find . -type f ! -name EVIDENCE_SHA256.txt -print0 \
+              | sort -z \
+              | xargs -0 -r sha256sum > EVIDENCE_SHA256.txt
           )
 
       - name: Upload compact immutable evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: panax-sixrun-${{ matrix.run }}
           path: |
-            work/${{ matrix.run }}/RUN_INPUT.tsv
-            work/${{ matrix.run }}/INPUT_READ_PAIRS.txt
-            work/${{ matrix.run }}/TOOL_VERSIONS.txt
-            work/${{ matrix.run }}/metrics.tsv
-            work/${{ matrix.run }}/*.depth.tsv
-            work/${{ matrix.run }}/variants.vcf.gz
-            work/${{ matrix.run }}/variants.vcf.gz.tbi
-            work/${{ matrix.run }}/variants.snps.vcf.gz
-            work/${{ matrix.run }}/variants.snps.vcf.gz.tbi
-            work/${{ matrix.run }}/variants.tsv
-            work/${{ matrix.run }}/consensus.unmasked.fna
-            work/${{ matrix.run }}/consensus.masked_min5x.fna
-            work/${{ matrix.run }}/flagstat.txt
-            work/${{ matrix.run }}/minimap2.log
-            work/${{ matrix.run }}/FASTQ_SHA256.txt
-            work/${{ matrix.run }}/FASTQ_MANIFEST.tsv
-            work/${{ matrix.run }}/DOWNLOAD_ATTEMPTS.tsv
-            work/${{ matrix.run }}/EVIDENCE_SHA256.txt
+            work/${{ matrix.run }}
             work/refs.fna
             work/refs.fna.fai
             work/REFERENCE_METADATA.tsv
@@ -370,26 +736,82 @@ jobs:
           if-no-files-found: error
           retention-days: 30
           compression-level: 9
+          overwrite: true
 
   aggregate:
     name: aggregate six-library evidence
     needs: map
+    if: ${{ always() }}
     runs-on: ubuntu-24.04
     env:
       SOURCE_COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      MAP_JOB_RESULT: ${{ needs.map.result }}
     steps:
+      - name: Checkout immutable PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
       - name: Download all completed run artifacts
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           pattern: panax-sixrun-*
           path: collected
           merge-multiple: false
 
+      - name: Initialize fail-closed aggregate package
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p collected final
+          cp virus_hunt/finalization/panax_candidate_structure.tsv final/CANDIDATE_STRUCTURE.tsv
+          cp virus_hunt/finalization/panax_enhanced_audit_thresholds.json final/METHODS_AND_THRESHOLDS.json
+          cp virus_hunt/finalization/panax_decoy_scope.json final/DECOY_SCOPE.json
+          python - <<'PY'
+          from pathlib import Path
+          import csv,json,os
+          Path('final/SUMMARY.json').write_text(json.dumps({
+              'technical_status':'technical_incomplete',
+              'legacy_screen_complete':False,
+              'map_job_result':os.environ.get('MAP_JOB_RESULT','unknown'),
+              'failure':'complete six-run evidence validation did not finish',
+              'phenotype_mapping_status':'unresolved; archive aliases only',
+          },indent=2)+'\n')
+          Path('final/EVIDENCE_INTEGRITY_STATUS.json').write_text(json.dumps({
+              'technical_status':'technical_incomplete',
+              'technical_complete':False,
+              'map_job_result':os.environ.get('MAP_JOB_RESULT','unknown'),
+              'failure':'six complete per-run evidence packages were not validated',
+          },indent=2)+'\n')
+          for name,fields in (
+              ('ALL_RUN_METRICS.tsv',['run','alias','reference','technical_status']),
+              ('PRESENCE_MATRIX.tsv',['run','alias','PNX_Picorna_A1_ref','PNX_Picorna_A2_ref','PNX_Picorna_B_ref']),
+              ('PAIRWISE_MASKED_CONSENSUS.tsv',['reference','sample1','sample2','overlap_non_N','differences','identity']),
+          ):
+              with Path('final',name).open('w',newline='') as handle:
+                  csv.writer(handle,delimiter='\t').writerow(fields)
+          PY
+          cat > final/INTERPRETATION_BOUNDARY.md <<'EOF'
+          # Interpretation boundary
+
+          This fail-closed package tests predefined partial Picornavirales-like sequence clusters. Missing run artifacts, incomplete assembly, or failed validation are technical incompleteness—not biological absence. No output establishes a formal virus species, true host, infection, replication, phenotype association, pathogenicity, transmission, or agricultural/medical effect.
+          EOF
+          printf 'repository\tevent\tsource_commit_sha\tevent_sha\trun_id\trun_attempt\tmap_job_result\n%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+            "$GITHUB_REPOSITORY" "$GITHUB_EVENT_NAME" "$SOURCE_COMMIT_SHA" "$GITHUB_SHA" \
+            "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$MAP_JOB_RESULT" \
+            > final/WORKFLOW_PROVENANCE.tsv
+
       - name: Build strict presence and sequence-diversity summaries
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p final
+          cp virus_hunt/finalization/panax_candidate_structure.tsv final/CANDIDATE_STRUCTURE.tsv
+          cp virus_hunt/finalization/panax_enhanced_audit_thresholds.json final/METHODS_AND_THRESHOLDS.json
+          cp virus_hunt/finalization/panax_decoy_scope.json final/DECOY_SCOPE.json
           python - <<'PY'
           from pathlib import Path
           import hashlib, subprocess
@@ -445,10 +867,12 @@ jobs:
               w=csv.writer(f,delimiter='\t'); w.writerow(['run','alias']+refs)
               for run in runs:
                   w.writerow([run,aliases[run]]+[by.get((run,ref),{}).get('strict_positive','missing') for ref in refs])
-          summary={'strict_definition':'MAPQ>=20 reads >=20 and quality-filtered breadth_1x >=0.80',
-                   'strong_definition':'MAPQ>=20 reads >=50, quality-filtered breadth_1x >=0.90, and quality-filtered breadth_5x >=0.50',
-                   'depth_definition':'samtools depth -aa -Q 20 -q 20 -s; mapping quality >=20, base quality >=20, overlapping mates counted once',
-                   'consensus_model':'haploid SNP-only bcftools calls; bases below quality-filtered 5x depth masked; pairwise identities are descriptive only',
+          summary={'legacy_screen_only':True,
+                   'legacy_strict_screen_definition':'MAPQ>=20 read records >=20 and quality-filtered breadth_1x >=0.80',
+                   'legacy_strong_screen_definition':'MAPQ>=20 read records >=50, quality-filtered breadth_1x >=0.90, and quality-filtered breadth_5x >=0.50',
+                   'legacy_depth_definition':'samtools depth -aa -Q 20 -q 20 -s; mapping quality >=20, base quality >=20, overlapping mates counted once; improper and preduplicate records retained',
+                   'enhanced_decision_source':'fragment_audit/TECHNICAL_STATUS.json and de_novo_audit/DE_NOVO_AGGREGATE_AUDIT.json',
+                   'consensus_model':'haploid SNP-only bcftools calls from both-mate MAPQ-filtered proper nonduplicate fragments; bases below quality-filtered 5x depth masked; pairwise identities are descriptive only',
                    'completed_runs':sorted({r['run'] for r in rows}),
                    'phenotype_mapping_status':'not_resolved; Zh/Bh are archive aliases only',
                    'references':{}}
@@ -459,7 +883,7 @@ jobs:
                   'alias_prefix_comparison_test':'not_performed_without_resolved_phenotype_mapping'}
           Path('final/SUMMARY.json').write_text(json.dumps(summary,indent=2)+'\n')
           seqs={}
-          for p in sorted(Path('collected').rglob('consensus.masked_min5x.fna')):
+          for p in sorted(Path('collected').rglob('consensus.proper_nonduplicate.masked_min5x.fna')):
               name=None; chunks=[]
               for line in p.read_text().splitlines():
                   if line.startswith('>'):
@@ -484,7 +908,7 @@ jobs:
           svg=[f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
                '<rect width="100%" height="100%" fill="white"/>',
                '<style>text{font-family:Arial,sans-serif;fill:#111}.h{font-weight:700}.s{font-size:12px}</style>',
-               '<text x="20" y="28" class="h" font-size="18">Competitive raw-read support across six archived libraries</text>']
+               '<text x="20" y="28" class="h" font-size="18">Legacy candidate-panel mapping screen across six archived libraries</text>']
           for j,ref in enumerate(refs):
               svg.append(f'<text x="{left+j*cellw+cellw/2}" y="55" text-anchor="middle" class="h s">{ref.replace("PNX_Picorna_","").replace("_ref","")}</text>')
           for i,run in enumerate(runs):
@@ -498,26 +922,263 @@ jobs:
                       label=f"{float(r['breadth_mapq20_1x'])*100:.1f}% / {float(r['mean_depth_mapq20']):.1f}x"
                   svg.append(f'<rect x="{x}" y="{y}" width="{cellw-5}" height="{cellh-5}" rx="4" fill="{fill}" stroke="#555"/>')
                   svg.append(f'<text x="{x+(cellw-5)/2}" y="{y+24}" text-anchor="middle" class="s">{label}</text>')
-          svg.append(f'<text x="20" y="{height-32}" class="s">Cell: quality-filtered breadth at &gt;=1x / mean depth. Green meets the fixed workflow-defined strict support rule.</text>')
+          svg.append(f'<text x="20" y="{height-32}" class="s">Cell: quality-filtered breadth at &gt;=1x / mean depth. This legacy read-record screen is not the enhanced fragment-level decision.</text>')
           svg.append('</svg>')
           Path('final/SIX_LIBRARY_SUPPORT.svg').write_text('\n'.join(svg)+'\n')
-          Path('final/INTERPRETATION_BOUNDARY.md').write_text('''# Interpretation boundary\n\nThis audit tests whether three divergent Picornavirales-like reference contigs are supported by complete paired FASTQ files from six archived run objects. Breadth, depth, and consensus masking use mapping quality >=20, base quality >=20, and overlapping-mate suppression. The Zh/Bh strings are archive aliases only in this package. Distinct run, experiment, or BioSample accessions do not by themselves establish distinct plants or independent infections. Presence or enrichment does not establish the true host, active replication, causality, pathogenicity, transmissibility, or agricultural/medical impact. The candidates are partial polyprotein/RdRP sequences rather than complete viral genomes. Pairwise masked-consensus identities use haploid SNP-only genotype-likelihood calls at quality-filtered depth >=5 and are descriptive quality checks, not evidence of independent transmission or evolutionary rate.\n''')
+          Path('final/INTERPRETATION_BOUNDARY.md').write_text('''# Interpretation boundary\n\nThis audit tests whether three divergent partial Picornavirales-like reference sequences are supported by complete paired FASTQ files from six archived run objects. The enhanced fragment audit requires both mates to map as a proper pair at MAPQ >=30, reports samtools-markdup sensitivity, panel-unique exact 31-mers, endpoint/sequence fingerprints, internal-boundary spanners, soft clipping, and proper-fragment depth. The de novo audit assembles each complete paired library without candidate baiting, mapping seeds, reference guidance, or target-read selection before querying the assemblies. These remain workflow-defined technical checks rather than biological detection limits.\n\nThe competitive mapping panel still lacks a version-pinned Panax nuclear/organelle and plausible microbial/laboratory decoy panel, so it cannot establish broader read specificity and the publication decoy gate remains technical_incomplete. Cross-run exact fingerprints are QC indicators only and cannot prove or exclude index hopping. The Zh/Bh strings are archive aliases only. Distinct run, experiment, or BioSample accessions do not establish distinct plants or independent infections. Detection does not establish the true host, active replication, condition association, causality, pathogenicity, transmissibility, or agricultural/medical impact. The candidates are partial sequence clusters rather than complete viral genomes or formal virus species. Pairwise proper-nonduplicate masked-consensus identities are descriptive quality checks, not evidence of independent transmission or evolutionary rate.\n''')
+          PY
+          python - <<'PY'
+          from pathlib import Path
+          import json,os
+          Path('final/EVIDENCE_INTEGRITY_STATUS.json').write_text(json.dumps({
+              'technical_status':'pass',
+              'technical_complete':True,
+              'map_job_result':os.environ.get('MAP_JOB_RESULT','unknown'),
+              'validated_run_count':6,
+              'evidence_manifests_validated':6,
+              'reference_manifests_validated':6,
+              'masked_consensus_count':18,
+          },indent=2)+'\n')
           PY
           printf 'repository\tevent\tsource_commit_sha\tevent_sha\trun_id\trun_attempt\n%s\t%s\t%s\t%s\t%s\t%s\n' \
             "$GITHUB_REPOSITORY" "$GITHUB_EVENT_NAME" "$SOURCE_COMMIT_SHA" "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
             > final/WORKFLOW_PROVENANCE.tsv
-          (
-            cd final
-            find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
-          )
           cat final/SUMMARY.json
           cat final/PRESENCE_MATRIX.tsv
 
+      - name: Aggregate mapping-seed-free de novo recovery
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          query=$(find collected -type f -name refs.fna -print -quit)
+          [[ -n "$query" ]] || { echo 'No validated query FASTA in run artifacts' >&2; exit 2; }
+          rc=0
+          python virus_hunt/finalization/aggregate_panax_denovo.py \
+            --collected collected \
+            --queries "$query" \
+            --structure virus_hunt/finalization/panax_candidate_structure.tsv \
+            --thresholds virus_hunt/finalization/panax_enhanced_audit_thresholds.json \
+            --out final/de_novo_audit || rc=$?
+          printf '%s\n' "$rc" > final/DE_NOVO_AGGREGATE_EXIT_CODE.txt
+          cat final/de_novo_audit/DE_NOVO_AGGREGATE_AUDIT.json
+
+      - name: Aggregate proper-fragment and cross-run fingerprint audit
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          rc=0
+          python virus_hunt/finalization/aggregate_panax_fragment_audit.py \
+            --input-root collected \
+            --structure virus_hunt/finalization/panax_candidate_structure.tsv \
+            --thresholds virus_hunt/finalization/panax_enhanced_audit_thresholds.json \
+            --out final/fragment_audit || rc=$?
+          printf '%s\n' "$rc" > final/FRAGMENT_AGGREGATE_EXIT_CODE.txt
+          cat final/fragment_audit/TECHNICAL_STATUS.json
+
+      - name: Materialize missing component failures
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import csv,json
+          components=(
+              ('fragment_audit','TECHNICAL_STATUS.json','CANDIDATE_FRAGMENT_GATE.tsv','reference','fragment_support_gate'),
+              ('de_novo_audit','DE_NOVO_AGGREGATE_AUDIT.json','DE_NOVO_CANDIDATE_GATE.tsv','query','gate_status'),
+          )
+          for directory,status_name,table_name,key,gate in components:
+              root=Path('final',directory); root.mkdir(parents=True,exist_ok=True)
+              status=root/status_name
+              if not status.is_file():
+                  status.write_text(json.dumps({
+                      'technical_status':'technical_incomplete',
+                      'technical_complete':False,
+                      'failures':['component step did not materialize a validated result'],
+                      'overall_gate_status':'technical_incomplete',
+                  },indent=2)+'\n')
+              table=root/table_name
+              if not table.is_file():
+                  with table.open('w',newline='') as handle:
+                      csv.writer(handle,delimiter='\t').writerow([key,gate])
+          PY
+
+      - name: Build fail-closed publication technical gate
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import csv,json,os
+
+          def load_json(path):
+              try:
+                  value=json.loads(Path(path).read_text())
+                  return value if isinstance(value,dict) else {}
+              except Exception:
+                  return {}
+
+          def load_tsv(path,key):
+              try:
+                  with Path(path).open(newline='') as handle:
+                      return {row[key]:row for row in csv.DictReader(handle,delimiter='\t')}
+              except Exception:
+                  return {}
+
+          fragment_status=load_json('final/fragment_audit/TECHNICAL_STATUS.json')
+          denovo_status=load_json('final/de_novo_audit/DE_NOVO_AGGREGATE_AUDIT.json')
+          decoy_status=load_json('final/DECOY_SCOPE.json')
+          integrity_status=load_json('final/EVIDENCE_INTEGRITY_STATUS.json')
+          fragment=load_tsv('final/fragment_audit/CANDIDATE_FRAGMENT_GATE.tsv','reference')
+          denovo=load_tsv('final/de_novo_audit/DE_NOVO_CANDIDATE_GATE.tsv','query')
+          structure=load_tsv('final/CANDIDATE_STRUCTURE.tsv','reference')
+          references=['PNX_Picorna_A1_ref','PNX_Picorna_A2_ref','PNX_Picorna_B_ref']
+          map_job_result=os.environ.get('MAP_JOB_RESULT','unknown')
+          integrity_pass=(
+              integrity_status.get('technical_status')=='pass'
+              and integrity_status.get('technical_complete') is True
+          )
+          rows=[]
+          for reference in references:
+              fragment_gate=fragment.get(reference,{}).get('fragment_support_gate','technical_incomplete')
+              denovo_gate=denovo.get(reference,{}).get('gate_status','technical_incomplete')
+              current_sequence_gate='technical_incomplete_not_joined'
+              if not integrity_pass or map_job_result!='success':
+                  disposition='technical_incomplete_unverified_six_run_evidence'
+              elif fragment_gate=='fail':
+                  disposition='exclude_or_reassess_mapping_support'
+              elif fragment_gate=='pass' and denovo_gate=='pass':
+                  disposition='conditionally_retain_pending_current_database_gate'
+              elif fragment_gate=='pass' and denovo_gate=='fail':
+                  disposition='mapping_supported_but_independent_de_novo_gate_failed'
+              else:
+                  disposition='technical_incomplete'
+              rows.append({
+                  'reference':reference,
+                  'fragment_support_gate':fragment_gate,
+                  'mapping_seed_free_de_novo_gate':denovo_gate,
+                  'current_database_sequence_gate':current_sequence_gate,
+                  'sequence_cluster_disposition':disposition,
+                  'taxonomic_status':'unassigned_partial_sequence_cluster',
+                  'sequence_gate_query_id':structure.get(reference,{}).get('sequence_gate_query_id',''),
+                  'reference_sha256':structure.get(reference,{}).get('reference_sha256',''),
+                  'source_contig':structure.get(reference,{}).get('source_contig',''),
+                  'source_sha256':structure.get(reference,{}).get('source_sha256',''),
+              })
+          technical_components={
+              'evidence_integrity':integrity_status.get('technical_status','technical_incomplete'),
+              'fragment_audit':fragment_status.get('technical_status','technical_incomplete'),
+              'fragment_candidate_gate':fragment_status.get('fragment_support_gate','technical_incomplete'),
+              'de_novo_audit':denovo_status.get('technical_status','technical_incomplete'),
+              'de_novo_candidate_gate':denovo_status.get('overall_gate_status','technical_incomplete'),
+              'competitive_decoy_audit':decoy_status.get('status','technical_incomplete'),
+              'current_database_sequence_gate':'technical_incomplete_not_joined; evaluated in separate workflow',
+              'map_matrix_job':map_job_result,
+              'phenotype_crosswalk':'unresolved_and_excluded_from_claims',
+              'durable_public_deposition':'not_completed',
+          }
+          required_for_submission={
+              'evidence_integrity':technical_components['evidence_integrity']=='pass',
+              'map_matrix_job':technical_components['map_matrix_job']=='success',
+              'fragment_audit':technical_components['fragment_audit']=='pass',
+              'fragment_candidate_gate':technical_components['fragment_candidate_gate']=='pass',
+              'de_novo_audit':technical_components['de_novo_audit']=='pass',
+              'de_novo_candidate_gate':technical_components['de_novo_candidate_gate']=='pass',
+              'competitive_decoy_audit':technical_components['competitive_decoy_audit']=='pass',
+              'current_database_sequence_gate':technical_components['current_database_sequence_gate']=='pass',
+              'durable_public_deposition':technical_components['durable_public_deposition']=='completed',
+          }
+          overall='pass' if all(required_for_submission.values()) else 'technical_incomplete'
+          package={
+              'overall_publication_technical_status':overall,
+              'submission_ready':overall=='pass',
+              'technical_components':technical_components,
+              'required_component_pass':required_for_submission,
+              'candidate_dispositions':rows,
+              'claim_boundary':(
+                  'Partial Picornavirales-like RdRP-containing sequence clusters only; '
+                  'no formal species, true host, active infection, root-rot association, '
+                  'replication, pathogenicity, or transmission claim.'
+              ),
+              'reason_overall_remains_incomplete':(
+                  'A version-pinned Panax/organellar/microbial/laboratory competitive decoy '
+                  'panel and durable public deposition are not complete; the current-database '
+                  'sequence gate is evaluated independently.'
+              ),
+          }
+          Path('final/PUBLICATION_TECHNICAL_GATE.json').write_text(json.dumps(package,indent=2)+'\n')
+          fields=list(rows[0])
+          with Path('final/CANDIDATE_DISPOSITIONS.tsv').open('w',newline='') as handle:
+              writer=csv.DictWriter(handle,fieldnames=fields,delimiter='\t')
+              writer.writeheader(); writer.writerows(rows)
+          report=[
+              '# Panax publication technical gate','',
+              f"Submission ready: **{'yes' if package['submission_ready'] else 'no — technical_incomplete'}**",'',
+              '| Sequence cluster | Proper-fragment gate | De novo gate | Current-DB gate | Disposition |',
+              '|---|---|---|---|---|',
+          ]
+          report.extend(
+              f"| `{row['reference']}` | `{row['fragment_support_gate']}` | "
+              f"`{row['mapping_seed_free_de_novo_gate']}` | "
+              f"`{row['current_database_sequence_gate']}` | "
+              f"`{row['sequence_cluster_disposition']}` |" for row in rows
+          )
+          report.extend(['',package['reason_overall_remains_incomplete'],'',package['claim_boundary']])
+          Path('final/PUBLICATION_TECHNICAL_GATE.md').write_text('\n'.join(report)+'\n')
+          PY
+          cat final/PUBLICATION_TECHNICAL_GATE.json
+
+      - name: Hash the complete enhanced evidence package
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd final
+            find . -type f ! -name SHA256SUMS.txt -print0 \
+              | sort -z \
+              | xargs -0 sha256sum > SHA256SUMS.txt
+          )
+          (cd final && sha256sum -c SHA256SUMS.txt --quiet)
+
       - name: Upload final six-library evidence package
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: PANAX_SIX_LIBRARY_CLEAN_AUDIT_20260819
+          name: PANAX_SIX_LIBRARY_ENHANCED_AUDIT_20260821
           path: final
           if-no-files-found: error
           retention-days: 30
           compression-level: 9
+          overwrite: true
+
+      - name: Enforce core audit execution and candidate gates
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json,os
+          integrity=json.loads(Path('final/EVIDENCE_INTEGRITY_STATUS.json').read_text())
+          fragment=json.loads(Path('final/fragment_audit/TECHNICAL_STATUS.json').read_text())
+          denovo=json.loads(Path('final/de_novo_audit/DE_NOVO_AGGREGATE_AUDIT.json').read_text())
+          failures=[]
+          if os.environ.get('MAP_JOB_RESULT')!='success':
+              failures.append('map_matrix_job_not_successful')
+          if integrity.get('technical_status')!='pass' or integrity.get('technical_complete') is not True:
+              failures.append('six_run_evidence_integrity_not_validated')
+          if fragment.get('technical_status')!='pass':
+              failures.append('fragment_audit_not_technically_complete')
+          if fragment.get('fragment_support_gate')!='pass':
+              failures.append('fragment_candidate_gate_not_pass')
+          if denovo.get('technical_status')!='pass':
+              failures.append('de_novo_audit_not_technically_complete')
+          if denovo.get('overall_gate_status')!='pass':
+              failures.append('de_novo_candidate_gate_not_pass')
+          if failures:
+              raise SystemExit('fail-closed core audit enforcement: '+','.join(failures))
+          print('core six-run fragment and de novo gates passed')
+          PY

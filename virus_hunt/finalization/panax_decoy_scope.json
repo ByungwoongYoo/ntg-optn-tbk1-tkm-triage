@@ -1,0 +1,22 @@
+{
+  "status": "technical_incomplete",
+  "purpose": "Predeclared scope for publication-grade competitive read mapping",
+  "included_in_current_competitive_mapping": [
+    "PNX_Picorna_A1_ref",
+    "PNX_Picorna_A2_ref",
+    "PNX_Picorna_B_ref"
+  ],
+  "separately_screened_but_not_used_as_read_mapping_decoys": [
+    "NCBI UniVec_Core",
+    "current remote viral and nonviral protein and nucleotide partitions"
+  ],
+  "missing_required_competitive_classes": [
+    "version-pinned Panax notoginseng nuclear reference or candidate-confusable loci",
+    "version-pinned Panax notoginseng chloroplast and mitochondrial references",
+    "ribosomal RNA",
+    "known Panax-associated viruses",
+    "plausible fungal, oomycete, and root-community candidate-confusable loci",
+    "PhiX and complete adapter/vector decoys"
+  ],
+  "interpretation": "MAPQ from the present three-target panel does not establish specificity against host, organellar, microbial, or laboratory decoys. The publication decoy gate must remain technical_incomplete until a versioned, hashed panel is assembled and audited."
+}

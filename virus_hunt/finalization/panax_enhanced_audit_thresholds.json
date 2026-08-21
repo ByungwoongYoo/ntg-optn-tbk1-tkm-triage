@@ -1,0 +1,63 @@
+{
+  "scope": "Workflow-defined technical validation rules; not biological detection limits, prevalence thresholds, or taxonomic criteria",
+  "candidate_structure_contract": {
+    "filename": "panax_candidate_structure.tsv",
+    "sha256": "cd7029209d9936fe27ceb8b80d6099efb478597ee18221a3370d6de0a6f129b0",
+    "reference_lengths_nt": {
+      "PNX_Picorna_A1_ref": 1988,
+      "PNX_Picorna_A2_ref": 2468,
+      "PNX_Picorna_B_ref": 3436
+    }
+  },
+  "fragment_selection": {
+    "both_mates_required": true,
+    "same_candidate_reference_required": true,
+    "proper_pair_required": true,
+    "primary_alignment_required": true,
+    "qc_fail_excluded": true,
+    "minimum_mapq_each_mate": 30,
+    "duplicate_sensitivity": "report both preduplicate and samtools-markdup nonduplicate results"
+  },
+  "fragment_validated_positive": {
+    "proper_fragments_preduplicate_minimum": 10,
+    "proper_preduplicate_breadth_1x_minimum": 0.8,
+    "proper_fragments_nonduplicate_minimum": 5,
+    "proper_nonduplicate_breadth_1x_minimum": 0.5
+  },
+  "fragment_strong_positive": {
+    "proper_fragments_preduplicate_minimum": 25,
+    "proper_preduplicate_breadth_1x_minimum": 0.9,
+    "proper_preduplicate_breadth_5x_minimum": 0.5,
+    "proper_fragments_nonduplicate_minimum": 10,
+    "proper_nonduplicate_breadth_1x_minimum": 0.8
+  },
+  "candidate_fragment_support": {
+    "minimum_independent_validated_runs": 2,
+    "minimum_independent_strong_runs": 1,
+    "interpretation": "Independent technical support excludes a run that is the smaller member of either a predeclared shadow_suspect comparison or a comparison with insufficient fingerprints for shadow assessment. Warning-shadow runs remain separately flagged. This rule is not evidence of independent infection."
+  },
+  "cross_run_exact_fragment_shadow_qc": {
+    "minimum_unique_fingerprints_in_smaller_run": 10,
+    "warning_shared_combined_minimum": 5,
+    "warning_smaller_run_containment_minimum": 0.5,
+    "suspect_shared_combined_minimum": 8,
+    "suspect_smaller_run_containment_minimum": 0.8,
+    "larger_to_smaller_abundance_ratio_minimum": 20,
+    "interpretation": "A suspect result prevents treating the smaller run as independent support. It does not prove index hopping or contamination."
+  },
+  "de_novo_recovery": {
+    "assembly_input": "complete paired FASTQ with no candidate bait, mapping seed, or target read selection",
+    "source_run_single_contig_query_coverage_minimum": 0.9,
+    "source_run_identity_minimum": 0.98,
+    "non_source_single_contig_query_coverage_minimum": 0.7,
+    "non_source_identity_minimum": 0.9,
+    "maximum_internal_query_gap_nt": 150,
+    "maximum_internal_subject_gap_nt": 500,
+    "candidate_support_rule": "at least one source-run recovery and at least one non-source-run recovery"
+  },
+  "publication_gate": {
+    "decoy_completeness_required": true,
+    "current_decoy_status": "technical_incomplete",
+    "claim_boundary": "Partial Picornavirales-like RdRP-containing sequence clusters only; no species, host infection, phenotype association, replication, pathogenicity, or transmission claim"
+  }
+}

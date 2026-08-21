@@ -99,6 +99,29 @@ def write_tsv(path: Path, rows: list[dict[str, object]], fields: list[str] | Non
         writer.writeheader(); writer.writerows(rows)
 
 
+def completed_remote_near_identical(
+    candidate: str, remote_status: dict[str, dict], remote_complete: dict[str, bool],
+) -> tuple[bool, bool, bool]:
+    """Return protein/nt near-hit flags from complete remote modes only."""
+    protein_near = False
+    nucleotide_near = False
+    all_complete = True
+    for mode, status in remote_status.items():
+        if not remote_complete.get(mode, False):
+            all_complete = False
+            continue
+        details = status.get("per_query", {}).get(candidate, {})
+        if mode.startswith("protein_") and details.get(
+            "near_identical_qcov80_pident90_count", 0
+        ):
+            protein_near = True
+        if mode.startswith("nt_") and details.get(
+            "near_identical_qcov80_pident95_count", 0
+        ):
+            nucleotide_near = True
+    return protein_near, nucleotide_near, all_complete
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--collected", type=Path, required=True)
@@ -189,16 +212,20 @@ def main() -> int:
             failures.append(f"remote_search_not_complete:{mode}")
         for query in sorted(expected_ids):
             details = status.get("per_query", {}).get(query, {})
+            # A failed remote request is missing evidence, not a biological
+            # zero-hit result. Keep every hit-derived presentation field blank
+            # unless this mode passed the full archive/control validation.
+            presented = details if complete else {}
             remote_rows.append({
                 "mode": mode, "database": status.get("database", ""), "query": query,
-                "technical_complete": str(complete).lower(), "hit_count": details.get("hit_count", ""),
-                "near_identical_qcov80_pident90_count": details.get("near_identical_qcov80_pident90_count", ""),
-                "near_identical_qcov80_pident95_count": details.get("near_identical_qcov80_pident95_count", ""),
-                "top_accession": (details.get("top_hit") or {}).get("saccver", ""),
-                "top_identity": (details.get("top_hit") or {}).get("pident", ""),
-                "top_qcov": (details.get("top_hit") or {}).get("qcovs", ""),
-                "top_evalue": (details.get("top_hit") or {}).get("evalue", ""),
-                "top_title": (details.get("top_hit") or {}).get("stitle", ""),
+                "technical_complete": str(complete).lower(), "hit_count": presented.get("hit_count", ""),
+                "near_identical_qcov80_pident90_count": presented.get("near_identical_qcov80_pident90_count", ""),
+                "near_identical_qcov80_pident95_count": presented.get("near_identical_qcov80_pident95_count", ""),
+                "top_accession": (presented.get("top_hit") or {}).get("saccver", ""),
+                "top_identity": (presented.get("top_hit") or {}).get("pident", ""),
+                "top_qcov": (presented.get("top_hit") or {}).get("qcovs", ""),
+                "top_evalue": (presented.get("top_hit") or {}).get("evalue", ""),
+                "top_title": (presented.get("top_hit") or {}).get("stitle", ""),
             })
         if expected_controls and complete:
             for control in sorted(expected_controls):
@@ -210,17 +237,15 @@ def main() -> int:
     gate_rows: list[dict[str, object]] = []
     for candidate in CANDIDATES:
         lc = local_candidates.get(candidate, {})
-        protein_near = bool(lc.get("current_refseq_near_identical_protein"))
-        nucleotide_near = bool(lc.get("current_refseq_near_identical_nucleotide"))
-        remote_all_complete = True
-        for mode, status in remote_status.items():
-            details = status.get("per_query", {}).get(candidate, {})
-            if not remote_complete.get(mode, False):
-                remote_all_complete = False
-            if mode.startswith("protein_") and details.get("near_identical_qcov80_pident90_count", 0):
-                protein_near = True
-            if mode.startswith("nt_") and details.get("near_identical_qcov80_pident95_count", 0):
-                nucleotide_near = True
+        remote_protein_near, remote_nucleotide_near, remote_all_complete = (
+            completed_remote_near_identical(candidate, remote_status, remote_complete)
+        )
+        protein_near = bool(
+            lc.get("current_refseq_near_identical_protein") or remote_protein_near
+        )
+        nucleotide_near = bool(
+            lc.get("current_refseq_near_identical_nucleotide") or remote_nucleotide_near
+        )
         local_pass = bool(local.get("technical_complete") and lc.get("local_sequence_gate_pass"))
         phylogeny_complete = bool(tree.get("technical_complete"))
         if not local_pass:
