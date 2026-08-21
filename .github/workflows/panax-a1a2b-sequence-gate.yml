@@ -9,12 +9,18 @@ on:
       - 'virus_hunt/validation_inputs/**'
   workflow_dispatch:
 
+concurrency:
+  group: panax-a1a2b-sequence-gate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   actions: read
 
 env:
   SOURCE_COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  NCBI_BLAST_VERSION: '2.17.0'
+  NCBI_BLAST_LINUX_X64_SHA256: 3888112d8207831aa47371d93583c601f058f88b5db22dc782438b039a3a411b
 
 jobs:
   preflight:
@@ -51,6 +57,46 @@ jobs:
         with:
           name: panax-query-preflight
           path: queries
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 9
+
+  blast_tool:
+    name: pinned current NCBI BLAST+ client
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download and verify NCBI BLAST+ 2.17.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="ncbi-blast-${NCBI_BLAST_VERSION}+-x64-linux.tar.gz"
+          source_url="https://ftp.ncbi.nlm.nih.gov/blast/executables/blast+/${NCBI_BLAST_VERSION}/${archive}"
+          curl --fail --show-error --location --retry 5 --retry-all-errors \
+            --connect-timeout 20 \
+            --output "$archive" "$source_url"
+          printf '%s  %s\n' "$NCBI_BLAST_LINUX_X64_SHA256" "$archive" | sha256sum -c -
+          tar --no-same-owner -xzf "$archive"
+          mkdir -p blast-tool/bin
+          cp "ncbi-blast-${NCBI_BLAST_VERSION}+"/bin/{blastp,blastn,blast_formatter} \
+            blast-tool/bin/
+          blast-tool/bin/blastp -version | grep -F "blastp: ${NCBI_BLAST_VERSION}+"
+          blast-tool/bin/blastn -version | grep -F "blastn: ${NCBI_BLAST_VERSION}+"
+          blast-tool/bin/blast_formatter -version | grep -F "blast_formatter: ${NCBI_BLAST_VERSION}+"
+          for tool in blastp blastn blast_formatter; do
+            ! ldd "blast-tool/bin/$tool" | grep -q 'not found'
+          done
+          printf 'version\tsource_url\tarchive_sha256\n%s\t%s\t%s\n' \
+            "$NCBI_BLAST_VERSION" "$source_url" "$NCBI_BLAST_LINUX_X64_SHA256" \
+            > blast-tool/PROVENANCE.tsv
+          (cd blast-tool && find . -type f ! -name SHA256SUMS.txt -print0 | \
+            sort -z | xargs -0 sha256sum > SHA256SUMS.txt)
+          (cd blast-tool && sha256sum -c SHA256SUMS.txt)
+
+      - name: Upload pinned BLAST+ client
+        uses: actions/upload-artifact@v4
+        with:
+          name: ncbi-blast-2.17.0-linux-x64
+          path: blast-tool
           if-no-files-found: error
           retention-days: 30
           compression-level: 9
@@ -99,7 +145,7 @@ jobs:
 
   remote_search:
     name: remote current DB ${{ matrix.mode }}
-    needs: preflight
+    needs: [preflight, blast_tool]
     runs-on: ubuntu-24.04
     timeout-minutes: 230
     strategy:
@@ -128,10 +174,25 @@ jobs:
           name: panax-query-preflight
           path: queries
 
-      - name: Install NCBI BLAST+
+      - name: Download pinned current BLAST+ client
+        uses: actions/download-artifact@v4
+        with:
+          name: ncbi-blast-2.17.0-linux-x64
+          path: blast-tool
+
+      - name: Verify and activate pinned current BLAST+ client
+        shell: bash
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq ncbi-blast+
+          set -euo pipefail
+          (cd blast-tool && sha256sum -c SHA256SUMS.txt)
+          chmod 0755 blast-tool/bin/{blastp,blastn,blast_formatter}
+          blast-tool/bin/blastp -version | grep -F "blastp: ${NCBI_BLAST_VERSION}+"
+          blast-tool/bin/blastn -version | grep -F "blastn: ${NCBI_BLAST_VERSION}+"
+          blast-tool/bin/blast_formatter -version | grep -F "blast_formatter: ${NCBI_BLAST_VERSION}+"
+          for tool in blastp blastn blast_formatter; do
+            ! ldd "blast-tool/bin/$tool" | grep -q 'not found'
+          done
+          echo "$GITHUB_WORKSPACE/blast-tool/bin" >> "$GITHUB_PATH"
 
       - name: Run failure-aware remote search
         shell: bash

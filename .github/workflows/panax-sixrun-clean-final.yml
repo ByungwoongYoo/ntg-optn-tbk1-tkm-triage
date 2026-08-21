@@ -10,6 +10,10 @@ on:
       - 'virus_hunt/validation_inputs/all_member_contigs.part3.fna'
   workflow_dispatch:
 
+concurrency:
+  group: panax-sixrun-clean-final-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   actions: read
