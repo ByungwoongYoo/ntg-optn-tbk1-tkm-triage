@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Current NCBI remote-database audit for immutable Panax A1/A2/B queries.
-# A zero-hit result is accepted only when BLAST produced a valid archive and
-# blast_formatter recovered every exact query ID and length from that archive.
+# A zero-hit result is accepted only when BLAST produced a valid archive,
+# recovered every exact query, and reported nonzero statistics. Modes with
+# embedded positive controls must also recover both controls.
 set -Eeuo pipefail
 
 MODE="${1:?search mode required}"
@@ -16,7 +17,7 @@ fi
 case "$MODE" in
   protein_nr)
     program=blastp; query="$QUERY_ROOT/panax_candidates_plus_controls_orfs.faa"; database=nr
-    extra=(-seg yes -comp_based_stats 2)
+    extra=(-entrez_query 'all[filter]' -seg yes -comp_based_stats 2)
     ;;
   protein_viral)
     program=blastp; query="$QUERY_ROOT/panax_candidates_plus_controls_orfs.faa"; database=nr
@@ -36,7 +37,7 @@ case "$MODE" in
     ;;
   nt_standard)
     program=blastn; query="$QUERY_ROOT/panax_candidates_plus_controls_contigs.fna"; database=nt
-    extra=(-task blastn -dust yes -soft_masking true)
+    extra=(-task blastn -entrez_query 'all[filter]' -dust yes -soft_masking true)
     ;;
   nt_megablast)
     program=blastn; query="$QUERY_ROOT/panax_candidates_plus_controls_contigs.fna"; database=nt
@@ -102,6 +103,74 @@ printf '%q ' "${cmd[@]}" > "$OUT/COMMAND.txt"
 printf '\n' >> "$OUT/COMMAND.txt"
 : > "$OUT/STDOUT.txt"
 : > "$OUT/STDERR.txt"
+
+validate_remote_archive() {
+  local result_json="$1"
+  local expected_json="$2"
+  local mode="$3"
+  python - "$result_json" "$expected_json" "$mode" <<'PY'
+from pathlib import Path
+import json,math,sys
+result_path=Path(sys.argv[1]); expected_path=Path(sys.argv[2]); mode=sys.argv[3]
+payload=json.loads(result_path.read_text())
+expected_payload=json.loads(expected_path.read_text())
+expected_lengths={x['id']:int(x['length']) for x in expected_payload['queries']}
+reports=payload.get('BlastOutput2',[])
+errors=[]; observed={}; hit_counts={}
+if not isinstance(reports,list) or not reports:
+    errors.append('missing BlastOutput2 reports')
+else:
+    for index,item in enumerate(reports,1):
+        try:
+            search=item['report']['results']['search']
+        except Exception as exc:
+            errors.append(f'report {index} has no search payload: {exc}')
+            continue
+        title=str(search.get('query_title','')).strip()
+        qid=title.split()[0] if title else ''
+        try:
+            qlen=int(search.get('query_len',0))
+        except Exception:
+            qlen=0
+        if not qid:
+            errors.append(f'report {index} has no query title')
+            continue
+        if qid in observed:
+            errors.append(f'duplicate query report: {qid}')
+            continue
+        observed[qid]=qlen
+        stat=search.get('stat') or {}
+        bad_stats=[]
+        for key in ('kappa','lambda','entropy'):
+            try:
+                value=float(stat.get(key,0))
+            except Exception:
+                value=0.0
+            if not math.isfinite(value) or value <= 0:
+                bad_stats.append(f'{key}={stat.get(key)!r}')
+        if bad_stats:
+            errors.append(f'{qid} has invalid result statistics: {", ".join(bad_stats)}')
+        hits=search.get('hits',[])
+        if not isinstance(hits,list):
+            errors.append(f'{qid} has a malformed hit list')
+            hits=[]
+        hit_counts[qid]=len(hits)
+if observed != expected_lengths:
+    errors.append(f'query reports mismatch: observed={observed}, expected={expected_lengths}')
+control_modes={'protein_nr','protein_viral','nt_standard','nt_megablast'}
+if mode in control_modes:
+    for control in ('PNX_Duplo_A_control','PNX_Duplo_B_control'):
+        if hit_counts.get(control,0) < 1:
+            errors.append(f'positive control has no hit: {control}')
+if errors:
+    print('remote archive validation failed:', file=sys.stderr)
+    for error in errors:
+        print(f'- {error}', file=sys.stderr)
+    raise SystemExit(1)
+print(f'validated {len(observed)} query reports with nonzero statistics')
+PY
+}
+
 success=0
 attempts=0
 success_attempt=0
@@ -119,7 +188,9 @@ for attempt in 1 2; do
      blast_formatter -archive "$OUT/RESULTS.asn" \
        -outfmt '6 qseqid saccver pident length qlen slen qstart qend sstart send evalue bitscore qcovs staxids sscinames stitle sseq' \
        -out "$OUT/HITS.tsv" >> "$attempt_stdout" 2>> "$attempt_stderr" && \
-     [[ -s "$OUT/RESULTS.json" ]]; then
+     [[ -s "$OUT/RESULTS.json" ]] && \
+     validate_remote_archive "$OUT/RESULTS.json" "$OUT/EXPECTED_QUERIES.json" "$MODE" \
+       >> "$attempt_stdout" 2>> "$attempt_stderr"; then
     success=1
     success_attempt="$attempt"
     break
