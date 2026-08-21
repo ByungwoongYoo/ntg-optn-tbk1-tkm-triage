@@ -156,6 +156,9 @@ jobs:
     needs: local_evidence
     runs-on: ubuntu-24.04
     timeout-minutes: 90
+    env:
+      TRIMAL_SOURCE_REPOSITORY: https://github.com/inab/trimal.git
+      TRIMAL_SOURCE_COMMIT: d637091abe33595775f40480970d1a18d87a7bcb
     steps:
       - name: Checkout immutable source head
         uses: actions/checkout@v4
@@ -169,9 +172,21 @@ jobs:
           path: local-evidence
 
       - name: Install phylogenetic tools
+        shell: bash
         run: |
+          set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y -qq mafft trimal iqtree
+          sudo apt-get install -y -qq mafft iqtree build-essential
+          trimal_root="$RUNNER_TEMP/trimal-d637091abe33595775f40480970d1a18d87a7bcb"
+          git init -q "$trimal_root"
+          git -C "$trimal_root" remote add origin "$TRIMAL_SOURCE_REPOSITORY"
+          git -C "$trimal_root" fetch --depth=1 origin "$TRIMAL_SOURCE_COMMIT"
+          git -C "$trimal_root" checkout -q --detach FETCH_HEAD
+          observed_commit="$(git -C "$trimal_root" rev-parse HEAD)"
+          [[ "$observed_commit" == "$TRIMAL_SOURCE_COMMIT" ]]
+          make -C "$trimal_root/source" -j2
+          sudo install -m 0755 "$trimal_root/source/trimal" /usr/local/bin/trimal
+          trimal --version
 
       - name: Run unrooted trimmed and untrimmed sensitivity trees
         shell: bash

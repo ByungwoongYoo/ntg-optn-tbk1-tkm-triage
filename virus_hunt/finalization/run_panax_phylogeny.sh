@@ -30,6 +30,8 @@ cp "$MANIFEST" "$OUT/CURATED_REFERENCE_MANIFEST.tsv"
 {
   printf 'mafft\t'; mafft --version 2>&1 | sed -n '1p'
   printf 'trimal\t'; trimal --version 2>&1 | sed -n '1p'
+  printf 'trimal_source_repository\t%s\n' "${TRIMAL_SOURCE_REPOSITORY:-unrecorded}"
+  printf 'trimal_source_commit\t%s\n' "${TRIMAL_SOURCE_COMMIT:-unrecorded}"
   printf 'iqtree\t'; "$IQTREE" -version 2>&1 | sed -n '1p'
   printf 'python\t'; python --version 2>&1
 } > "$OUT/TOOL_VERSIONS.txt"
