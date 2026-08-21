@@ -417,7 +417,10 @@ jobs:
                 - "work/${RUN}/mapped.markdup.bam"
           samtools index "work/${RUN}/mapped.markdup.bam"
 
-          samtools view "work/${RUN}/mapped.markdup.bam" \
+          # fixmate clears pair flags on mapped singletons whose unmapped mate
+          # was removed upstream. Only paired records can contribute to this
+          # explicitly both-mate proper-fragment audit.
+          samtools view -f 1 "work/${RUN}/mapped.markdup.bam" \
             | python virus_hunt/finalization/audit_panax_fragments.py \
                 --sam - \
                 --reference work/refs.fna \
@@ -429,10 +432,12 @@ jobs:
                 --out "$raw"
 
           samtools view -@ 2 -b \
+            -f 3 \
             -N "$raw/QUALIFYING_QNAMES_PRE_DUPLICATE.txt" \
             -o "$audit/proper.preduplicate.bam" \
             "work/${RUN}/mapped.markdup.bam"
           samtools view -@ 2 -b \
+            -f 3 -F 1024 \
             -N "$raw/QUALIFYING_QNAMES_NON_DUPLICATE.txt" \
             -o "$audit/proper.nonduplicate.bam" \
             "work/${RUN}/mapped.markdup.bam"

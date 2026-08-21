@@ -203,6 +203,7 @@ def open_sam(path: str):
 
 def parse_sam(path: str, references: dict[str, str]) -> dict[str, list[Alignment]]:
     groups: dict[str, list[Alignment]] = defaultdict(list)
+    unpaired_qnames: set[str] = set()
     with open_sam(path) as handle:
         for number, raw in enumerate(handle, 1):
             if not raw.strip() or raw.startswith("@"):
@@ -224,11 +225,10 @@ def parse_sam(path: str, references: dict[str, str]) -> dict[str, list[Alignment
                 continue
             if reference not in references:
                 raise ValueError(f"unexpected mapped reference at row {number}: {reference}")
-            if not flag & PAIRED:
-                raise ValueError(f"unpaired primary record at row {number}: {fields[0]}")
+            paired = bool(flag & PAIRED)
             is_read1 = bool(flag & READ1)
             is_read2 = bool(flag & READ2)
-            if is_read1 == is_read2:
+            if paired and is_read1 == is_read2:
                 raise ValueError(
                     f"primary record must have exactly one READ1/READ2 bit at row "
                     f"{number}: {fields[0]}"
@@ -278,11 +278,25 @@ def parse_sam(path: str, references: dict[str, str]) -> dict[str, list[Alignment
                 )
             if not 0 <= mapq <= 255:
                 raise ValueError(f"MAPQ outside 0..255 at row {number}: {mapq}")
+            if not paired:
+                # Filtering unmapped records before samtools fixmate leaves a
+                # legitimate mapped singleton when its unmapped mate was
+                # removed. SAM does not assign meaning to pair-only flag bits
+                # when PAIRED is unset, and this record cannot contribute to a
+                # both-mate proper-fragment audit.
+                unpaired_qnames.add(qname)
+                continue
             groups[fields[0]].append(Alignment(
                 qname=qname, flag=flag, reference=reference,
                 position=position, mapq=mapq, cigar=cigar,
                 sequence=sequence,
             ))
+    collisions = set(groups).intersection(unpaired_qnames)
+    if collisions:
+        example = sorted(collisions)[0]
+        raise ValueError(
+            f"QNAME occurs in both paired and unpaired primary records: {example}"
+        )
     return groups
 
 

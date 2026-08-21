@@ -265,9 +265,54 @@ class SamValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "exactly one READ1/READ2"):
             self.parse_row(row)
 
-    def test_unpaired_primary_record_is_rejected(self) -> None:
-        with self.assertRaisesRegex(ValueError, "unpaired primary"):
-            self.parse_row(sam_row("bad", 64, "A" * 50))
+    def test_fixmate_normalized_mapped_singletons_are_ignored(self) -> None:
+        rows = "".join([
+            sam_row("forward", 0, "A" * 50),
+            sam_row("read_designated", audit_mod.READ1, "A" * 50),
+            sam_row(
+                "reverse_duplicate",
+                audit_mod.REVERSE | audit_mod.DUPLICATE,
+                "A" * 50,
+            ),
+        ])
+        self.assertEqual(self.parse_row(rows), {})
+
+    def test_unpaired_record_does_not_change_a_valid_pair(self) -> None:
+        records = pair("good", "A", self.references["A"])
+        rows = "".join(
+            sam_row(
+                record.qname,
+                record.flag,
+                record.sequence,
+                cigar=record.cigar,
+                position=record.position,
+                mapq=record.mapq,
+                reference=record.reference,
+            )
+            for record in records
+        ) + sam_row("singleton", 0, "A" * 50)
+        groups = self.parse_row(rows)
+        result = audit_mod.audit(self.references, groups, 31, "RUN", "Alias")
+        self.assertEqual(result.preduplicate_qnames, {"good"})
+        self.assertEqual(result.nonduplicate_qnames, {"good"})
+        self.assertEqual(len(result.hashes), 1)
+
+    def test_same_qname_paired_and_unpaired_records_are_rejected(self) -> None:
+        records = pair("collision", "A", self.references["A"])
+        rows = "".join(
+            sam_row(
+                record.qname,
+                record.flag,
+                record.sequence,
+                cigar=record.cigar,
+                position=record.position,
+                mapq=record.mapq,
+                reference=record.reference,
+            )
+            for record in records
+        ) + sam_row("collision", 0, "A" * 50)
+        with self.assertRaisesRegex(ValueError, "both paired and unpaired"):
+            self.parse_row(rows)
 
     def test_malformed_cigar_and_sequence_length_are_rejected(self) -> None:
         cases = [
