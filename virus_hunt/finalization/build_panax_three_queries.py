@@ -53,9 +53,11 @@ CANDIDATES = {
     },
     "PNX_Picorna_B": {
         "contig_id": "DRR853910_21434", "rdrp_id": "DRR853910_21434_frame=-3", "reverse_offset": 2,
-        "nt_length": 3458, "orf_length": 1135, "rdrp_raw_length": 438, "rdrp_length": 435,
-        "rdrp_trim_suffix": "**L", "coordinates": "52-3456",
-        "nt_sha256": "d3db01132aacf3e860ef247496969f7df0c39d178ceb6a77e9966e866dc82a29",
+        "source_nt_length": 3458, "source_nt_sha256": "d3db01132aacf3e860ef247496969f7df0c39d178ceb6a77e9966e866dc82a29",
+        "trim_prefix": "AGACGTGTGCTCTTCCGATCTC",
+        "nt_length": 3436, "orf_length": 1135, "rdrp_raw_length": 438, "rdrp_length": 435,
+        "rdrp_trim_suffix": "**L", "source_coordinates": "52-3456", "coordinates": "30-3434",
+        "nt_sha256": "d7dfe0868911ab9fb8bad8b98a4872878ef55f45f550725f801ffd96b7e14bc9",
         "orf_nt_sha256": "48e121c6f861e459b79affe412db7d319d82f00deb5fdcfe69caca87c2f6677a",
         "orf_sha256": "3f15c030914b6e83962c925f8f6d21b745191f180027a51a3b192fe1866f8199",
         "rdrp_raw_sha256": "a4b4735d9fa7bacda45271a7765346c871431f95c88911ce4e8149f12b7c2742",
@@ -173,10 +175,21 @@ def main() -> int:
     sequences: dict[str, dict[str, str]] = {}
 
     for candidate, expected in CANDIDATES.items():
-        nt = contigs.get(str(expected["contig_id"]), "")
+        source_nt = contigs.get(str(expected["contig_id"]), "")
         rdrp_raw = rdrps.get(str(expected["rdrp_id"]), "")
-        if not nt or not rdrp_raw:
+        if not source_nt or not rdrp_raw:
             raise SystemExit(f"missing exact source sequence for {candidate}")
+        source_nt_length = int(expected.get("source_nt_length", expected["nt_length"]))
+        source_nt_sha256 = str(expected.get("source_nt_sha256", expected["nt_sha256"]))
+        if len(source_nt) != source_nt_length or sha(source_nt) != source_nt_sha256:
+            raise SystemExit(f"{candidate} immutable source contig changed")
+        trim_prefix = str(expected.get("trim_prefix", ""))
+        if trim_prefix:
+            if not source_nt.startswith(trim_prefix):
+                raise SystemExit(f"{candidate} validated terminal adapter prefix is absent")
+            nt = source_nt[len(trim_prefix):]
+        else:
+            nt = source_nt
         if len(rdrp_raw) != expected["rdrp_raw_length"] or sha(rdrp_raw) != expected["rdrp_raw_sha256"]:
             raise SystemExit(f"{candidate} raw screened RdRP sequence changed")
         trim_suffix = str(expected["rdrp_trim_suffix"])
@@ -211,6 +224,24 @@ def main() -> int:
         observed_coordinates = f"{observed_start}-{observed_end}"
         if observed_coordinates != expected["coordinates"]:
             raise SystemExit(f"{candidate} reconstructed reverse-strand coordinates changed: {observed_coordinates}")
+        observed_source_coordinates = (
+            f"{observed_start + len(trim_prefix)}-{observed_end + len(trim_prefix)}"
+        )
+        expected_source_coordinates = str(expected.get("source_coordinates", expected["coordinates"]))
+        if observed_source_coordinates != expected_source_coordinates:
+            raise SystemExit(
+                f"{candidate} source-contig coordinates changed: "
+                f"{observed_source_coordinates} != {expected_source_coordinates}"
+            )
+        cleaning_reasons = []
+        if trim_prefix:
+            cleaning_reasons.append(
+                f"validated {len(trim_prefix)}-nt terminal adapter prefix removed"
+            )
+        if trim_suffix:
+            cleaning_reasons.append(
+                "screening-window suffix after the reconstructed ORF stop was excluded"
+            )
         rdrp_aa_start = orf.index(rdrp) + 1
         rdrp_aa_end = rdrp_aa_start + len(rdrp) - 1
         nt_records.append((candidate, f"source={expected['contig_id']}; associated_root_RNAseq_contig", nt))
@@ -220,16 +251,25 @@ def main() -> int:
         manifest.append({
             "candidate": candidate, "source_contig": expected["contig_id"], "source_rdrp": expected["rdrp_id"],
             "strand": "-", "frame": int(expected["reverse_offset"]) + 1,
-            "original_coordinates_1based": observed_coordinates,
+            "original_coordinates_1based": observed_source_coordinates,
+            "cleaned_query_coordinates_1based": observed_coordinates,
+            "source_contig_nt_length": len(source_nt), "source_contig_nt_sha256": sha(source_nt),
+            "removed_terminal_adapter_prefix": trim_prefix,
+            "removed_terminal_adapter_prefix_length": len(trim_prefix),
             "nt_length": len(nt), "orf_aa_length": len(orf), "rdrp_aa_length": len(rdrp),
             "rdrp_within_orf_aa_coordinates_1based": f"{rdrp_aa_start}-{rdrp_aa_end}",
             "orf_nt_length": len(orf_nt), "immediate_downstream_stop_codon": stop_codon,
             "source_rdrp_raw_aa_length": len(rdrp_raw),
             "removed_post_stop_noncontiguous_suffix": trim_suffix,
-            "sequence_cleaning_reason": "screening-window suffix after the reconstructed ORF stop was excluded" if trim_suffix else "none",
+            "sequence_cleaning_reason": "; ".join(cleaning_reasons) if cleaning_reasons else "none",
             "nt_sha256": sha(nt), "orf_nt_sha256": sha(orf_nt),
             "orf_sha256": sha(orf), "source_rdrp_raw_sha256": sha(rdrp_raw), "rdrp_sha256": sha(rdrp),
-            "boundary_interpretation": "N-terminal contig boundary open; downstream in-frame stop present",
+            "boundary_interpretation": (
+                "validated 5-prime terminal adapter removed; N-terminal ORF boundary open; "
+                "downstream in-frame stop present"
+                if trim_prefix else
+                "N-terminal contig boundary open; downstream in-frame stop present"
+            ),
             "claim_boundary": "partial Picornavirales-like RNA sequence candidate; not a complete genome or formal virus species",
         })
         sequences[candidate] = {"nt": nt, "orf": orf, "rdrp": rdrp}

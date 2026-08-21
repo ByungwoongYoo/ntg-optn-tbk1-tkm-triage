@@ -54,9 +54,18 @@ jobs:
           from pathlib import Path
           import hashlib
           wanted = {
-              'DRR853912_10707': ('PNX_Picorna_A1_ref',1988,'62c9bf75a32cbf28d74295350bda538ce702f5702722af0c8d56f0eada56d0b3'),
-              'DRR853912_79526': ('PNX_Picorna_A2_ref',2468,'9ac77c66fdf0e77577a089b363fdf36ef5bc7df88745197c899baf8dd0c0b4f9'),
-              'DRR853910_21434': ('PNX_Picorna_B_ref',3458,'d3db01132aacf3e860ef247496969f7df0c39d178ceb6a77e9966e866dc82a29'),
+              'DRR853912_10707': (
+                  'PNX_Picorna_A1_ref',1988,'62c9bf75a32cbf28d74295350bda538ce702f5702722af0c8d56f0eada56d0b3',
+                  '',1988,'62c9bf75a32cbf28d74295350bda538ce702f5702722af0c8d56f0eada56d0b3',
+              ),
+              'DRR853912_79526': (
+                  'PNX_Picorna_A2_ref',2468,'9ac77c66fdf0e77577a089b363fdf36ef5bc7df88745197c899baf8dd0c0b4f9',
+                  '',2468,'9ac77c66fdf0e77577a089b363fdf36ef5bc7df88745197c899baf8dd0c0b4f9',
+              ),
+              'DRR853910_21434': (
+                  'PNX_Picorna_B_ref',3458,'d3db01132aacf3e860ef247496969f7df0c39d178ceb6a77e9966e866dc82a29',
+                  'AGACGTGTGCTCTTCCGATCTC',3436,'d7dfe0868911ab9fb8bad8b98a4872878ef55f45f550725f801ffd96b7e14bc9',
+              ),
           }
           seqs = {}
           current = None
@@ -77,16 +86,34 @@ jobs:
           out = Path('work/refs.fna')
           metadata = Path('work/REFERENCE_METADATA.tsv')
           with out.open('w') as f, metadata.open('w') as meta:
-              meta.write('source_contig\treference\tlength_nt\tsequence_sha256\n')
-              for old,(new,expected_length,expected_sha) in wanted.items():
-                  s=seqs[old]
-                  observed_sha=hashlib.sha256(s.encode()).hexdigest()
-                  if len(s)!=expected_length or observed_sha!=expected_sha:
-                      raise SystemExit(f'immutable reference mismatch for {old}: length={len(s)}, sha256={observed_sha}')
+              meta.write(
+                  'source_contig\treference\tsource_length_nt\tsource_sha256\t'
+                  'removed_terminal_prefix_nt\treference_length_nt\treference_sha256\n'
+              )
+              for old,(new,source_length,source_sha,trim_prefix,reference_length,reference_sha) in wanted.items():
+                  source=seqs[old]
+                  observed_source_sha=hashlib.sha256(source.encode()).hexdigest()
+                  if len(source)!=source_length or observed_source_sha!=source_sha:
+                      raise SystemExit(
+                          f'immutable source mismatch for {old}: '
+                          f'length={len(source)}, sha256={observed_source_sha}'
+                      )
+                  if trim_prefix and not source.startswith(trim_prefix):
+                      raise SystemExit(f'validated terminal adapter prefix is absent for {old}')
+                  s=source[len(trim_prefix):] if trim_prefix else source
+                  observed_reference_sha=hashlib.sha256(s.encode()).hexdigest()
+                  if len(s)!=reference_length or observed_reference_sha!=reference_sha:
+                      raise SystemExit(
+                          f'cleaned reference mismatch for {old}: '
+                          f'length={len(s)}, sha256={observed_reference_sha}'
+                      )
                   f.write(f'>{new} source={old} length={len(s)}\n')
                   for i in range(0,len(s),80):
                       f.write(s[i:i+80]+'\n')
-                  meta.write(f'{old}\t{new}\t{len(s)}\t{observed_sha}\n')
+                  meta.write(
+                      f'{old}\t{new}\t{len(source)}\t{observed_source_sha}\t'
+                      f'{len(trim_prefix)}\t{len(s)}\t{observed_reference_sha}\n'
+                  )
           PY
           samtools faidx work/refs.fna
           (cd work && sha256sum refs.fna refs.fna.fai REFERENCE_METADATA.tsv > REFERENCE_SHA256.txt)
