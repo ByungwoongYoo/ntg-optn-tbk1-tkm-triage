@@ -1,0 +1,590 @@
+{
+  "audit_date": "2026-08-21",
+  "code_audit": {
+    "conclusion": "Candidate-row random split and ordinary stratified CV; no patient grouping detected. The prospective evaluation script also conditions binary AUROC on predicted non-Review rows.",
+    "files": [
+      {
+        "exists": true,
+        "filters_actual_review_for_auc": false,
+        "filters_predicted_review_for_auc": false,
+        "passes_groups_to_fit": false,
+        "path": "model_development/scripts/train.py",
+        "sha256": "adf2f8ddfe72a3cf5b88e081b140b4ae5eaedfeca971456daa23df3bd0953ab1",
+        "uses_GridSearchCV": true,
+        "uses_GroupKFold": false,
+        "uses_StratifiedGroupKFold": false,
+        "uses_train_test_split": true
+      },
+      {
+        "exists": true,
+        "filters_actual_review_for_auc": false,
+        "filters_predicted_review_for_auc": false,
+        "passes_groups_to_fit": false,
+        "path": "manuscript/scripts/ml_randomforest_model.py",
+        "sha256": "44e61a422397ce96c34989f1b3291e5de78460affc56638936b07e6e55df87dc",
+        "uses_GridSearchCV": true,
+        "uses_GroupKFold": false,
+        "uses_StratifiedGroupKFold": false,
+        "uses_train_test_split": false
+      },
+      {
+        "exists": true,
+        "filters_actual_review_for_auc": false,
+        "filters_predicted_review_for_auc": false,
+        "passes_groups_to_fit": false,
+        "path": "manuscript/scripts/ml_logistic_model.py",
+        "sha256": "e9a22ce580239731f0b673e7920701901c100c37cad54ba3769f4ba68f52f9a4",
+        "uses_GridSearchCV": true,
+        "uses_GroupKFold": false,
+        "uses_StratifiedGroupKFold": false,
+        "uses_train_test_split": false
+      },
+      {
+        "exists": true,
+        "filters_actual_review_for_auc": true,
+        "filters_predicted_review_for_auc": true,
+        "passes_groups_to_fit": false,
+        "path": "manuscript/scripts/evaluation_on_prospective_test_set.py",
+        "sha256": "c6260545592678d0d8556622be1b858a41569a51e9a9ab3c3dc106b626fee7a6",
+        "uses_GridSearchCV": false,
+        "uses_GroupKFold": false,
+        "uses_StratifiedGroupKFold": false,
+        "uses_train_test_split": false
+      }
+    ]
+  },
+  "limitations": [
+    "The public retrospective matrices do not expose a peptide-sequence column if 'Best Peptide' is absent; peptide-level duplicate testing is then not reproducible from these files.",
+    "Patient-level confidence intervals are descriptive with only 8 or 12 patients.",
+    "The full 12-patient prospective set is not a sealed threshold holdout because 4 patients/170 rows were used to choose thresholds."
+  ],
+  "overlap_and_duplicates": {
+    "Best Peptide": {
+      "available": {
+        "development": false,
+        "prospective": true,
+        "training": false
+      },
+      "column": "Best Peptide",
+      "prospective_duplicate_rows_beyond_first": 12,
+      "prospective_duplicated_unique_values": 8
+    },
+    "ID": {
+      "available": {
+        "development": true,
+        "prospective": true,
+        "training": true
+      },
+      "column": "ID",
+      "development_duplicate_rows_beyond_first": 1,
+      "development_duplicated_unique_values": 1,
+      "development_prospective_unique_overlap_count": 1,
+      "prospective_duplicate_rows_beyond_first": 4,
+      "prospective_duplicated_unique_values": 1,
+      "training_development_unique_overlap_count": 4,
+      "training_duplicate_rows_beyond_first": 13,
+      "training_duplicated_unique_values": 10,
+      "training_prospective_unique_overlap_count": 2
+    },
+    "patient_ids": {
+      "development_unique": 20,
+      "prospective_unique": 12,
+      "retrospective_prospective_overlap_count": 0,
+      "retrospective_prospective_overlap_ids": [],
+      "train_development_overlap_count": 20,
+      "train_development_overlap_ids": [
+        "pt_04",
+        "pt_05",
+        "pt_06",
+        "pt_07",
+        "pt_08",
+        "pt_09",
+        "pt_12",
+        "pt_13",
+        "pt_14",
+        "pt_15",
+        "pt_16",
+        "pt_17",
+        "pt_19",
+        "pt_21",
+        "pt_22",
+        "pt_23",
+        "pt_24",
+        "pt_25",
+        "pt_26",
+        "pt_27"
+      ],
+      "train_unique": 21
+    }
+  },
+  "prospective_full12": {
+    "accept_vs_reject_auc_actual_review_excluded": 0.942182506805539,
+    "accept_vs_reject_auc_denominator": 618,
+    "accept_vs_reject_auc_patient_cluster_bootstrap_95ci": [
+      0.9168967448092548,
+      0.9949133771929825
+    ],
+    "accept_vs_reject_auc_repository_script_conditioned_on_pred_nonreview": 0.9483528948769591,
+    "actual_label_counts": {
+      "Accept": 142,
+      "Reject": 476,
+      "Review": 88
+    },
+    "conditioned_auc_denominator": 478,
+    "conditioned_auc_patient_cluster_bootstrap_95ci": [
+      0.9135390413167099,
+      1.0
+    ],
+    "confusion_matrix": {
+      "Accept": {
+        "Accept": 121,
+        "Reject": 0,
+        "Review": 21
+      },
+      "Reject": {
+        "Accept": 56,
+        "Reject": 301,
+        "Review": 119
+      },
+      "Review": {
+        "Accept": 16,
+        "Reject": 30,
+        "Review": 42
+      }
+    },
+    "expert_accept_auto_reject_count": 0,
+    "expert_accept_auto_reject_denominator": 142,
+    "expert_accept_auto_reject_rate": 0.0,
+    "expert_accept_auto_reject_wilson_95ci": [
+      0.0,
+      0.02633996431300811
+    ],
+    "name": "prospective_full12",
+    "non_review_prediction_coverage": 0.7422096317280453,
+    "non_review_prediction_coverage_denominator": 706,
+    "non_review_prediction_coverage_numerator": 524,
+    "non_review_prediction_coverage_wilson_95ci": [
+      0.7086938064004761,
+      0.7731039186410943
+    ],
+    "patient_macro_metrics": {
+      "accept_precision": {
+        "max": 1.0,
+        "mean": 0.8031768031768033,
+        "median": 0.8571428571428571,
+        "min": 0.32432432432432434,
+        "n_patients_defined": 12,
+        "patient_cluster_bootstrap_95ci": [
+          0.6911985302610303,
+          0.8925518925518925
+        ]
+      },
+      "accept_recall": {
+        "max": 1.0,
+        "mean": 0.8351918305865675,
+        "median": 0.8166666666666667,
+        "min": 0.7272727272727273,
+        "n_patients_defined": 12,
+        "patient_cluster_bootstrap_95ci": [
+          0.7864442949229135,
+          0.888159196127946
+        ]
+      },
+      "accept_set_jaccard": {
+        "max": 0.875,
+        "mean": 0.68063904001404,
+        "median": 0.69375,
+        "min": 0.32432432432432434,
+        "n_patients_defined": 12,
+        "patient_cluster_bootstrap_95ci": [
+          0.594215943825319,
+          0.756600716991342
+        ]
+      },
+      "accuracy": {
+        "max": 0.8541666666666666,
+        "mean": 0.7179575218956723,
+        "median": 0.7120689655172414,
+        "min": 0.4954545454545455,
+        "n_patients_defined": 12,
+        "patient_cluster_bootstrap_95ci": [
+          0.6596307825677631,
+          0.7713932652671602
+        ]
+      },
+      "non_review_coverage": {
+        "max": 0.8333333333333334,
+        "mean": 0.7587639444077953,
+        "median": 0.7560049019607844,
+        "min": 0.6857142857142857,
+        "n_patients_defined": 12,
+        "patient_cluster_bootstrap_95ci": [
+          0.7310821112453546,
+          0.7861876895965344
+        ]
+      },
+      "review_workload_fraction": {
+        "max": 0.3142857142857143,
+        "mean": 0.2412360555922047,
+        "median": 0.2439950980392157,
+        "min": 0.16666666666666666,
+        "n_patients_defined": 12,
+        "patient_cluster_bootstrap_95ci": [
+          0.21381231040346563,
+          0.26891788875464545
+        ]
+      }
+    },
+    "patients": 12,
+    "pooled_accept_precision": 0.6269430051813472,
+    "pooled_accept_precision_wilson_95ci": [
+      0.5568599658047878,
+      0.6920713329854474
+    ],
+    "pooled_accept_recall": 0.852112676056338,
+    "pooled_accept_recall_wilson_95ci": [
+      0.7844831499706286,
+      0.9011929314990839
+    ],
+    "pooled_accept_set_jaccard": 0.5654205607476636,
+    "pooled_omitted_accept_count": 21,
+    "pooled_overselected_accept_count": 72,
+    "predicted_label_counts": {
+      "Accept": 193,
+      "Reject": 331,
+      "Review": 182
+    },
+    "rows": 706,
+    "three_class_accuracy": 0.6572237960339944,
+    "three_class_accuracy_denominator": 706,
+    "three_class_accuracy_numerator": 464,
+    "three_class_accuracy_wilson_95ci": [
+      0.6214461867568873,
+      0.6912997049367636
+    ]
+  },
+  "prospective_no_calibration8": {
+    "accept_vs_reject_auc_actual_review_excluded": 0.9357219251336898,
+    "accept_vs_reject_auc_denominator": 474,
+    "accept_vs_reject_auc_patient_cluster_bootstrap_95ci": [
+      0.9141722606268698,
+      0.9962465918162121
+    ],
+    "accept_vs_reject_auc_repository_script_conditioned_on_pred_nonreview": 0.939289446185998,
+    "actual_label_counts": {
+      "Accept": 100,
+      "Reject": 374,
+      "Review": 62
+    },
+    "conditioned_auc_denominator": 362,
+    "conditioned_auc_patient_cluster_bootstrap_95ci": [
+      0.9085704351622205,
+      1.0
+    ],
+    "confusion_matrix": {
+      "Accept": {
+        "Accept": 87,
+        "Reject": 0,
+        "Review": 13
+      },
+      "Reject": {
+        "Accept": 53,
+        "Reject": 222,
+        "Review": 99
+      },
+      "Review": {
+        "Accept": 12,
+        "Reject": 19,
+        "Review": 31
+      }
+    },
+    "expert_accept_auto_reject_count": 0,
+    "expert_accept_auto_reject_denominator": 100,
+    "expert_accept_auto_reject_rate": 0.0,
+    "expert_accept_auto_reject_wilson_95ci": [
+      3.469446951953614e-18,
+      0.03699349820698568
+    ],
+    "name": "prospective_no_calibration8",
+    "non_review_prediction_coverage": 0.7332089552238806,
+    "non_review_prediction_coverage_denominator": 536,
+    "non_review_prediction_coverage_numerator": 393,
+    "non_review_prediction_coverage_wilson_95ci": [
+      0.6942034999985667,
+      0.7688954263901833
+    ],
+    "patient_macro_metrics": {
+      "accept_precision": {
+        "max": 1.0,
+        "mean": 0.7677612365112365,
+        "median": 0.8174603174603174,
+        "min": 0.32432432432432434,
+        "n_patients_defined": 8,
+        "patient_cluster_bootstrap_95ci": [
+          0.6136851136851138,
+          0.8903769841269841
+        ]
+      },
+      "accept_recall": {
+        "max": 1.0,
+        "mean": 0.8450757575757576,
+        "median": 0.8375,
+        "min": 0.7272727272727273,
+        "n_patients_defined": 8,
+        "patient_cluster_bootstrap_95ci": [
+          0.7763257575757576,
+          0.9190340909090909
+        ]
+      },
+      "accept_set_jaccard": {
+        "max": 0.875,
+        "mean": 0.6553335600210599,
+        "median": 0.69375,
+        "min": 0.32432432432432434,
+        "n_patients_defined": 8,
+        "patient_cluster_bootstrap_95ci": [
+          0.5318015458640458,
+          0.7561158200611324
+        ]
+      },
+      "accuracy": {
+        "max": 0.8541666666666666,
+        "mean": 0.7114971044547617,
+        "median": 0.7003042596348885,
+        "min": 0.4954545454545455,
+        "n_patients_defined": 8,
+        "patient_cluster_bootstrap_95ci": [
+          0.6309756671442935,
+          0.7865033015914892
+        ]
+      },
+      "non_review_coverage": {
+        "max": 0.8125,
+        "mean": 0.7473783867736707,
+        "median": 0.7399621212121212,
+        "min": 0.6857142857142857,
+        "n_patients_defined": 8,
+        "patient_cluster_bootstrap_95ci": [
+          0.7148613664215686,
+          0.7803219808863666
+        ]
+      },
+      "review_workload_fraction": {
+        "max": 0.3142857142857143,
+        "mean": 0.25262161322632926,
+        "median": 0.26003787878787876,
+        "min": 0.1875,
+        "n_patients_defined": 8,
+        "patient_cluster_bootstrap_95ci": [
+          0.21967801911363335,
+          0.28513863357843133
+        ]
+      }
+    },
+    "patients": 8,
+    "pooled_accept_precision": 0.5723684210526315,
+    "pooled_accept_precision_wilson_95ci": [
+      0.4928894235012159,
+      0.6482796862240238
+    ],
+    "pooled_accept_recall": 0.87,
+    "pooled_accept_recall_wilson_95ci": [
+      0.7901964855992357,
+      0.9224283257275948
+    ],
+    "pooled_accept_set_jaccard": 0.5272727272727272,
+    "pooled_omitted_accept_count": 13,
+    "pooled_overselected_accept_count": 65,
+    "predicted_label_counts": {
+      "Accept": 152,
+      "Reject": 241,
+      "Review": 143
+    },
+    "rows": 536,
+    "three_class_accuracy": 0.6343283582089553,
+    "three_class_accuracy_denominator": 536,
+    "three_class_accuracy_numerator": 340,
+    "three_class_accuracy_wilson_95ci": [
+      0.5927339741142118,
+      0.6740110074857083
+    ]
+  },
+  "reconstructed_threshold_calibration_subset": {
+    "patient_ids": [
+      "TWJF-5120-16",
+      "TWJF-5120-17",
+      "TWJF-5120-18",
+      "TWJF-5120-19"
+    ],
+    "patients": 4,
+    "rows": 170
+  },
+  "retrospective": {
+    "combined_patients": 21,
+    "development_columns": [
+      "ID",
+      "patient_id",
+      "Evaluation",
+      "%ile MT class1",
+      "%ile MT class2",
+      "%ile WT class1",
+      "%ile WT class2",
+      "Allele Expr",
+      "Best MT IC50 Score",
+      "Best MT Percentile",
+      "Biotype",
+      "Corresponding Fold Change",
+      "Corresponding WT IC50 Score",
+      "Corresponding WT Percentile",
+      "DNA VAF",
+      "Gene of Interest",
+      "IC50 MT class1",
+      "IC50 MT class2",
+      "IC50 WT class1",
+      "IC50 WT class2",
+      "MHCflurry MT IC50 Score",
+      "MHCflurry MT Percentile",
+      "MHCflurry WT IC50 Score",
+      "MHCflurry WT Percentile",
+      "MHCflurryEL Presentation MT Percentile",
+      "MHCflurryEL Presentation MT Score",
+      "MHCflurryEL Presentation WT Percentile",
+      "MHCflurryEL Presentation WT Score",
+      "MHCflurryEL Processing MT Score",
+      "MHCflurryEL Processing WT Score",
+      "MHCnuggetsI MT IC50 Score",
+      "MHCnuggetsI MT Percentile",
+      "MHCnuggetsI WT IC50 Score",
+      "MHCnuggetsI WT Percentile",
+      "Median Fold Change",
+      "NetMHC MT IC50 Score",
+      "NetMHC MT Percentile",
+      "NetMHC WT IC50 Score",
+      "NetMHC WT Percentile",
+      "NetMHCcons MT IC50 Score",
+      "NetMHCcons MT Percentile",
+      "NetMHCcons WT IC50 Score",
+      "NetMHCcons WT Percentile",
+      "NetMHCpan MT IC50 Score",
+      "NetMHCpan MT Percentile",
+      "NetMHCpan WT IC50 Score",
+      "NetMHCpan WT Percentile",
+      "NetMHCpanEL MT IC50 Score",
+      "NetMHCpanEL MT Percentile",
+      "NetMHCpanEL WT IC50 Score",
+      "NetMHCpanEL WT Percentile",
+      "Num Passing Peptides",
+      "Peptide Length",
+      "PickPocket MT IC50 Score",
+      "PickPocket MT Percentile",
+      "PickPocket WT IC50 Score",
+      "PickPocket WT Percentile",
+      "Pos",
+      "Prob Pos",
+      "Prob match",
+      "RNA Depth",
+      "RNA Expr",
+      "RNA VAF",
+      "Ref Match",
+      "SMM MT IC50 Score",
+      "SMM MT Percentile",
+      "SMM WT IC50 Score",
+      "SMM WT Percentile",
+      "SMMPMBEC MT IC50 Score",
+      "SMMPMBEC MT Percentile",
+      "SMMPMBEC WT IC50 Score",
+      "SMMPMBEC WT Percentile",
+      "TSL",
+      "Variant Type",
+      "cysteine_count"
+    ],
+    "development_patients": 20,
+    "development_rows": 310,
+    "label_counts": {
+      "0": 940,
+      "1": 297
+    },
+    "retrospective_rows_total": 1237,
+    "training_columns": [
+      "ID",
+      "patient_id",
+      "Evaluation",
+      "%ile MT class1",
+      "%ile MT class2",
+      "%ile WT class1",
+      "%ile WT class2",
+      "Allele Expr",
+      "Best MT IC50 Score",
+      "Best MT Percentile",
+      "Biotype",
+      "Corresponding Fold Change",
+      "Corresponding WT IC50 Score",
+      "Corresponding WT Percentile",
+      "DNA VAF",
+      "Gene of Interest",
+      "IC50 MT class1",
+      "IC50 MT class2",
+      "IC50 WT class1",
+      "IC50 WT class2",
+      "MHCflurry MT IC50 Score",
+      "MHCflurry MT Percentile",
+      "MHCflurry WT IC50 Score",
+      "MHCflurry WT Percentile",
+      "MHCflurryEL Presentation MT Percentile",
+      "MHCflurryEL Presentation MT Score",
+      "MHCflurryEL Presentation WT Percentile",
+      "MHCflurryEL Presentation WT Score",
+      "MHCflurryEL Processing MT Score",
+      "MHCflurryEL Processing WT Score",
+      "MHCnuggetsI MT IC50 Score",
+      "MHCnuggetsI MT Percentile",
+      "MHCnuggetsI WT IC50 Score",
+      "MHCnuggetsI WT Percentile",
+      "Median Fold Change",
+      "NetMHC MT IC50 Score",
+      "NetMHC MT Percentile",
+      "NetMHC WT IC50 Score",
+      "NetMHC WT Percentile",
+      "NetMHCcons MT IC50 Score",
+      "NetMHCcons MT Percentile",
+      "NetMHCcons WT IC50 Score",
+      "NetMHCcons WT Percentile",
+      "NetMHCpan MT IC50 Score",
+      "NetMHCpan MT Percentile",
+      "NetMHCpan WT IC50 Score",
+      "NetMHCpan WT Percentile",
+      "NetMHCpanEL MT IC50 Score",
+      "NetMHCpanEL MT Percentile",
+      "NetMHCpanEL WT IC50 Score",
+      "NetMHCpanEL WT Percentile",
+      "Num Passing Peptides",
+      "Peptide Length",
+      "PickPocket MT IC50 Score",
+      "PickPocket MT Percentile",
+      "PickPocket WT IC50 Score",
+      "PickPocket WT Percentile",
+      "Pos",
+      "Prob Pos",
+      "Prob match",
+      "RNA Depth",
+      "RNA Expr",
+      "RNA VAF",
+      "Ref Match",
+      "SMM MT IC50 Score",
+      "SMM MT Percentile",
+      "SMM WT IC50 Score",
+      "SMM WT Percentile",
+      "SMMPMBEC MT IC50 Score",
+      "SMMPMBEC MT Percentile",
+      "SMMPMBEC WT IC50 Score",
+      "SMMPMBEC WT Percentile",
+      "TSL",
+      "Variant Type",
+      "cysteine_count"
+    ],
+    "training_patients": 21,
+    "training_rows": 927
+  },
+  "source_commit": "c1df534d90b08ee5d6e054d0797088067cbc4cd1",
+  "source_repository": "https://github.com/griffithlab/NEAT"
+}
