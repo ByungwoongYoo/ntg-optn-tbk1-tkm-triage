@@ -6,6 +6,8 @@ on:
     paths:
       - '.github/workflows/panax-sixrun-clean-final.yml'
       - 'virus_hunt/finalization/DRR853911_FASTQ_URLS.txt'
+      - 'virus_hunt/validation_inputs/all_member_contigs.part2.fna'
+      - 'virus_hunt/validation_inputs/all_member_contigs.part3.fna'
   workflow_dispatch:
 
 permissions:
@@ -16,10 +18,12 @@ jobs:
   map:
     name: raw-map ${{ matrix.run }} (${{ matrix.alias }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    timeout-minutes: 210
     strategy:
       fail-fast: false
-      max-parallel: 6
+      # ENA transfers were unstable when six jobs each opened four TLS streams.
+      # Two jobs with one stream per file keep the audit bounded and resumable.
+      max-parallel: 2
       matrix:
         include:
           - {run: DRR853907, alias: ZhA}
@@ -37,7 +41,7 @@ jobs:
       - name: Install mapping and variant tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq aria2 pigz minimap2 samtools bcftools
+          sudo apt-get install -y -qq curl pigz minimap2 samtools bcftools
 
       - name: Build three-way competitive reference
         shell: bash
@@ -48,10 +52,11 @@ jobs:
               virus_hunt/validation_inputs/all_member_contigs.part3.fna > work/all_members.fna
           python - <<'PY'
           from pathlib import Path
+          import hashlib
           wanted = {
-              'DRR853912_10707': 'PNX_Picorna_A1_ref',
-              'DRR853912_79526': 'PNX_Picorna_A2_ref',
-              'DRR853910_21434': 'PNX_Picorna_B_ref',
+              'DRR853912_10707': ('PNX_Picorna_A1_ref',1988,'62c9bf75a32cbf28d74295350bda538ce702f5702722af0c8d56f0eada56d0b3'),
+              'DRR853912_79526': ('PNX_Picorna_A2_ref',2468,'9ac77c66fdf0e77577a089b363fdf36ef5bc7df88745197c899baf8dd0c0b4f9'),
+              'DRR853910_21434': ('PNX_Picorna_B_ref',3458,'d3db01132aacf3e860ef247496969f7df0c39d178ceb6a77e9966e866dc82a29'),
           }
           seqs = {}
           current = None
@@ -70,38 +75,133 @@ jobs:
           if missing:
               raise SystemExit(f'missing reference contigs: {missing}')
           out = Path('work/refs.fna')
-          with out.open('w') as f:
-              for old,new in wanted.items():
+          metadata = Path('work/REFERENCE_METADATA.tsv')
+          with out.open('w') as f, metadata.open('w') as meta:
+              meta.write('source_contig\treference\tlength_nt\tsequence_sha256\n')
+              for old,(new,expected_length,expected_sha) in wanted.items():
                   s=seqs[old]
+                  observed_sha=hashlib.sha256(s.encode()).hexdigest()
+                  if len(s)!=expected_length or observed_sha!=expected_sha:
+                      raise SystemExit(f'immutable reference mismatch for {old}: length={len(s)}, sha256={observed_sha}')
                   f.write(f'>{new} source={old} length={len(s)}\n')
                   for i in range(0,len(s),80):
                       f.write(s[i:i+80]+'\n')
+                  meta.write(f'{old}\t{new}\t{len(s)}\t{observed_sha}\n')
           PY
           samtools faidx work/refs.fna
-          sha256sum work/refs.fna > work/REFERENCE_SHA256.txt
+          (cd work && sha256sum refs.fna refs.fna.fai REFERENCE_METADATA.tsv > REFERENCE_SHA256.txt)
           cat work/refs.fna.fai
 
-      - name: Download and integrity-check complete paired FASTQ files
+      - name: Record tool versions
         shell: bash
         env:
           RUN: ${{ matrix.run }}
         run: |
           set -euo pipefail
+          {
+            printf 'curl\t'; curl --version | sed -n '1p'
+            printf 'pigz\t'; pigz --version 2>&1 | sed -n '1p'
+            printf 'minimap2\t'; minimap2 --version
+            printf 'samtools\t'; samtools --version | sed -n '1p'
+            printf 'bcftools\t'; bcftools --version | sed -n '1p'
+          } > "work/${RUN}/TOOL_VERSIONS.txt"
+
+      - name: Download and integrity-check complete paired FASTQ files
+        shell: bash
+        env:
+          RUN: ${{ matrix.run }}
+          ALIAS: ${{ matrix.alias }}
+        run: |
+          set -euo pipefail
           mkdir -p "work/${RUN}/fastq"
-          base="https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/${RUN}"
+          manifest="virus_hunt/finalization/DRR853911_FASTQ_URLS.txt"
+          python - "$manifest" <<'PY'
+          import csv,re,sys
+          rows=list(csv.DictReader(open(sys.argv[1]),delimiter='\t'))
+          expected_runs=['DRR853907','DRR853908','DRR853909','DRR853910','DRR853911','DRR853912']
+          expected_aliases=dict(zip(expected_runs,['ZhA','ZhB','ZhC','BhA','BhB','BhC']))
+          expected={(run,str(mate)) for run in expected_runs for mate in (1,2)}
+          observed={(row.get('run',''),row.get('mate','')) for row in rows}
+          if len(rows)!=12 or observed!=expected:
+              raise SystemExit(f'FASTQ manifest must contain exactly 12 unique run/mate rows: rows={len(rows)}, observed={sorted(observed)}')
+          for row in rows:
+              run,mate=row['run'],row['mate']
+              if row['archive_alias']!=expected_aliases[run]:
+                  raise SystemExit(f'archive alias mismatch in manifest: {run}')
+              if not re.fullmatch(r'[0-9a-f]{32}',row['md5']) or not row['bytes'].isdigit() or int(row['bytes'])<1_000_000:
+                  raise SystemExit(f'invalid integrity fields in manifest: {run}/{mate}')
+              suffix=f'/{run}_{mate}.fastq.gz'
+              if not row['https_url'].startswith('https://ftp.sra.ebi.ac.uk/') or not row['https_url'].endswith(suffix):
+                  raise SystemExit(f'invalid HTTPS URL in manifest: {run}/{mate}')
+              if not row['ftp_url'].startswith('ftp://ftp.sra.ebi.ac.uk/') or not row['ftp_url'].endswith(suffix):
+                  raise SystemExit(f'invalid FTP URL in manifest: {run}/{mate}')
+          PY
+          printf 'run\tmate\tattempt\tprotocol\tstart_bytes\texit_code\tend_bytes\tutc\n' > "work/${RUN}/DOWNLOAD_ATTEMPTS.tsv"
+
+          download_and_verify() {
+            local mate="$1" https_url="$2" ftp_url="$3" expected_md5="$4" expected_bytes="$5"
+            local file="work/${RUN}/fastq/${RUN}_${mate}.fastq.gz"
+            local protocol url attempt start_bytes end_bytes rc
+
+            for protocol in https ftp; do
+              if [[ "$protocol" == https ]]; then url="$https_url"; else url="$ftp_url"; fi
+              for attempt in $(seq 1 15); do
+                start_bytes=0
+                [[ -f "$file" ]] && start_bytes=$(stat -c '%s' "$file")
+                rc=0
+                protocol_args=()
+                [[ "$protocol" == https ]] && protocol_args+=(--http1.1)
+                curl --fail --location "${protocol_args[@]}" --silent --show-error \
+                  --connect-timeout 30 --max-time 1800 --speed-limit 1024 --speed-time 120 \
+                  --continue-at - --output "$file" "$url" || rc=$?
+                end_bytes=0
+                [[ -f "$file" ]] && end_bytes=$(stat -c '%s' "$file")
+                printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+                  "$RUN" "$mate" "$attempt" "$protocol" "$start_bytes" "$rc" "$end_bytes" "$(date -u +%FT%TZ)" \
+                  >> "work/${RUN}/DOWNLOAD_ATTEMPTS.tsv"
+
+                # A valid transfer must match both immutable ENA byte and MD5 fields.
+                if [[ "$end_bytes" == "$expected_bytes" ]] && \
+                   echo "$expected_md5  $file" | md5sum -c - >/dev/null && \
+                   pigz -t "$file"; then
+                  return 0
+                fi
+
+                # An exact-size file with a wrong MD5 is corrupt, and an oversized
+                # file means the server ignored Range. Only shorter files are resumable.
+                if (( end_bytes >= expected_bytes )); then
+                  rm -f "$file"
+                fi
+                sleep $(( attempt < 6 ? attempt * 2 : 12 ))
+              done
+            done
+            echo "Unable to retrieve an integrity-valid FASTQ after resumable HTTPS and FTP attempts: ${RUN} mate ${mate}" >&2
+            return 1
+          }
+
           for mate in 1 2; do
-            url="${base}/${RUN}_${mate}.fastq.gz"
-            aria2c --allow-overwrite=true --auto-file-renaming=false \
-              --continue=true --max-tries=12 --retry-wait=5 \
-              --split=4 --max-connection-per-server=4 \
-              --lowest-speed-limit=1K \
-              --dir="work/${RUN}/fastq" "$url"
-            pigz -t "work/${RUN}/fastq/${RUN}_${mate}.fastq.gz"
+            row=$(awk -F '\t' -v run="$RUN" -v mate="$mate" 'NR>1 && $1==run && $3==mate {print; exit}' "$manifest")
+            [[ -n "$row" ]] || { echo "Missing FASTQ manifest row for ${RUN} mate ${mate}" >&2; exit 2; }
+            IFS=$'\t' read -r manifest_run archive_alias manifest_mate https_url ftp_url expected_md5 expected_bytes <<< "$row"
+            [[ "$manifest_run" == "$RUN" && "$manifest_mate" == "$mate" ]]
+            [[ "$archive_alias" == "$ALIAS" ]] || {
+              echo "Archive alias mismatch for ${RUN}: manifest=${archive_alias}, matrix=${ALIAS}" >&2
+              exit 2
+            }
+            [[ "$expected_md5" =~ ^[0-9a-f]{32}$ && "$expected_bytes" =~ ^[0-9]+$ ]]
+            download_and_verify "$mate" "$https_url" "$ftp_url" "$expected_md5" "$expected_bytes"
           done
           sha256sum work/${RUN}/fastq/*.fastq.gz > work/${RUN}/FASTQ_SHA256.txt
-          pairs=$(pigz -dc "work/${RUN}/fastq/${RUN}_1.fastq.gz" | awk 'END{printf "%.0f\n", NR/4}')
-          printf '%s\n' "$pairs" > "work/${RUN}/INPUT_READ_PAIRS.txt"
-          printf 'run\talias\tread_pairs\n%s\t%s\t%s\n' "$RUN" '${{ matrix.alias }}' "$pairs" > "work/${RUN}/RUN_INPUT.tsv"
+          awk -F '\t' -v run="$RUN" 'NR==1 || $1==run' "$manifest" > "work/${RUN}/FASTQ_MANIFEST.tsv"
+          pairs1=$(pigz -dc "work/${RUN}/fastq/${RUN}_1.fastq.gz" | awk 'END{if (NR%4) exit 2; printf "%.0f\n", NR/4}')
+          pairs2=$(pigz -dc "work/${RUN}/fastq/${RUN}_2.fastq.gz" | awk 'END{if (NR%4) exit 2; printf "%.0f\n", NR/4}')
+          [[ "$pairs1" =~ ^[1-9][0-9]*$ && "$pairs1" == "$pairs2" ]] || {
+            echo "Paired FASTQ record-count mismatch for ${RUN}: R1=${pairs1}, R2=${pairs2}" >&2
+            exit 3
+          }
+          printf '%s\n' "$pairs1" > "work/${RUN}/INPUT_READ_PAIRS.txt"
+          printf 'run\talias\tread_pairs\tmate1_reads\tmate2_reads\n%s\t%s\t%s\t%s\t%s\n' \
+            "$RUN" '${{ matrix.alias }}' "$pairs1" "$pairs1" "$pairs2" > "work/${RUN}/RUN_INPUT.tsv"
 
       - name: Competitive raw-read mapping and depth audit
         shell: bash
@@ -112,19 +212,24 @@ jobs:
           set -euo pipefail
           r1="work/${RUN}/fastq/${RUN}_1.fastq.gz"
           r2="work/${RUN}/fastq/${RUN}_2.fastq.gz"
+          # Exclude unmapped, secondary, and supplementary records before every
+          # downstream count, depth, and variant operation.
           minimap2 -t 4 -ax sr --secondary=no work/refs.fna "$r1" "$r2" 2>"work/${RUN}/minimap2.log" \
-            | samtools view -@ 2 -b -F 4 - \
+            | samtools view -@ 2 -b -F 2308 - \
             | samtools sort -@ 2 -o "work/${RUN}/mapped.primary.bam" -
           samtools index "work/${RUN}/mapped.primary.bam"
           samtools flagstat "work/${RUN}/mapped.primary.bam" > "work/${RUN}/flagstat.txt"
           pairs=$(cat "work/${RUN}/INPUT_READ_PAIRS.txt")
           total_reads=$((pairs * 2))
-          printf 'run\talias\treference\treference_length\tread_pairs\ttotal_reads\tmapped_primary\tmapped_mapq20\tproper_pair_primary\tbreadth_1x\tbreadth_5x\tbreadth_10x\tmean_depth\tmedian_depth\tdepth_p10\tdepth_p90\tzero_bases\tread_rpm\n' > "work/${RUN}/metrics.tsv"
+          printf 'run\talias\treference\treference_length\tread_pairs\ttotal_reads\tmapped_primary\tmapped_mapq20\tproper_pair_primary\tbreadth_mapq20_1x\tbreadth_mapq20_5x\tbreadth_mapq20_10x\tmean_depth_mapq20\tmedian_depth_mapq20\tdepth_mapq20_p10\tdepth_mapq20_p90\tzero_bases_mapq20\tread_rpm_mapq20\n' > "work/${RUN}/metrics.tsv"
           while read -r ref len rest; do
             mapped=$(samtools view -c -F 2308 "work/${RUN}/mapped.primary.bam" "$ref")
             mapq20=$(samtools view -c -q 20 -F 2308 "work/${RUN}/mapped.primary.bam" "$ref")
             proper=$(samtools view -c -f 2 -F 2308 "work/${RUN}/mapped.primary.bam" "$ref")
-            samtools depth -aa -r "$ref" "work/${RUN}/mapped.primary.bam" > "work/${RUN}/${ref}.depth.tsv"
+            # Match the variant/consensus evidence floor: mapping quality >=20,
+            # base quality >=20, with overlapping mates counted once.
+            samtools depth -aa -Q 20 -q 20 -s -r "$ref" \
+              "work/${RUN}/mapped.primary.bam" > "work/${RUN}/${ref}.depth.tsv"
             python - "$RUN" "$ALIAS" "$ref" "$len" "$pairs" "$total_reads" "$mapped" "$mapq20" "$proper" "work/${RUN}/${ref}.depth.tsv" >> "work/${RUN}/metrics.tsv" <<'PY'
           import statistics,sys
           run,alias,ref,length,pairs,total,mapped,mapq20,proper,depth_file=sys.argv[1:]
@@ -140,7 +245,7 @@ jobs:
           breadth=lambda k: sum(d>=k for d in depths)/len(depths) if depths else 0
           mean=sum(depths)/len(depths) if depths else 0
           median=statistics.median(depths) if depths else 0
-          rpm=(int(mapped)/int(total)*1e6) if int(total) else 0
+          rpm=(int(mapq20)/int(total)*1e6) if int(total) else 0
           print('\t'.join(map(str,[run,alias,ref,length,pairs,total,mapped,mapq20,proper,
               f'{breadth(1):.6f}',f'{breadth(5):.6f}',f'{breadth(10):.6f}',
               f'{mean:.6f}',f'{median:.3f}',pct(.10),pct(.90),sum(d==0 for d in depths),f'{rpm:.6f}'])))
@@ -155,10 +260,15 @@ jobs:
         run: |
           set -euo pipefail
           bcftools mpileup -f work/refs.fna -q 20 -Q 20 -a FORMAT/DP,FORMAT/AD -Ou "work/${RUN}/mapped.primary.bam" \
-            | bcftools call -mv -Oz -o "work/${RUN}/variants.vcf.gz"
+            | bcftools call --ploidy 1 -mv -Oz -o "work/${RUN}/variants.vcf.gz"
           bcftools index -t "work/${RUN}/variants.vcf.gz"
-          bcftools query -f '%CHROM\t%POS\t%REF\t%ALT[\t%DP\t%AD]\n' "work/${RUN}/variants.vcf.gz" > "work/${RUN}/variants.tsv" || true
-          bcftools consensus -f work/refs.fna "work/${RUN}/variants.vcf.gz" > "work/${RUN}/consensus.unmasked.fna"
+          bcftools view -v snps -Oz -o "work/${RUN}/variants.snps.vcf.gz" "work/${RUN}/variants.vcf.gz"
+          bcftools index -t "work/${RUN}/variants.snps.vcf.gz"
+          bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%TYPE[\t%DP\t%AD]\n' \
+            "work/${RUN}/variants.vcf.gz" > "work/${RUN}/variants.tsv"
+          # SNP-only consensus preserves reference coordinates; indels remain in
+          # variants.vcf.gz for audit but cannot shift the depth-mask coordinates.
+          bcftools consensus -f work/refs.fna "work/${RUN}/variants.snps.vcf.gz" > "work/${RUN}/consensus.unmasked.fna"
           python - "$RUN" <<'PY'
           from pathlib import Path
           import sys
@@ -173,18 +283,31 @@ jobs:
               if name is not None: d[name]=''.join(chunks)
               return d
           seqs=read_fa(f'work/{run}/consensus.unmasked.fna')
+          expected={'PNX_Picorna_A1_ref','PNX_Picorna_A2_ref','PNX_Picorna_B_ref'}
+          if set(seqs) != expected:
+              raise SystemExit(f'consensus reference set mismatch: {sorted(seqs)}')
           with open(f'work/{run}/consensus.masked_min5x.fna','w') as out:
               for ref,seq in seqs.items():
                   depths=[]
                   with open(f'work/{run}/{ref}.depth.tsv') as f:
                       for line in f: depths.append(int(line.rstrip().split('\t')[2]))
-                  if len(depths)<len(seq): depths += [0]*(len(seq)-len(depths))
+                  if len(seq) != len(depths):
+                      raise SystemExit(f'coordinate-length mismatch for {run}/{ref}: consensus={len(seq)}, depth={len(depths)}')
                   masked=''.join(base if d>=5 else 'N' for base,d in zip(seq,depths))
                   out.write(f'>{run}|{ref}|mask=depth_lt_5\n')
                   for i in range(0,len(masked),80): out.write(masked[i:i+80]+'\n')
           PY
           rm -rf "work/${RUN}/fastq"
-          find "work/${RUN}" -maxdepth 1 -type f ! -name 'mapped.primary.bam' ! -name 'mapped.primary.bam.bai' -print0 | sort -z | xargs -0 sha256sum > "work/${RUN}/EVIDENCE_SHA256.txt"
+          (
+            cd "work/${RUN}"
+            sha256sum \
+              RUN_INPUT.tsv INPUT_READ_PAIRS.txt TOOL_VERSIONS.txt \
+              metrics.tsv ./*.depth.tsv variants.vcf.gz variants.vcf.gz.tbi \
+              variants.snps.vcf.gz variants.snps.vcf.gz.tbi variants.tsv \
+              consensus.unmasked.fna consensus.masked_min5x.fna flagstat.txt minimap2.log \
+              FASTQ_SHA256.txt FASTQ_MANIFEST.tsv DOWNLOAD_ATTEMPTS.tsv \
+              > EVIDENCE_SHA256.txt
+          )
 
       - name: Upload compact immutable evidence
         uses: actions/upload-artifact@v4
@@ -192,18 +315,26 @@ jobs:
           name: panax-sixrun-${{ matrix.run }}
           path: |
             work/${{ matrix.run }}/RUN_INPUT.tsv
+            work/${{ matrix.run }}/INPUT_READ_PAIRS.txt
+            work/${{ matrix.run }}/TOOL_VERSIONS.txt
             work/${{ matrix.run }}/metrics.tsv
             work/${{ matrix.run }}/*.depth.tsv
             work/${{ matrix.run }}/variants.vcf.gz
             work/${{ matrix.run }}/variants.vcf.gz.tbi
+            work/${{ matrix.run }}/variants.snps.vcf.gz
+            work/${{ matrix.run }}/variants.snps.vcf.gz.tbi
             work/${{ matrix.run }}/variants.tsv
+            work/${{ matrix.run }}/consensus.unmasked.fna
             work/${{ matrix.run }}/consensus.masked_min5x.fna
             work/${{ matrix.run }}/flagstat.txt
             work/${{ matrix.run }}/minimap2.log
             work/${{ matrix.run }}/FASTQ_SHA256.txt
+            work/${{ matrix.run }}/FASTQ_MANIFEST.tsv
+            work/${{ matrix.run }}/DOWNLOAD_ATTEMPTS.tsv
             work/${{ matrix.run }}/EVIDENCE_SHA256.txt
             work/refs.fna
             work/refs.fna.fai
+            work/REFERENCE_METADATA.tsv
             work/REFERENCE_SHA256.txt
           if-no-files-found: error
           retention-days: 30
@@ -212,8 +343,9 @@ jobs:
   aggregate:
     name: aggregate six-library evidence
     needs: map
-    if: always()
     runs-on: ubuntu-24.04
+    env:
+      SOURCE_COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Download all completed run artifacts
         uses: actions/download-artifact@v4
@@ -229,41 +361,71 @@ jobs:
           mkdir -p final
           python - <<'PY'
           from pathlib import Path
-          import csv,json,math,itertools
+          import hashlib, subprocess
+
+          root=Path('collected')
+          evidence=sorted(root.rglob('EVIDENCE_SHA256.txt'))
+          references=sorted(root.rglob('REFERENCE_SHA256.txt'))
+          if len(evidence) != 6 or len(references) != 6:
+              raise SystemExit(f'expected six evidence and reference manifests; got {len(evidence)} and {len(references)}')
+          expected_runs={f'DRR85390{i}' for i in range(7,10)} | {f'DRR8539{i}' for i in range(10,13)}
+          observed_runs={p.parent.name for p in evidence}
+          if observed_runs != expected_runs:
+              raise SystemExit(f'run artifact mismatch: expected={sorted(expected_runs)}, observed={sorted(observed_runs)}')
+          for manifest in evidence + references:
+              subprocess.run(['sha256sum','-c',manifest.name],cwd=manifest.parent,check=True)
+          reference_hashes={hashlib.sha256((p.parent/'refs.fna').read_bytes()).hexdigest() for p in references}
+          if len(reference_hashes) != 1:
+              raise SystemExit(f'competitive reference differs across run artifacts: {sorted(reference_hashes)}')
+          PY
+          cp -a collected final/per_run_evidence
+          python - <<'PY'
+          from pathlib import Path
+          import csv,json,itertools
           rows=[]
           for p in sorted(Path('collected').rglob('metrics.tsv')):
               with p.open() as f: rows.extend(csv.DictReader(f,delimiter='\t'))
           if not rows: raise SystemExit('No completed metrics found')
+          runs=['DRR853907','DRR853908','DRR853909','DRR853910','DRR853911','DRR853912']
+          aliases={'DRR853907':'ZhA','DRR853908':'ZhB','DRR853909':'ZhC','DRR853910':'BhA','DRR853911':'BhB','DRR853912':'BhC'}
+          refs=['PNX_Picorna_A1_ref','PNX_Picorna_A2_ref','PNX_Picorna_B_ref']
+          keys=[(r['run'],r['reference']) for r in rows]
+          expected={(run,ref) for run in runs for ref in refs}
+          if len(keys)!=len(expected) or set(keys)!=expected:
+              missing=sorted(expected-set(keys))
+              unexpected=sorted(set(keys)-expected)
+              raise SystemExit(f'incomplete or duplicated metrics: rows={len(keys)}, missing={missing}, unexpected={unexpected}')
+          for r in rows:
+              if r['alias'] != aliases[r['run']]:
+                  raise SystemExit(f"archive alias mismatch for {r['run']}: {r['alias']} != {aliases[r['run']]}")
+              for field in ('breadth_mapq20_1x','breadth_mapq20_5x','breadth_mapq20_10x'):
+                  value=float(r[field])
+                  if not 0.0 <= value <= 1.0:
+                      raise SystemExit(f'invalid {field} for {r["run"]}/{r["reference"]}: {value}')
           fields=list(rows[0]) + ['strict_positive','strong_positive']
           for r in rows:
-              mq=int(r['mapped_mapq20']); b1=float(r['breadth_1x']); b5=float(r['breadth_5x'])
+              mq=int(r['mapped_mapq20']); b1=float(r['breadth_mapq20_1x']); b5=float(r['breadth_mapq20_5x'])
               r['strict_positive']=str(mq>=20 and b1>=0.80).lower()
               r['strong_positive']=str(mq>=50 and b1>=0.90 and b5>=0.50).lower()
           with open('final/ALL_RUN_METRICS.tsv','w',newline='') as f:
               w=csv.DictWriter(f,fieldnames=fields,delimiter='\t'); w.writeheader(); w.writerows(rows)
-          runs=['DRR853907','DRR853908','DRR853909','DRR853910','DRR853911','DRR853912']
-          aliases={'DRR853907':'ZhA','DRR853908':'ZhB','DRR853909':'ZhC','DRR853910':'BhA','DRR853911':'BhB','DRR853912':'BhC'}
-          refs=['PNX_Picorna_A1_ref','PNX_Picorna_A2_ref','PNX_Picorna_B_ref']
           by={(r['run'],r['reference']):r for r in rows}
           with open('final/PRESENCE_MATRIX.tsv','w',newline='') as f:
               w=csv.writer(f,delimiter='\t'); w.writerow(['run','alias']+refs)
               for run in runs:
                   w.writerow([run,aliases[run]]+[by.get((run,ref),{}).get('strict_positive','missing') for ref in refs])
-          def comb(n,k): return math.comb(n,k) if 0<=k<=n else 0
-          def fisher_two(a,b,c,d):
-              n=a+b+c+d; r1=a+b; c1=a+c
-              lo=max(0,r1-(n-c1)); hi=min(r1,c1)
-              def prob(x): return comb(c1,x)*comb(n-c1,r1-x)/comb(n,r1)
-              p0=prob(a)
-              return min(1.0,sum(prob(x) for x in range(lo,hi+1) if prob(x)<=p0+1e-15))
-          summary={'strict_definition':'MAPQ>=20 reads >=20 and breadth_1x >=0.80',
-                   'strong_definition':'MAPQ>=20 reads >=50, breadth_1x >=0.90, and breadth_5x >=0.50',
-                   'completed_runs':sorted({r['run'] for r in rows}), 'references':{}}
+          summary={'strict_definition':'MAPQ>=20 reads >=20 and quality-filtered breadth_1x >=0.80',
+                   'strong_definition':'MAPQ>=20 reads >=50, quality-filtered breadth_1x >=0.90, and quality-filtered breadth_5x >=0.50',
+                   'depth_definition':'samtools depth -aa -Q 20 -q 20 -s; mapping quality >=20, base quality >=20, overlapping mates counted once',
+                   'consensus_model':'haploid SNP-only bcftools calls; bases below quality-filtered 5x depth masked; pairwise identities are descriptive only',
+                   'completed_runs':sorted({r['run'] for r in rows}),
+                   'phenotype_mapping_status':'not_resolved; Zh/Bh are archive aliases only',
+                   'references':{}}
           for ref in refs:
               zh=sum(by.get((r,ref),{}).get('strict_positive')=='true' for r in runs[:3])
               bh=sum(by.get((r,ref),{}).get('strict_positive')=='true' for r in runs[3:])
               summary['references'][ref]={'Zh_prefix_positive':zh,'Bh_prefix_positive':bh,
-                  'alias_prefix_fisher_two_sided_p':fisher_two(bh,3-bh,zh,3-zh)}
+                  'alias_prefix_comparison_test':'not_performed_without_resolved_phenotype_mapping'}
           Path('final/SUMMARY.json').write_text(json.dumps(summary,indent=2)+'\n')
           seqs={}
           for p in sorted(Path('collected').rglob('consensus.masked_min5x.fna')):
@@ -274,6 +436,9 @@ jobs:
                       name=line[1:].split()[0]; chunks=[]
                   else: chunks.append(line.strip())
               if name is not None: seqs[name]=''.join(chunks)
+          expected_seq_names={f'{run}|{ref}|mask=depth_lt_5' for run in runs for ref in refs}
+          if set(seqs) != expected_seq_names:
+              raise SystemExit(f'masked-consensus set mismatch: missing={sorted(expected_seq_names-set(seqs))}, unexpected={sorted(set(seqs)-expected_seq_names)}')
           with open('final/PAIRWISE_MASKED_CONSENSUS.tsv','w',newline='') as f:
               w=csv.writer(f,delimiter='\t'); w.writerow(['reference','sample1','sample2','overlap_non_N','differences','identity'])
               for ref in refs:
@@ -299,15 +464,21 @@ jobs:
                   if not r: fill='#dddddd'; label='missing'
                   else:
                       fill='#c8e6c9' if r['strict_positive']=='true' else '#ffcdd2'
-                      label=f"{float(r['breadth_1x'])*100:.1f}% / {float(r['mean_depth']):.1f}x"
+                      label=f"{float(r['breadth_mapq20_1x'])*100:.1f}% / {float(r['mean_depth_mapq20']):.1f}x"
                   svg.append(f'<rect x="{x}" y="{y}" width="{cellw-5}" height="{cellh-5}" rx="4" fill="{fill}" stroke="#555"/>')
                   svg.append(f'<text x="{x+(cellw-5)/2}" y="{y+24}" text-anchor="middle" class="s">{label}</text>')
-          svg.append(f'<text x="20" y="{height-32}" class="s">Cell: breadth at >=1x / mean depth. Green meets the pre-specified strict support rule.</text>')
+          svg.append(f'<text x="20" y="{height-32}" class="s">Cell: quality-filtered breadth at &gt;=1x / mean depth. Green meets the fixed workflow-defined strict support rule.</text>')
           svg.append('</svg>')
           Path('final/SIX_LIBRARY_SUPPORT.svg').write_text('\n'.join(svg)+'\n')
-          Path('final/INTERPRETATION_BOUNDARY.md').write_text('''# Interpretation boundary\n\nThis audit tests whether three divergent Picornavirales-like reference contigs are supported by complete paired FASTQ files from six archived run objects. The Zh/Bh strings are archive aliases only in this package. Distinct run, experiment, or BioSample accessions do not by themselves establish distinct plants or independent infections. Presence or enrichment does not establish the true host, active replication, causality, pathogenicity, transmissibility, or agricultural/medical impact. The candidates are partial polyprotein/RdRP sequences rather than complete viral genomes.\n''')
+          Path('final/INTERPRETATION_BOUNDARY.md').write_text('''# Interpretation boundary\n\nThis audit tests whether three divergent Picornavirales-like reference contigs are supported by complete paired FASTQ files from six archived run objects. Breadth, depth, and consensus masking use mapping quality >=20, base quality >=20, and overlapping-mate suppression. The Zh/Bh strings are archive aliases only in this package. Distinct run, experiment, or BioSample accessions do not by themselves establish distinct plants or independent infections. Presence or enrichment does not establish the true host, active replication, causality, pathogenicity, transmissibility, or agricultural/medical impact. The candidates are partial polyprotein/RdRP sequences rather than complete viral genomes. Pairwise masked-consensus identities use haploid SNP-only genotype-likelihood calls at quality-filtered depth >=5 and are descriptive quality checks, not evidence of independent transmission or evolutionary rate.\n''')
           PY
-          find final -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > final/SHA256SUMS.txt
+          printf 'repository\tevent\tsource_commit_sha\tevent_sha\trun_id\trun_attempt\n%s\t%s\t%s\t%s\t%s\t%s\n' \
+            "$GITHUB_REPOSITORY" "$GITHUB_EVENT_NAME" "$SOURCE_COMMIT_SHA" "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
+            > final/WORKFLOW_PROVENANCE.tsv
+          (
+            cd final
+            find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
+          )
           cat final/SUMMARY.json
           cat final/PRESENCE_MATRIX.tsv
 

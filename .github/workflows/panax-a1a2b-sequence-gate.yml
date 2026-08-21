@@ -1,0 +1,249 @@
+name: Panax A1 A2 B final sequence gate
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/panax-a1a2b-sequence-gate.yml'
+      - 'virus_hunt/finalization/**'
+      - 'virus_hunt/validation_inputs/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  SOURCE_COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  preflight:
+    name: build exact immutable queries
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout immutable source head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Rebuild and verify A1 A2 B queries
+        shell: bash
+        run: |
+          set -euo pipefail
+          python virus_hunt/finalization/build_panax_three_queries.py \
+            --out queries \
+            --contig-part virus_hunt/validation_inputs/all_member_contigs.part1.fna \
+            --contig-part virus_hunt/validation_inputs/all_member_contigs.part2.fna \
+            --contig-part virus_hunt/validation_inputs/all_member_contigs.part3.fna \
+            --rdrp virus_hunt/validation_inputs/all_member_rdrp.faa \
+            --control-contigs virus_hunt/validation_inputs/candidate_contigs.fna \
+            --candidate-manifest virus_hunt/validation_inputs/candidate_manifest.json \
+            --strict-members virus_hunt/validation_inputs/strict_candidate_members.tsv
+          printf 'repository\tevent\tsource_commit_sha\tevent_sha\trun_id\trun_attempt\n%s\t%s\t%s\t%s\t%s\t%s\n' \
+            "$GITHUB_REPOSITORY" "$GITHUB_EVENT_NAME" "$SOURCE_COMMIT_SHA" "$GITHUB_SHA" \
+            "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > queries/WORKFLOW_PROVENANCE.tsv
+          rm queries/SHA256SUMS.txt
+          (cd queries && find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt)
+          (cd queries && sha256sum -c SHA256SUMS.txt)
+
+      - name: Upload immutable query bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: panax-query-preflight
+          path: queries
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 9
+
+  local_evidence:
+    name: current local databases and contamination gate
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - name: Checkout immutable source head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Download and verify exact queries
+        uses: actions/download-artifact@v4
+        with:
+          name: panax-query-preflight
+          path: queries
+
+      - name: Install local audit tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq curl ncbi-blast+ hmmer
+
+      - name: Run current RefSeq Pfam UniVec audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd queries && sha256sum -c SHA256SUMS.txt)
+          mkdir -p "$RUNNER_TEMP/panax-local-cache"
+          bash virus_hunt/finalization/run_panax_local_evidence.sh \
+            queries virus_hunt/finalization/panax_rdrp_curated_references.tsv \
+            local-evidence "$RUNNER_TEMP/panax-local-cache"
+
+      - name: Upload local evidence whether pass or fail
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: panax-local-evidence
+          path: local-evidence
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 9
+
+  remote_search:
+    name: remote current DB ${{ matrix.mode }}
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 230
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        mode:
+          - protein_nr
+          - protein_viral
+          - protein_nonviral
+          - protein_tsa
+          - protein_environmental
+          - nt_standard
+          - nt_megablast
+          - nt_panax
+          - nt_tsa
+    steps:
+      - name: Checkout immutable source head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Download and verify exact queries
+        uses: actions/download-artifact@v4
+        with:
+          name: panax-query-preflight
+          path: queries
+
+      - name: Install NCBI BLAST+
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ncbi-blast+
+
+      - name: Run failure-aware remote search
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd queries && sha256sum -c SHA256SUMS.txt)
+          bash virus_hunt/finalization/run_panax_remote_search.sh \
+            '${{ matrix.mode }}' queries 'remote-${{ matrix.mode }}'
+
+      - name: Upload remote evidence whether pass or fail
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: panax-remote-${{ matrix.mode }}
+          path: remote-${{ matrix.mode }}
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 9
+
+  phylogeny:
+    name: homologous PF00680 core phylogeny
+    needs: local_evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout immutable source head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Download and verify local evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: panax-local-evidence
+          path: local-evidence
+
+      - name: Install phylogenetic tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq mafft trimal iqtree
+
+      - name: Run unrooted trimmed and untrimmed sensitivity trees
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd local-evidence && sha256sum -c SHA256SUMS.txt)
+          bash virus_hunt/finalization/run_panax_phylogeny.sh \
+            local-evidence/RDRP_CORES.faa \
+            virus_hunt/finalization/panax_rdrp_curated_references.tsv phylogeny
+
+      - name: Upload phylogeny whether pass or fail
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: panax-rdrp-phylogeny
+          path: phylogeny
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 9
+
+  finalize:
+    name: strict aggregate and claim boundary
+    if: always()
+    needs: [preflight, local_evidence, remote_search, phylogeny]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout immutable source head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Download every available gate artifact
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: panax-*
+          path: collected
+          merge-multiple: false
+
+      - name: Record upstream job results
+        shell: bash
+        env:
+          PREFLIGHT_RESULT: ${{ needs.preflight.result }}
+          LOCAL_RESULT: ${{ needs.local_evidence.result }}
+          REMOTE_RESULT: ${{ needs.remote_search.result }}
+          PHYLOGENY_RESULT: ${{ needs.phylogeny.result }}
+        run: |
+          python - <<'PY'
+          import json,os
+          payload={
+              'preflight':os.environ['PREFLIGHT_RESULT'],
+              'local_evidence':os.environ['LOCAL_RESULT'],
+              'remote_search':os.environ['REMOTE_RESULT'],
+              'phylogeny':os.environ['PHYLOGENY_RESULT'],
+          }
+          open('UPSTREAM_RESULTS.json','w').write(json.dumps(payload,indent=2)+'\n')
+          PY
+
+      - name: Build final sequence gate and enforce completeness
+        shell: bash
+        run: |
+          set -euo pipefail
+          python virus_hunt/finalization/finalize_panax_sequence_gate.py \
+            --collected collected --upstream-results UPSTREAM_RESULTS.json --out final-sequence-gate
+
+      - name: Upload final sequence gate whether pass or fail
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PANAX_A1_A2_B_FINAL_SEQUENCE_GATE_20260821
+          path: final-sequence-gate
+          if-no-files-found: warn
+          retention-days: 30
+          compression-level: 9

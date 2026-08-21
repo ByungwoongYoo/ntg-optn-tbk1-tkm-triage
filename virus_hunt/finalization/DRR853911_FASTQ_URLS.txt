@@ -1,13 +1,13 @@
-run	alias	mate	url
-DRR853907	ZhA	1	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853907/DRR853907_1.fastq.gz
-DRR853907	ZhA	2	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853907/DRR853907_2.fastq.gz
-DRR853908	ZhB	1	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853908/DRR853908_1.fastq.gz
-DRR853908	ZhB	2	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853908/DRR853908_2.fastq.gz
-DRR853909	ZhC	1	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853909/DRR853909_1.fastq.gz
-DRR853909	ZhC	2	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853909/DRR853909_2.fastq.gz
-DRR853910	BhA	1	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853910/DRR853910_1.fastq.gz
-DRR853910	BhA	2	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853910/DRR853910_2.fastq.gz
-DRR853911	BhB	1	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853911/DRR853911_1.fastq.gz
-DRR853911	BhB	2	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853911/DRR853911_2.fastq.gz
-DRR853912	BhC	1	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853912/DRR853912_1.fastq.gz
-DRR853912	BhC	2	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853912/DRR853912_2.fastq.gz
+run	archive_alias	mate	https_url	ftp_url	md5	bytes
+DRR853907	ZhA	1	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853907/DRR853907_1.fastq.gz	ftp://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853907/DRR853907_1.fastq.gz	551fb34ed1ecf2cb1765b06831939cf7	1465217378
+DRR853907	ZhA	2	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853907/DRR853907_2.fastq.gz	ftp://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853907/DRR853907_2.fastq.gz	789c0780e31756484a630e960b44a22b	1495827693
+DRR853908	ZhB	1	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853908/DRR853908_1.fastq.gz	ftp://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853908/DRR853908_1.fastq.gz	4c23a488483ade624a0bbacb22745b09	1421399673
+DRR853908	ZhB	2	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853908/DRR853908_2.fastq.gz	ftp://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853908/DRR853908_2.fastq.gz	54baecde002981bf9c49b2fbd54f9f64	1471185676
+DRR853909	ZhC	1	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853909/DRR853909_1.fastq.gz	ftp://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853909/DRR853909_1.fastq.gz	ff57d365381d96b40e8924229428bf95	1488034939
+DRR853909	ZhC	2	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853909/DRR853909_2.fastq.gz	ftp://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853909/DRR853909_2.fastq.gz	321febb385048324428703f5cd21085e	1527496677
+DRR853910	BhA	1	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853910/DRR853910_1.fastq.gz	ftp://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853910/DRR853910_1.fastq.gz	a1942aac555b0f55f205c8ba8a6cb080	1307363780
+DRR853910	BhA	2	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853910/DRR853910_2.fastq.gz	ftp://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853910/DRR853910_2.fastq.gz	ce0075b8302c89557a34b8aadd5b8e5f	1365248221
+DRR853911	BhB	1	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853911/DRR853911_1.fastq.gz	ftp://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853911/DRR853911_1.fastq.gz	79eb0b92a2b1f9507f424041c6413c57	1461498959
+DRR853911	BhB	2	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853911/DRR853911_2.fastq.gz	ftp://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853911/DRR853911_2.fastq.gz	d763e54b5eca8fa557f0c8e2b5a651ec	1547279931
+DRR853912	BhC	1	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853912/DRR853912_1.fastq.gz	ftp://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853912/DRR853912_1.fastq.gz	ece743952918bf573c5031c200a71761	1431240428
+DRR853912	BhC	2	https://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853912/DRR853912_2.fastq.gz	ftp://ftp.sra.ebi.ac.uk/vol1/fastq/DRR853/DRR853912/DRR853912_2.fastq.gz	18391fd3be4a4ae226192051c4a31dcb	1467872552
