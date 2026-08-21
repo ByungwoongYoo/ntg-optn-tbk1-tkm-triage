@@ -4,10 +4,12 @@ on:
   push:
     branches:
       - neo-guard34-audit-20260821
+    paths-ignore:
+      - "neo_guard34_results/**"
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   audit:
@@ -16,12 +18,13 @@ jobs:
     steps:
       - name: Check out audit branch
         uses: actions/checkout@v4
+        with:
+          ref: neo-guard34-audit-20260821
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
 
       - name: Install analysis dependencies
         run: |
@@ -36,17 +39,26 @@ jobs:
 
       - name: Run independent audit
         run: |
+          rm -rf neo_guard34_results
           python neo_guard34_audit/neo_guard34_neat_audit.py \
             --neat-dir external/NEAT \
             --out-dir neo_guard34_results
 
-      - name: Capture environment
+      - name: Capture environment and hashes
         run: |
           python --version > neo_guard34_results/python_version.txt
           python -m pip freeze > neo_guard34_results/pip_freeze.txt
           git -C external/NEAT rev-parse HEAD > neo_guard34_results/neat_commit.txt
           git rev-parse HEAD > neo_guard34_results/audit_commit.txt
           sha256sum neo_guard34_results/* > neo_guard34_results/ALL_OUTPUT_SHA256SUMS.txt
+
+      - name: Commit versioned audit outputs to isolated branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add neo_guard34_results
+          git commit -m "Add pinned NEAT audit outputs [skip ci]" || exit 0
+          git push origin HEAD:neo-guard34-audit-20260821
 
       - name: Upload reproducibility artifact
         uses: actions/upload-artifact@v4
