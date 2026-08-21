@@ -60,6 +60,9 @@ jobs:
           if-no-files-found: error
           retention-days: 30
           compression-level: 9
+          # A failed-job rerun keeps the same workflow-run ID. Replace the
+          # prior attempt rather than leaving duplicate same-name evidence.
+          overwrite: true
 
   blast_tool:
     name: pinned current NCBI BLAST+ client
@@ -100,6 +103,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
           compression-level: 9
+          overwrite: true
 
   local_evidence:
     name: current local databases and contamination gate
@@ -142,6 +146,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
           compression-level: 9
+          overwrite: true
 
   remote_search:
     name: remote current DB ${{ matrix.mode }}
@@ -211,6 +216,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
           compression-level: 9
+          overwrite: true
 
   phylogeny:
     name: homologous PF00680 core phylogeny
@@ -267,6 +273,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
           compression-level: 9
+          overwrite: true
 
   finalize:
     name: strict aggregate and claim boundary
@@ -323,3 +330,4 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
           compression-level: 9
+          overwrite: true
