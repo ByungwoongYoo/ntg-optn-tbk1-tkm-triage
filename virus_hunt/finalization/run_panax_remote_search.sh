@@ -91,6 +91,30 @@ on_exit() {
 trap 'capture_error "$LINENO" "$BASH_COMMAND"' ERR
 trap 'on_exit "$?"' EXIT
 
+# The NCBI nr and nt complement backends repeatedly produced structurally empty
+# archives for combined A1+A2+B requests while sibling modes were healthy.
+# Only these two modes are decomposed into candidate+all-required-control
+# requests.  Their wrappers preserve each raw archive/attempt history and emit
+# separately validated aggregates with the legacy A1/A2/B status shape.
+if [[ "$MODE" == protein_nonviral && -z "${PANAX_PROTEIN_NONVIRAL_SPLIT_CANDIDATE:-}" ]]; then
+  wrapper_rc=0
+  bash "$SCRIPT_DIR/run_panax_protein_nonviral_splits.sh" \
+    "$QUERY_ROOT" "$OUT" "$0" || wrapper_rc=$?
+  if [[ -f "$OUT/SEARCH_STATUS.json" && -f "$OUT/SHA256SUMS.txt" ]]; then
+    finalization_complete=1
+  fi
+  exit "$wrapper_rc"
+fi
+if [[ "$MODE" == nt_nonviral && -z "${PANAX_NONVIRAL_SPLIT_CANDIDATE:-}" ]]; then
+  wrapper_rc=0
+  bash "$SCRIPT_DIR/run_panax_nt_nonviral_splits.sh" \
+    "$QUERY_ROOT" "$OUT" "$0" || wrapper_rc=$?
+  if [[ -f "$OUT/SEARCH_STATUS.json" && -f "$OUT/SHA256SUMS.txt" ]]; then
+    finalization_complete=1
+  fi
+  exit "$wrapper_rc"
+fi
+
 # Standard-task nr/nt coverage is split into explicit viral and indexed-
 # complement Entrez partitions. The complement uses an all-record left operand
 # before NOT; the unfiltered remote service can emit zero-statistic archives that
@@ -102,6 +126,44 @@ case "$MODE" in
     ;;
   protein_nonviral)
     program=blastp; candidate_query="$QUERY_ROOT/panax_three_partial_orfs.faa"
+    split_candidate_id="${PANAX_PROTEIN_NONVIRAL_SPLIT_CANDIDATE:-}"
+    if [[ -n "$split_candidate_id" ]]; then
+      case "$split_candidate_id" in
+        PNX_Picorna_A1|PNX_Picorna_A2|PNX_Picorna_B) ;;
+        *) echo "invalid protein_nonviral split candidate: $split_candidate_id" >&2; exit 2 ;;
+      esac
+      split_candidate_query="$OUT/SPLIT_CANDIDATE.faa"
+      python - "$candidate_query" "$split_candidate_id" "$split_candidate_query" <<'PY'
+from pathlib import Path
+import sys
+
+source, wanted, target = Path(sys.argv[1]), sys.argv[2], Path(sys.argv[3])
+records = []
+header = None
+lines = []
+for raw in source.read_text(errors="strict").splitlines(keepends=True):
+    if raw.startswith(">"):
+        if header is not None:
+            records.append((header, lines))
+        header = raw[1:].split()[0]
+        lines = [raw]
+    elif header is None:
+        if raw.strip():
+            raise SystemExit("sequence before first candidate FASTA header")
+    else:
+        lines.append(raw)
+if header is not None:
+    records.append((header, lines))
+matches = [b"".join(line.encode() for line in body) for name, body in records if name == wanted]
+if len(matches) != 1:
+    raise SystemExit(f"expected exactly one split candidate {wanted}, observed {len(matches)}")
+payload = matches[0]
+if not payload.endswith(b"\n"):
+    payload += b"\n"
+target.write_bytes(payload)
+PY
+      candidate_query="$split_candidate_query"
+    fi
     partition_controls+=("$SCRIPT_DIR/remote_partition_controls.faa")
     query="$OUT/SEARCH_QUERIES.faa"; database=nr
     extra=(-entrez_query 'all[filter] NOT txid10239[ORGN]' -seg yes -comp_based_stats 2)
@@ -120,6 +182,44 @@ case "$MODE" in
     ;;
   nt_nonviral)
     program=blastn; candidate_query="$QUERY_ROOT/panax_three_contigs.fna"
+    split_candidate_id="${PANAX_NONVIRAL_SPLIT_CANDIDATE:-}"
+    if [[ -n "$split_candidate_id" ]]; then
+      case "$split_candidate_id" in
+        PNX_Picorna_A1|PNX_Picorna_A2|PNX_Picorna_B) ;;
+        *) echo "invalid nt_nonviral split candidate: $split_candidate_id" >&2; exit 2 ;;
+      esac
+      split_candidate_query="$OUT/SPLIT_CANDIDATE.fna"
+      python - "$candidate_query" "$split_candidate_id" "$split_candidate_query" <<'PY'
+from pathlib import Path
+import sys
+
+source, wanted, target = Path(sys.argv[1]), sys.argv[2], Path(sys.argv[3])
+records = []
+header = None
+lines = []
+for raw in source.read_text(errors="strict").splitlines(keepends=True):
+    if raw.startswith(">"):
+        if header is not None:
+            records.append((header, lines))
+        header = raw[1:].split()[0]
+        lines = [raw]
+    elif header is None:
+        if raw.strip():
+            raise SystemExit("sequence before first candidate FASTA header")
+    else:
+        lines.append(raw)
+if header is not None:
+    records.append((header, lines))
+matches = [b"".join(line.encode() for line in body) for name, body in records if name == wanted]
+if len(matches) != 1:
+    raise SystemExit(f"expected exactly one split candidate {wanted}, observed {len(matches)}")
+payload = matches[0]
+if not payload.endswith(b"\n"):
+    payload += b"\n"
+target.write_bytes(payload)
+PY
+      candidate_query="$split_candidate_query"
+    fi
     partition_controls+=("$SCRIPT_DIR/remote_partition_controls.fna")
     partition_controls+=("$SCRIPT_DIR/remote_nonpanax_control.fna")
     query="$OUT/SEARCH_QUERIES.fna"; database=nt
@@ -201,10 +301,12 @@ PY
 fi
 
 # Emit immutable expected query metadata before making a network request.
-python - "$query" "$program" "$MODE" "$OUT/EXPECTED_QUERIES.json" <<'PY'
+python - "$query" "$program" "$MODE" "$OUT/EXPECTED_QUERIES.json" \
+  "${split_candidate_id:-}" <<'PY'
 from pathlib import Path
 import hashlib,json,re,sys
 p=Path(sys.argv[1]); program=sys.argv[2]; mode=sys.argv[3]; out=Path(sys.argv[4])
+split_candidate=sys.argv[5] or None
 records={}; name=None
 for raw in p.read_text().splitlines():
     line=raw.strip()
@@ -258,7 +360,11 @@ exact_control_expectations={
         },
     },
 }
-required=expected|validation_controls
+required=({split_candidate} if split_candidate else expected)|validation_controls
+if split_candidate and (
+    mode not in {'protein_nonviral','nt_nonviral'} or split_candidate not in expected
+):
+    raise SystemExit(f'invalid split-candidate contract: {mode}/{split_candidate}')
 if set(records)!=required:
     raise SystemExit(f'query set mismatch: observed={sorted(records)}, required={sorted(required)}')
 allowed=r'[ACGTN]+' if program=='blastn' else r'[ABCDEFGHIKLMNPQRSTVWXYZ]+'
@@ -266,13 +372,16 @@ for name,seq in records.items():
     if not seq or not re.fullmatch(allowed,seq):
         raise SystemExit(f'empty or invalid query sequence: {name}')
 payload={'query_file':str(p),'query_file_sha256':hashlib.sha256(p.read_bytes()).hexdigest(),
-         'candidate_ids':sorted(expected),'validation_control_ids':sorted(validation_controls),
+         'candidate_ids':sorted({split_candidate} if split_candidate else expected),
+         'validation_control_ids':sorted(validation_controls),
          'validation_controls':[
              {'id':control,**exact_control_expectations.get(mode,{}).get(control,{})}
              for control in sorted(validation_controls)
          ],
          'queries':[{'id':k,'length':len(v),'sequence_sha256':hashlib.sha256(v.encode()).hexdigest()}
                     for k,v in records.items()]}
+if split_candidate:
+    payload['split_candidate_id']=split_candidate
 out.write_text(json.dumps(payload,indent=2)+'\n')
 print(json.dumps(payload,indent=2))
 PY
@@ -447,6 +556,10 @@ for attempt in $(seq 1 "$max_attempts"); do
   archive_sha256=NA
   [[ -f "$OUT/RESULTS.asn" ]] && archive_bytes=$(stat -c '%s' "$OUT/RESULTS.asn")
   [[ -f "$OUT/RESULTS.asn" ]] && archive_sha256=$(sha256sum "$OUT/RESULTS.asn" | cut -d' ' -f1)
+  if [[ -n "${split_candidate_id:-}" && -f "$OUT/RESULTS.asn" ]]; then
+    mkdir -p "$OUT/ATTEMPT_ARCHIVES"
+    cp "$OUT/RESULTS.asn" "$OUT/ATTEMPT_ARCHIVES/attempt${attempt}.asn"
+  fi
   if (( blast_rc == 0 && json_formatter_rc == 0 && tsv_formatter_rc == 0 && validator_rc == 0 )); then
     success=1
     success_attempt="$attempt"
@@ -621,6 +734,13 @@ status={
     ),
     'interpretation_boundary':'An empty hit table is evidence only when technical_complete is true; no-hit or divergence does not establish a new taxon.',
 }
+if expected.get('split_candidate_id'):
+    status['request_strategy']=(
+        'protein_nonviral_candidate_control_split_v1'
+        if mode=='protein_nonviral'
+        else 'nt_nonviral_candidate_controls_split_v1'
+    )
+    status['split_candidate_id']=expected['split_candidate_id']
 if json_error: status['json_validation_error']=json_error
 if tsv_validation_errors: status['tsv_validation_errors']=tsv_validation_errors
 (out/'SEARCH_STATUS.json').write_text(json.dumps(status,indent=2)+'\n')

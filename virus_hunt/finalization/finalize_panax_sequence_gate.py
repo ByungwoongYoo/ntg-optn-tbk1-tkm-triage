@@ -5,10 +5,25 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
+import importlib.util
 import json
+import math
 import shlex
 from datetime import datetime, timezone
 from pathlib import Path
+
+
+_VALIDATOR_PATH = Path(__file__).resolve().with_name(
+    "validate_panax_remote_archive.py"
+)
+_VALIDATOR_SPEC = importlib.util.spec_from_file_location(
+    "panax_remote_archive_validator", _VALIDATOR_PATH
+)
+if _VALIDATOR_SPEC is None or _VALIDATOR_SPEC.loader is None:
+    raise RuntimeError(f"cannot load remote archive validator: {_VALIDATOR_PATH}")
+_VALIDATOR_MODULE = importlib.util.module_from_spec(_VALIDATOR_SPEC)
+_VALIDATOR_SPEC.loader.exec_module(_VALIDATOR_MODULE)
+validate_remote_archive = _VALIDATOR_MODULE.validate
 
 
 CANDIDATES = ("PNX_Picorna_A1", "PNX_Picorna_A2", "PNX_Picorna_B")
@@ -140,6 +155,9 @@ REMOTE_HIT_FIELDS = (
     "qlen", "slen", "qstart", "qend", "sstart", "send", "evalue",
     "bitscore", "qcovs", "staxids", "sscinames", "stitle", "qseq", "sseq",
 )
+PROTEIN_NONVIRAL_SPLIT_STRATEGY = (
+    "protein_nonviral_candidate_control_splits_v1"
+)
 
 
 def sha(path: Path) -> str:
@@ -201,10 +219,1064 @@ def _read_fasta_contract(payload: bytes) -> list[dict[str, object]]:
     ]
 
 
+def _fasta_record_payloads(payload: bytes) -> dict[str, bytes]:
+    """Return exact newline-terminated FASTA record byte slices."""
+    text = payload.decode("utf-8", errors="strict")
+    records: dict[str, bytes] = {}
+    name: str | None = None
+    chunks: list[str] = []
+    for line in text.splitlines(keepends=True):
+        if line.startswith(">"):
+            if name is not None:
+                record = "".join(chunks).encode()
+                records[name] = record if record.endswith(b"\n") else record + b"\n"
+            name = line[1:].split()[0]
+            if not name or name in records:
+                raise ValueError("missing or duplicate FASTA record ID")
+            chunks = [line]
+        elif name is None:
+            if line.strip():
+                raise ValueError("sequence before first FASTA header")
+        else:
+            chunks.append(line)
+    if name is not None:
+        record = "".join(chunks).encode()
+        records[name] = record if record.endswith(b"\n") else record + b"\n"
+    if not records:
+        raise ValueError("FASTA has no records")
+    return records
+
+
+def _protein_nonviral_split_argv(query_argument: str) -> list[str]:
+    split_root = str(Path(query_argument).parent)
+    return [
+        "blastp", "-remote", "-query", query_argument, "-db", "nr",
+        "-evalue", "1e-5", "-max_target_seqs", "100", "-max_hsps", "1",
+        "-outfmt", "11", "-out", f"{split_root}/RESULTS.asn",
+        "-entrez_query", "all[filter] NOT txid10239[ORGN]",
+        "-seg", "yes", "-comp_based_stats", "2",
+    ]
+
+
+def _validate_split_attempt_archives(
+    split_root: Path, mode: str, candidate: str, child: dict,
+) -> list[str]:
+    failures: list[str] = []
+    attempts_path = split_root / "REMOTE_ATTEMPTS.tsv"
+    try:
+        with attempts_path.open(newline="", errors="strict") as handle:
+            rows = list(csv.DictReader(handle, delimiter="\t"))
+    except (OSError, UnicodeError):
+        return [f"remote_split_attempt_history_unreadable:{mode}:{candidate}"]
+    if not rows:
+        return [f"remote_split_attempt_history_empty:{mode}:{candidate}"]
+    label = f"{mode}:{candidate}"
+    if child.get("attempt_history") != rows:
+        failures.append(f"remote_split_attempt_status_mismatch:{label}")
+    if child.get("attempt_count") != len(rows):
+        failures.append(f"remote_split_attempt_count_mismatch:{label}")
+    try:
+        attempt_count_text = (
+            split_root / "ATTEMPT_COUNT.txt"
+        ).read_text(errors="strict").strip()
+        success_attempt_text = (
+            split_root / "SUCCESS_ATTEMPT.txt"
+        ).read_text(errors="strict").strip()
+        attempt_count = int(attempt_count_text)
+        success_attempt = int(success_attempt_text)
+        search_success = (
+            (split_root / "SEARCH_SUCCESS.txt").read_text(errors="strict") == "1\n"
+        )
+        termination_reason = (
+            (split_root / "TERMINATION_REASON.txt").read_text(errors="strict").strip()
+        )
+    except (OSError, UnicodeError, ValueError):
+        failures.append(f"remote_split_attempt_marker_invalid:{label}")
+        attempt_count_text = ""
+        success_attempt_text = ""
+        attempt_count = -1
+        success_attempt = -1
+        search_success = False
+        termination_reason = ""
+    if (
+        attempt_count_text != str(attempt_count)
+        or success_attempt_text != str(success_attempt)
+        or attempt_count != len(rows)
+        or success_attempt <= 0
+        or success_attempt != len(rows)
+        or not search_success
+        or termination_reason != "success"
+        or child.get("termination_reason") != "success"
+    ):
+        failures.append(f"remote_split_success_marker_mismatch:{label}")
+    observed_attempts: list[int] = []
+    success_like_rows: list[dict[str, str]] = []
+    for row in rows:
+        try:
+            attempt = int(row["attempt"])
+            archive_bytes = int(row["result_archive_bytes"])
+            archive_digest = row["result_archive_sha256"]
+        except (KeyError, TypeError, ValueError):
+            failures.append(
+                f"remote_split_attempt_archive_metadata_invalid:{mode}:{candidate}"
+            )
+            continue
+        observed_attempts.append(attempt)
+        if row["attempt"] != str(attempt):
+            failures.append(f"remote_split_attempt_id_noncanonical:{label}")
+        if (
+            all(
+                row.get(key) == "0"
+                for key in (
+                    "blast_rc", "json_formatter_rc", "tsv_formatter_rc",
+                    "validator_rc", "retryable",
+                )
+            )
+            and row.get("failure_stage") == "none"
+            and row.get("failure_class") == "none"
+        ):
+            success_like_rows.append(row)
+        attempt_archive = (
+            split_root / "ATTEMPT_ARCHIVES" / f"attempt{attempt}.asn"
+        )
+        if archive_bytes < 0:
+            failures.append(
+                f"remote_split_attempt_archive_metadata_invalid:{mode}:{candidate}"
+            )
+        elif archive_bytes > 0:
+            if (
+                len(archive_digest) != 64
+                or any(char not in "0123456789abcdef" for char in archive_digest)
+                or not attempt_archive.is_file()
+                or attempt_archive.stat().st_size != archive_bytes
+                or sha(attempt_archive) != archive_digest
+            ):
+                failures.append(
+                    f"remote_split_attempt_archive_mismatch:{mode}:"
+                    f"{candidate}:attempt{attempt}"
+                )
+        elif archive_digest != "NA" or attempt_archive.exists():
+            failures.append(
+                f"remote_split_unexpected_empty_attempt_archive:{mode}:"
+                f"{candidate}:attempt{attempt}"
+            )
+    if observed_attempts != list(range(1, len(rows) + 1)):
+        failures.append(f"remote_split_attempt_sequence_mismatch:{label}")
+
+    final_archive = split_root / "RESULTS.asn"
+    if not final_archive.is_file() or final_archive.stat().st_size <= 0:
+        failures.append(f"remote_split_final_archive_invalid:{label}")
+        final_size = -1
+        final_digest = ""
+    else:
+        final_size = final_archive.stat().st_size
+        final_digest = sha(final_archive)
+    success_rows = [
+        row for row in rows if row.get("attempt") == success_attempt_text
+    ]
+    if len(success_rows) != 1:
+        failures.append(f"remote_split_success_attempt_missing:{label}")
+    if success_like_rows != success_rows:
+        failures.append(f"remote_split_success_attempt_ambiguous:{label}")
+    if len(success_rows) == 1 and success_like_rows == success_rows:
+        success_row = success_rows[0]
+        try:
+            success_size = int(success_row["result_archive_bytes"])
+        except (KeyError, TypeError, ValueError):
+            success_size = -1
+        if (
+            any(
+                success_row.get(key) != "0"
+                for key in (
+                    "blast_rc", "json_formatter_rc", "tsv_formatter_rc",
+                    "validator_rc", "retryable",
+                )
+            )
+            or success_row.get("failure_stage") != "none"
+            or success_row.get("failure_class") != "none"
+            or success_size != final_size
+            or success_row.get("result_archive_sha256") != final_digest
+        ):
+            failures.append(f"remote_split_success_archive_mismatch:{label}")
+    return failures
+
+
+def _summarize_split_hits(
+    rows: list[dict[str, str]],
+    expected_lengths: dict[str, int],
+    failures: list[str],
+    label: str,
+) -> dict[str, dict[str, object]]:
+    valid_rows: list[dict[str, str]] = []
+    for row in rows:
+        query_id = row["qseqid"]
+        try:
+            qlen = int(row["qlen"])
+            bitscore = float(row["bitscore"])
+            pident = float(row["pident"])
+            qcovs = float(row["qcovs"])
+        except (TypeError, ValueError):
+            failures.append(f"remote_split_hit_summary_numeric_invalid:{label}:{query_id}")
+            continue
+        if (
+            query_id not in expected_lengths
+            or qlen != expected_lengths[query_id]
+            or any(not math.isfinite(value) for value in (bitscore, pident, qcovs))
+        ):
+            failures.append(f"remote_split_hit_summary_contract_invalid:{label}:{query_id}")
+            continue
+        valid_rows.append(row)
+    summaries: dict[str, dict[str, object]] = {}
+    for query_id, query_length in expected_lengths.items():
+        hits = sorted(
+            (row for row in valid_rows if row["qseqid"] == query_id),
+            key=lambda row: float(row["bitscore"]), reverse=True,
+        )
+        distinct: dict[str, dict[str, str]] = {}
+        for hit in hits:
+            distinct.setdefault(hit["saccver"], hit)
+        hits = list(distinct.values())
+        top = hits[0] if hits else None
+        summaries[query_id] = {
+            "query_length": query_length,
+            "hit_count": len(hits),
+            "near_identical_qcov80_pident90_count": sum(
+                float(row["qcovs"]) >= 80 and float(row["pident"]) >= 90
+                for row in hits
+            ),
+            "near_identical_qcov80_pident95_count": sum(
+                float(row["qcovs"]) >= 80 and float(row["pident"]) >= 95
+                for row in hits
+            ),
+            "top_hit": None if top is None else {
+                key: top[key]
+                for key in REMOTE_HIT_FIELDS
+                if key not in {"qseq", "sseq", "sscinames"}
+            },
+        }
+    return summaries
+
+
+def _split_control_results_from_hits(
+    rows: list[dict[str, str]],
+    control_specs: dict[str, dict[str, object]],
+) -> dict[str, dict[str, object]]:
+    results: dict[str, dict[str, object]] = {}
+    for control_id, spec in control_specs.items():
+        matches: list[dict[str, str]] = []
+        accession = str(spec["expected_accession"])
+        for row in rows:
+            if row["qseqid"] != control_id:
+                continue
+            tokens = {row["saccver"]}
+            tokens.update(token for token in row["sallacc"].split(";") if token)
+            for identifier in row["sallseqid"].split(";"):
+                tokens.update(token for token in identifier.split("|") if token)
+            try:
+                valid = bool(
+                    accession in tokens
+                    and float(row["pident"]) >= float(spec["min_identity"])
+                    and float(row["qcovs"]) >= float(spec["min_query_coverage"])
+                )
+            except ValueError:
+                valid = False
+            if valid:
+                matches.append(row)
+        results[control_id] = {
+            **spec,
+            "validated_accessions": sorted(
+                {row["saccver"] for row in matches}
+                | ({accession} if matches else set())
+            )[:10],
+            "validated": bool(matches),
+        }
+    return results
+
+
+def _validate_and_hash_split_result(
+    split_root: Path,
+    expected_path: Path,
+    mode: str,
+    candidate: str,
+    failures: list[str],
+) -> str:
+    try:
+        structural, control, _ = validate_remote_archive(
+            split_root / "RESULTS.json",
+            expected_path,
+            mode,
+            split_root / "HITS.tsv",
+            query_path_override=(
+                split_root / (
+                    "SEARCH_QUERIES.faa"
+                    if mode == "protein_nonviral"
+                    else "SEARCH_QUERIES.fna"
+                )
+            ),
+        )
+    except (
+        OSError, UnicodeError, ValueError, KeyError, TypeError,
+        json.JSONDecodeError,
+    ) as exc:
+        failures.append(
+            f"remote_split_archive_validator_error:{mode}:{candidate}:"
+            f"{type(exc).__name__}"
+        )
+        return ""
+    if structural:
+        failures.append(
+            f"remote_split_archive_structural_failure:{mode}:{candidate}"
+        )
+    if control:
+        failures.append(f"remote_split_archive_control_failure:{mode}:{candidate}")
+    try:
+        payload = json.loads((split_root / "RESULTS.json").read_text(errors="strict"))
+        signatures = []
+        for item in payload["BlastOutput2"]:
+            report = item["report"]
+            stat = report["results"]["search"]["stat"]
+            signatures.append({
+                "program": report["program"],
+                "version": report["version"],
+                "reference": report["reference"],
+                "search_target": report["search_target"],
+                "params": report["params"],
+                "db_num": int(stat["db_num"]),
+                "db_len": int(stat["db_len"]),
+            })
+    except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+        failures.append(f"remote_split_result_signature_invalid:{mode}:{candidate}")
+        return ""
+    canonical = {
+        json.dumps(signature, sort_keys=True, separators=(",", ":"))
+        for signature in signatures
+    }
+    if len(canonical) != 1:
+        failures.append(f"remote_split_result_signature_mismatch:{mode}:{candidate}")
+        return ""
+    return hashlib.sha256(next(iter(canonical)).encode()).hexdigest()
+
+
+def validate_protein_nonviral_split_contract(
+    collected: Path, status: dict,
+) -> list[str]:
+    """Bind the three split requests to immutable sources and each other."""
+    mode = "protein_nonviral"
+    failures: list[str] = []
+    remote_root = collected / "panax-remote-protein_nonviral"
+    candidate_path = collected / "panax-query-preflight" / "panax_three_partial_orfs.faa"
+    control_path = Path(__file__).resolve().parent / "remote_partition_controls.faa"
+    try:
+        candidate_bytes = candidate_path.read_bytes()
+        control_bytes = control_path.read_bytes()
+        candidate_records = _fasta_record_payloads(candidate_bytes)
+        control_records = _fasta_record_payloads(control_bytes)
+    except (OSError, UnicodeError, ValueError) as exc:
+        return [f"remote_split_query_source_invalid:{type(exc).__name__}"]
+    if set(candidate_records) != set(CANDIDATES) or set(control_records) != {
+        "PNX_Panax_L2_control"
+    }:
+        return ["remote_split_query_source_set_mismatch"]
+    control = "PNX_Panax_L2_control"
+    control_specs = MODE_CONTROL_SPECS[mode]
+    query_argument = "remote-protein_nonviral/SEARCH_QUERIES.faa"
+    root_bytes = candidate_bytes
+    if not root_bytes.endswith(b"\n"):
+        root_bytes += b"\n"
+    root_bytes += control_bytes
+    root_sha = hashlib.sha256(root_bytes).hexdigest()
+    try:
+        if (remote_root / "SEARCH_QUERIES.faa").read_bytes() != root_bytes:
+            failures.append("remote_constructed_query_mismatch:protein_nonviral")
+    except OSError:
+        failures.append("remote_constructed_query_missing:protein_nonviral")
+    try:
+        if (remote_root / "CANDIDATE_QUERIES.faa").read_bytes() != candidate_bytes:
+            failures.append("remote_split_candidate_copy_mismatch:protein_nonviral")
+    except OSError:
+        failures.append("remote_split_candidate_copy_missing:protein_nonviral")
+    try:
+        if (remote_root / "remote_partition_controls.faa").read_bytes() != control_bytes:
+            failures.append("remote_split_control_copy_mismatch:protein_nonviral")
+    except OSError:
+        failures.append("remote_split_control_copy_missing:protein_nonviral")
+
+    root_queries = _read_fasta_contract(root_bytes)
+    root_lengths = {row["id"]: row["length"] for row in root_queries}
+    root_expected = {
+        "query_file": query_argument,
+        "query_file_sha256": root_sha,
+        "candidate_ids": sorted(CANDIDATES),
+        "validation_control_ids": [control],
+        "validation_controls": [{"id": control, **control_specs[control]}],
+        "queries": root_queries,
+        "request_strategy": PROTEIN_NONVIRAL_SPLIT_STRATEGY,
+        "split_candidate_ids": list(CANDIDATES),
+    }
+    if load_json(
+        remote_root / "EXPECTED_QUERIES.json", failures,
+        "EXPECTED_QUERIES:protein_nonviral",
+    ) != root_expected:
+        failures.append("remote_expected_query_contract_mismatch:protein_nonviral")
+    try:
+        if (remote_root / "QUERY_SHA256.txt").read_text(errors="strict") != (
+            f"{root_sha}  {query_argument}\n"
+        ):
+            failures.append("remote_query_sha_manifest_mismatch:protein_nonviral")
+    except (OSError, UnicodeError):
+        failures.append("remote_query_sha_manifest_missing:protein_nonviral")
+
+    status_contract = {
+        "mode": mode,
+        "database": "nr",
+        "request_strategy": PROTEIN_NONVIRAL_SPLIT_STRATEGY,
+        "split_candidate_ids": list(CANDIDATES),
+        "query_file": query_argument,
+        "query_sha256": root_sha,
+        "query_count": len(root_queries),
+        "query_ids": [row["id"] for row in root_queries],
+        "validation_control_ids": [control],
+        "expected_query_lengths": root_lengths,
+        "technical_complete": True,
+        "command_completed_successfully": True,
+        "result_archive_valid": True,
+    }
+    for key, expected_value in status_contract.items():
+        if status.get(key) != expected_value:
+            failures.append(f"remote_status_contract_mismatch:{mode}:{key}")
+    if status.get("split_validation_failures") != []:
+        failures.append("remote_split_validation_failures_present:protein_nonviral")
+
+    root_per_query = status.get("per_query")
+    root_control_results = status.get("validation_control_results")
+    if not isinstance(root_per_query, dict) or set(root_per_query) != {
+        *CANDIDATES, control
+    }:
+        failures.append("remote_split_root_per_query_mismatch:protein_nonviral")
+        root_per_query = {}
+    if not isinstance(root_control_results, dict) or set(root_control_results) != {
+        control
+    }:
+        failures.append("remote_split_root_control_result_mismatch:protein_nonviral")
+        root_control_results = {}
+
+    split_results = status.get("split_results")
+    if not isinstance(split_results, dict) or set(split_results) != set(CANDIDATES):
+        failures.append("remote_split_result_set_mismatch:protein_nonviral")
+        split_results = {}
+    manifest = load_json(
+        remote_root / "SPLIT_REQUESTS.json", failures,
+        "SPLIT_REQUESTS:protein_nonviral",
+    )
+    if (
+        manifest.get("strategy") != PROTEIN_NONVIRAL_SPLIT_STRATEGY
+        or manifest.get("query_prefix") != "remote-protein_nonviral"
+        or manifest.get("candidate_ids") != list(CANDIDATES)
+        or manifest.get("validation_control_ids") != [control]
+        or manifest.get("splits") != split_results
+        or manifest.get("validation_failures") != []
+    ):
+        failures.append("remote_split_manifest_contract_mismatch:protein_nonviral")
+
+    signatures: set[str] = set()
+    child_control_details: list[dict] = []
+    child_control_results: list[dict] = []
+    aggregate_hit_lines: list[str] = []
+    seen_hit_lines: set[str] = set()
+    archive_manifest_lines: list[str] = []
+    for candidate in CANDIDATES:
+        split_root = remote_root / "SPLITS" / candidate
+        split_query_argument = (
+            f"remote-protein_nonviral/SPLITS/{candidate}/SEARCH_QUERIES.faa"
+        )
+        split_query_bytes = candidate_records[candidate] + control_records[control]
+        split_sha = hashlib.sha256(split_query_bytes).hexdigest()
+        try:
+            if (split_root / "SEARCH_QUERIES.faa").read_bytes() != split_query_bytes:
+                failures.append(f"remote_split_query_mismatch:{candidate}")
+        except OSError:
+            failures.append(f"remote_split_query_missing:{candidate}")
+        split_queries = _read_fasta_contract(split_query_bytes)
+        split_lengths = {row["id"]: row["length"] for row in split_queries}
+        child_expected = {
+            "query_file": split_query_argument,
+            "query_file_sha256": split_sha,
+            "candidate_ids": [candidate],
+            "validation_control_ids": [control],
+            "validation_controls": [{"id": control, **control_specs[control]}],
+            "queries": split_queries,
+            "split_candidate_id": candidate,
+        }
+        if load_json(
+            split_root / "EXPECTED_QUERIES.json", failures,
+            f"EXPECTED_QUERIES:protein_nonviral:{candidate}",
+        ) != child_expected:
+            failures.append(f"remote_split_expected_query_mismatch:{candidate}")
+        try:
+            observed_argv = shlex.split(
+                (split_root / "COMMAND.txt").read_text(errors="strict")
+            )
+        except (OSError, UnicodeError, ValueError):
+            observed_argv = []
+        if observed_argv != _protein_nonviral_split_argv(split_query_argument):
+            failures.append(f"remote_split_command_mismatch:{candidate}")
+        try:
+            if (split_root / "QUERY_SHA256.txt").read_text(errors="strict") != (
+                f"{split_sha}  {split_query_argument}\n"
+            ):
+                failures.append(f"remote_split_query_sha_mismatch:{candidate}")
+        except (OSError, UnicodeError):
+            failures.append(f"remote_split_query_sha_missing:{candidate}")
+        child = load_json(
+            split_root / "SEARCH_STATUS.json", failures,
+            f"SEARCH_STATUS:protein_nonviral:{candidate}",
+        )
+        failures.extend(
+            _validate_split_attempt_archives(split_root, mode, candidate, child)
+        )
+        child_contract = {
+            "mode": mode,
+            "database": "nr",
+            "query_file": split_query_argument,
+            "query_sha256": split_sha,
+            "query_count": 2,
+            "query_ids": [candidate, control],
+            "validation_control_ids": [control],
+            "expected_query_lengths": split_lengths,
+            "request_strategy": "protein_nonviral_candidate_control_split_v1",
+            "split_candidate_id": candidate,
+            "technical_complete": True,
+            "command_completed_successfully": True,
+            "result_archive_valid": True,
+        }
+        for key, expected_value in child_contract.items():
+            if child.get(key) != expected_value:
+                failures.append(f"remote_split_status_mismatch:{candidate}:{key}")
+        child_per_query = child.get("per_query")
+        child_controls = child.get("validation_control_results")
+        if not isinstance(child_per_query, dict) or set(child_per_query) != {
+            candidate, control
+        }:
+            failures.append(f"remote_split_per_query_mismatch:{candidate}")
+            child_per_query = {}
+        if not isinstance(child_controls, dict) or set(child_controls) != {control}:
+            failures.append(f"remote_split_control_result_mismatch:{candidate}")
+            child_controls = {}
+        control_result = child_controls.get(control, {})
+        if (
+            not isinstance(control_result, dict)
+            or control_result.get("validated") is not True
+            or any(
+                control_result.get(key) != value
+                for key, value in control_specs[control].items()
+            )
+        ):
+            failures.append(f"remote_split_control_failed:{candidate}")
+        if root_per_query.get(candidate) != child_per_query.get(candidate):
+            failures.append(f"remote_split_candidate_aggregation_mismatch:{candidate}")
+        archive_path = split_root / "RESULTS.asn"
+        archive_hash = (
+            sha(archive_path)
+            if archive_path.is_file() and archive_path.stat().st_size > 0 else ""
+        )
+        child_status_hash = (
+            sha(split_root / "SEARCH_STATUS.json")
+            if (split_root / "SEARCH_STATUS.json").is_file() else ""
+        )
+        summary = split_results.get(candidate, {})
+        if (
+            not isinstance(summary, dict)
+            or summary.get("relative_root") != f"SPLITS/{candidate}"
+            or summary.get("query_sha256") != split_sha
+            or summary.get("result_archive_sha256") != archive_hash
+            or summary.get("search_status_sha256") != child_status_hash
+            or summary.get("technical_complete") is not True
+            or summary.get("attempt_count") != child.get("attempt_count")
+        ):
+            failures.append(f"remote_split_summary_mismatch:{candidate}")
+        observed_signature = _validate_and_hash_split_result(
+            split_root,
+            split_root / "EXPECTED_QUERIES.json",
+            mode,
+            candidate,
+            failures,
+        )
+        signature = summary.get("database_signature_sha256") if isinstance(summary, dict) else ""
+        if signature != observed_signature or len(observed_signature) != 64:
+            failures.append(f"remote_split_signature_invalid:{candidate}")
+        else:
+            signatures.add(observed_signature)
+        archive_manifest_lines.append(
+            f"{archive_hash}  SPLITS/{candidate}/RESULTS.asn\n"
+        )
+
+        try:
+            raw_lines = (split_root / "HITS.tsv").read_text(errors="strict").splitlines()
+        except (OSError, UnicodeError):
+            raw_lines = []
+            failures.append(f"remote_split_hits_unreadable:{candidate}")
+        parsed_rows: list[dict[str, str]] = []
+        for raw in raw_lines:
+            values = raw.split("\t")
+            if len(values) != len(REMOTE_HIT_FIELDS):
+                failures.append(f"remote_split_hit_shape_mismatch:{candidate}")
+                continue
+            row = dict(zip(REMOTE_HIT_FIELDS, values))
+            parsed_rows.append(row)
+            include = row["qseqid"] == candidate
+            if row["qseqid"] == control:
+                tokens = {row["saccver"]}
+                tokens.update(token for token in row["sallacc"].split(";") if token)
+                for identifier in row["sallseqid"].split(";"):
+                    tokens.update(token for token in identifier.split("|") if token)
+                try:
+                    include = bool(
+                        control_specs[control]["expected_accession"] in tokens
+                        and float(row["pident"]) >= control_specs[control]["min_identity"]
+                        and float(row["qcovs"]) >= control_specs[control]["min_query_coverage"]
+                    )
+                except ValueError:
+                    include = False
+            elif row["qseqid"] != candidate:
+                failures.append(f"remote_split_hit_query_mismatch:{candidate}")
+            if include and raw not in seen_hit_lines:
+                seen_hit_lines.add(raw)
+                aggregate_hit_lines.append(raw)
+        recomputed_per_query = _summarize_split_hits(
+            parsed_rows, split_lengths, failures,
+            f"{mode}:{candidate}",
+        )
+        if child_per_query != recomputed_per_query:
+            failures.append(f"remote_split_per_query_summary_mismatch:{candidate}")
+        if root_per_query.get(candidate) != recomputed_per_query.get(candidate):
+            failures.append(f"remote_split_candidate_raw_aggregation_mismatch:{candidate}")
+        recomputed_controls = _split_control_results_from_hits(
+            parsed_rows, control_specs
+        )
+        if child_controls != recomputed_controls:
+            failures.append(f"remote_split_control_summary_mismatch:{candidate}")
+        child_control_details.append(recomputed_per_query.get(control, {}))
+        child_control_results.append(recomputed_controls.get(control, {}))
+
+    if len(signatures) != 1:
+        failures.append("remote_split_cross_request_signature_mismatch:protein_nonviral")
+    if (
+        len(child_control_details) != len(CANDIDATES)
+        or any(value != child_control_details[0] for value in child_control_details[1:])
+        or root_per_query.get(control) != child_control_details[0]
+    ):
+        failures.append("remote_split_control_summary_aggregation_mismatch")
+    if (
+        len(child_control_results) != len(CANDIDATES)
+        or any(value != child_control_results[0] for value in child_control_results[1:])
+        or root_control_results.get(control) != child_control_results[0]
+    ):
+        failures.append("remote_split_control_result_aggregation_mismatch")
+    try:
+        expected_hits = "".join(line + "\n" for line in aggregate_hit_lines)
+        if (remote_root / "HITS.tsv").read_text(errors="strict") != expected_hits:
+            failures.append("remote_split_hit_aggregation_mismatch")
+    except (OSError, UnicodeError):
+        failures.append("remote_split_aggregate_hits_unreadable")
+    try:
+        if (remote_root / "RESULT_ARCHIVES.sha256").read_text(errors="strict") != "".join(
+            archive_manifest_lines
+        ):
+            failures.append("remote_split_archive_manifest_mismatch")
+    except (OSError, UnicodeError):
+        failures.append("remote_split_archive_manifest_missing")
+    return failures
+
+
+def validate_nt_nonviral_split_contract(
+    collected: Path, status: dict,
+) -> list[str]:
+    """Bind all three candidate+both-control nt complement requests."""
+    mode = "nt_nonviral"
+    failures: list[str] = []
+    remote_root = collected / "panax-remote-nt_nonviral"
+    preflight = collected / "panax-query-preflight" / "panax_three_contigs.fna"
+    source_root = Path(__file__).resolve().parent
+    control_paths = (
+        source_root / "remote_partition_controls.fna",
+        source_root / "remote_nonpanax_control.fna",
+    )
+    try:
+        candidate_bytes = preflight.read_bytes()
+        candidate_records = _fasta_record_payloads(candidate_bytes)
+        control_payloads = [path.read_bytes() for path in control_paths]
+        control_records: dict[str, bytes] = {}
+        for payload in control_payloads:
+            for control_id, record in _fasta_record_payloads(payload).items():
+                if control_id in control_records:
+                    raise ValueError("duplicate nt split control")
+                control_records[control_id] = record
+    except (OSError, UnicodeError, ValueError) as exc:
+        return [f"remote_nt_split_query_source_invalid:{type(exc).__name__}"]
+    control_specs = MODE_CONTROL_SPECS[mode]
+    control_ids = sorted(control_specs)
+    if set(candidate_records) != set(CANDIDATES) or set(control_records) != set(
+        control_specs
+    ):
+        return ["remote_nt_split_query_source_set_mismatch"]
+    prefix = "remote-nt_nonviral"
+    root_query_argument = f"{prefix}/SEARCH_QUERIES.fna"
+    root_bytes = candidate_bytes
+    if not root_bytes.endswith(b"\n"):
+        root_bytes += b"\n"
+    for payload in control_payloads:
+        root_bytes += payload
+        if not root_bytes.endswith(b"\n"):
+            root_bytes += b"\n"
+    root_sha = hashlib.sha256(root_bytes).hexdigest()
+    try:
+        if (remote_root / "SEARCH_QUERIES.fna").read_bytes() != root_bytes:
+            failures.append("remote_constructed_query_mismatch:nt_nonviral")
+        if (remote_root / "CANDIDATE_QUERIES.fna").read_bytes() != candidate_bytes:
+            failures.append("remote_split_candidate_copy_mismatch:nt_nonviral")
+        for path, payload in zip(control_paths, control_payloads):
+            if (remote_root / path.name).read_bytes() != payload:
+                failures.append(f"remote_split_control_copy_mismatch:nt_nonviral:{path.name}")
+    except OSError:
+        failures.append("remote_nt_split_copied_query_material_missing")
+    root_queries = _read_fasta_contract(root_bytes)
+    root_lengths = {row["id"]: row["length"] for row in root_queries}
+    root_expected = {
+        "query_file": root_query_argument,
+        "query_file_sha256": root_sha,
+        "candidate_ids": sorted(CANDIDATES),
+        "validation_control_ids": control_ids,
+        "validation_controls": [
+            {"id": control_id, **control_specs[control_id]}
+            for control_id in control_ids
+        ],
+        "queries": root_queries,
+        "request_strategy": "nt_nonviral_candidate_controls_splits_v1",
+        "split_candidate_ids": list(CANDIDATES),
+    }
+    if load_json(
+        remote_root / "EXPECTED_QUERIES.json", failures,
+        "EXPECTED_QUERIES:nt_nonviral",
+    ) != root_expected:
+        failures.append("remote_expected_query_contract_mismatch:nt_nonviral")
+    try:
+        if (remote_root / "QUERY_SHA256.txt").read_text(errors="strict") != (
+            f"{root_sha}  {root_query_argument}\n"
+        ):
+            failures.append("remote_query_sha_manifest_mismatch:nt_nonviral")
+    except (OSError, UnicodeError):
+        failures.append("remote_query_sha_manifest_missing:nt_nonviral")
+    status_contract = {
+        "mode": mode,
+        "database": "nt",
+        "request_strategy": "nt_nonviral_candidate_controls_splits_v1",
+        "split_candidate_ids": list(CANDIDATES),
+        "query_file": root_query_argument,
+        "query_sha256": root_sha,
+        "query_count": len(root_queries),
+        "query_ids": [row["id"] for row in root_queries],
+        "validation_control_ids": control_ids,
+        "expected_query_lengths": root_lengths,
+        "technical_complete": True,
+        "command_completed_successfully": True,
+        "result_archive_valid": True,
+    }
+    for key, expected_value in status_contract.items():
+        if status.get(key) != expected_value:
+            failures.append(f"remote_status_contract_mismatch:{mode}:{key}")
+    if status.get("split_validation_failures") != []:
+        failures.append("remote_split_validation_failures_present:nt_nonviral")
+    root_per_query = status.get("per_query")
+    root_controls = status.get("validation_control_results")
+    if not isinstance(root_per_query, dict) or set(root_per_query) != {
+        *CANDIDATES, *control_ids
+    }:
+        failures.append("remote_split_root_per_query_mismatch:nt_nonviral")
+        root_per_query = {}
+    if not isinstance(root_controls, dict) or set(root_controls) != set(control_ids):
+        failures.append("remote_split_root_control_result_mismatch:nt_nonviral")
+        root_controls = {}
+    split_results = status.get("split_results")
+    if not isinstance(split_results, dict) or set(split_results) != set(CANDIDATES):
+        failures.append("remote_split_result_set_mismatch:nt_nonviral")
+        split_results = {}
+    manifest = load_json(
+        remote_root / "SPLIT_REQUESTS.json", failures,
+        "SPLIT_REQUESTS:nt_nonviral",
+    )
+    if (
+        manifest.get("strategy") != "nt_nonviral_candidate_controls_splits_v1"
+        or manifest.get("query_prefix") != prefix
+        or manifest.get("candidate_ids") != list(CANDIDATES)
+        or manifest.get("validation_control_ids") != control_ids
+        or manifest.get("splits") != split_results
+        or manifest.get("validation_failures") != []
+    ):
+        failures.append("remote_split_manifest_contract_mismatch:nt_nonviral")
+
+    signatures: set[str] = set()
+    child_control_details = {control_id: [] for control_id in control_ids}
+    child_control_results = {control_id: [] for control_id in control_ids}
+    archive_manifest_lines: list[str] = []
+    aggregate_hit_lines: list[str] = []
+    seen_hit_lines: set[str] = set()
+    for candidate in CANDIDATES:
+        split_root = remote_root / "SPLITS" / candidate
+        split_query_argument = f"{prefix}/SPLITS/{candidate}/SEARCH_QUERIES.fna"
+        split_query_bytes = candidate_records[candidate] + b"".join(
+            control_records[control_id] for control_id in control_records
+        )
+        split_sha = hashlib.sha256(split_query_bytes).hexdigest()
+        try:
+            if (split_root / "SEARCH_QUERIES.fna").read_bytes() != split_query_bytes:
+                failures.append(f"remote_split_query_mismatch:nt_nonviral:{candidate}")
+        except OSError:
+            failures.append(f"remote_split_query_missing:nt_nonviral:{candidate}")
+        split_queries = _read_fasta_contract(split_query_bytes)
+        split_lengths = {row["id"]: row["length"] for row in split_queries}
+        child_expected = {
+            "query_file": split_query_argument,
+            "query_file_sha256": split_sha,
+            "candidate_ids": [candidate],
+            "validation_control_ids": control_ids,
+            "validation_controls": [
+                {"id": control_id, **control_specs[control_id]}
+                for control_id in control_ids
+            ],
+            "queries": split_queries,
+            "split_candidate_id": candidate,
+        }
+        if load_json(
+            split_root / "EXPECTED_QUERIES.json", failures,
+            f"EXPECTED_QUERIES:nt_nonviral:{candidate}",
+        ) != child_expected:
+            failures.append(f"remote_split_expected_query_mismatch:nt_nonviral:{candidate}")
+        try:
+            argv = shlex.split((split_root / "COMMAND.txt").read_text(errors="strict"))
+        except (OSError, UnicodeError, ValueError):
+            argv = []
+        request = REMOTE_REQUEST_CONTRACT[mode]
+        expected_argv = [
+            "blastn", "-remote", "-query", split_query_argument,
+            "-db", "nt", "-evalue", "1e-5", "-max_target_seqs", "100",
+            "-max_hsps", "1", "-outfmt", "11", "-out",
+            f"{prefix}/SPLITS/{candidate}/RESULTS.asn", *request["extra"],
+        ]
+        if argv != expected_argv:
+            failures.append(f"remote_split_command_mismatch:nt_nonviral:{candidate}")
+        try:
+            if (split_root / "QUERY_SHA256.txt").read_text(errors="strict") != (
+                f"{split_sha}  {split_query_argument}\n"
+            ):
+                failures.append(f"remote_split_query_sha_mismatch:nt_nonviral:{candidate}")
+        except (OSError, UnicodeError):
+            failures.append(f"remote_split_query_sha_missing:nt_nonviral:{candidate}")
+        child = load_json(
+            split_root / "SEARCH_STATUS.json", failures,
+            f"SEARCH_STATUS:nt_nonviral:{candidate}",
+        )
+        failures.extend(
+            _validate_split_attempt_archives(split_root, mode, candidate, child)
+        )
+        child_contract = {
+            "mode": mode, "database": "nt",
+            "query_file": split_query_argument, "query_sha256": split_sha,
+            "query_count": 1 + len(control_ids),
+            "query_ids": [row["id"] for row in split_queries],
+            "validation_control_ids": control_ids,
+            "expected_query_lengths": split_lengths,
+            "request_strategy": "nt_nonviral_candidate_controls_split_v1",
+            "split_candidate_id": candidate,
+            "technical_complete": True,
+            "command_completed_successfully": True,
+            "result_archive_valid": True,
+        }
+        for key, expected_value in child_contract.items():
+            if child.get(key) != expected_value:
+                failures.append(f"remote_split_status_mismatch:nt_nonviral:{candidate}:{key}")
+        child_per_query = child.get("per_query")
+        controls = child.get("validation_control_results")
+        if not isinstance(child_per_query, dict) or set(child_per_query) != {
+            candidate, *control_ids
+        }:
+            failures.append(f"remote_split_per_query_mismatch:nt_nonviral:{candidate}")
+            child_per_query = {}
+        if not isinstance(controls, dict) or set(controls) != set(control_ids):
+            failures.append(f"remote_split_control_set_mismatch:nt_nonviral:{candidate}")
+            controls = {}
+        for control_id in control_ids:
+            result = controls.get(control_id, {})
+            if (
+                not isinstance(result, dict)
+                or result.get("validated") is not True
+                or any(
+                    result.get(key) != value
+                    for key, value in control_specs[control_id].items()
+                )
+            ):
+                failures.append(
+                    f"remote_split_control_failed:nt_nonviral:{candidate}:{control_id}"
+                )
+        if root_per_query.get(candidate) != child_per_query.get(candidate):
+            failures.append(f"remote_split_candidate_aggregation_mismatch:nt_nonviral:{candidate}")
+        archive_path = split_root / "RESULTS.asn"
+        archive_hash = (
+            sha(archive_path)
+            if archive_path.is_file() and archive_path.stat().st_size > 0 else ""
+        )
+        child_status_hash = (
+            sha(split_root / "SEARCH_STATUS.json")
+            if (split_root / "SEARCH_STATUS.json").is_file() else ""
+        )
+        summary = split_results.get(candidate, {})
+        if (
+            not isinstance(summary, dict)
+            or summary.get("relative_root") != f"SPLITS/{candidate}"
+            or summary.get("query_sha256") != split_sha
+            or summary.get("result_archive_sha256") != archive_hash
+            or summary.get("search_status_sha256") != child_status_hash
+            or summary.get("technical_complete") is not True
+            or summary.get("attempt_count") != child.get("attempt_count")
+        ):
+            failures.append(f"remote_split_summary_mismatch:nt_nonviral:{candidate}")
+        observed_signature = _validate_and_hash_split_result(
+            split_root,
+            split_root / "EXPECTED_QUERIES.json",
+            mode,
+            candidate,
+            failures,
+        )
+        signature = summary.get("database_signature_sha256") if isinstance(summary, dict) else ""
+        if signature != observed_signature or len(observed_signature) != 64:
+            failures.append(f"remote_split_signature_invalid:nt_nonviral:{candidate}")
+        else:
+            signatures.add(observed_signature)
+        archive_manifest_lines.append(
+            f"{archive_hash}  SPLITS/{candidate}/RESULTS.asn\n"
+        )
+        try:
+            raw_lines = (split_root / "HITS.tsv").read_text(
+                errors="strict"
+            ).splitlines()
+        except (OSError, UnicodeError):
+            raw_lines = []
+            failures.append(f"remote_split_hits_unreadable:nt_nonviral:{candidate}")
+        validated_controls: set[str] = set()
+        parsed_rows: list[dict[str, str]] = []
+        for raw in raw_lines:
+            values = raw.split("\t")
+            if len(values) != len(REMOTE_HIT_FIELDS):
+                failures.append(
+                    f"remote_split_hit_shape_mismatch:nt_nonviral:{candidate}"
+                )
+                continue
+            row = dict(zip(REMOTE_HIT_FIELDS, values))
+            parsed_rows.append(row)
+            query_id = row["qseqid"]
+            include = query_id == candidate
+            if query_id in control_specs:
+                spec = control_specs[query_id]
+                tokens = {row["saccver"]}
+                tokens.update(
+                    token for token in row["sallacc"].split(";") if token
+                )
+                for identifier in row["sallseqid"].split(";"):
+                    tokens.update(
+                        token for token in identifier.split("|") if token
+                    )
+                try:
+                    include = bool(
+                        spec["expected_accession"] in tokens
+                        and float(row["pident"]) >= spec["min_identity"]
+                        and float(row["qcovs"]) >= spec["min_query_coverage"]
+                    )
+                except ValueError:
+                    include = False
+                if include:
+                    validated_controls.add(query_id)
+            elif query_id != candidate:
+                failures.append(
+                    f"remote_split_hit_query_mismatch:nt_nonviral:"
+                    f"{candidate}:{query_id}"
+                )
+            if include and raw not in seen_hit_lines:
+                seen_hit_lines.add(raw)
+                aggregate_hit_lines.append(raw)
+        for control_id in control_ids:
+            if control_id not in validated_controls:
+                failures.append(
+                    f"remote_split_control_hit_failed:nt_nonviral:"
+                    f"{candidate}:{control_id}"
+                )
+        recomputed_per_query = _summarize_split_hits(
+            parsed_rows, split_lengths, failures,
+            f"{mode}:{candidate}",
+        )
+        if child_per_query != recomputed_per_query:
+            failures.append(
+                f"remote_split_per_query_summary_mismatch:nt_nonviral:{candidate}"
+            )
+        if root_per_query.get(candidate) != recomputed_per_query.get(candidate):
+            failures.append(
+                f"remote_split_candidate_raw_aggregation_mismatch:nt_nonviral:"
+                f"{candidate}"
+            )
+        recomputed_controls = _split_control_results_from_hits(
+            parsed_rows, control_specs
+        )
+        if controls != recomputed_controls:
+            failures.append(
+                f"remote_split_control_summary_mismatch:nt_nonviral:{candidate}"
+            )
+        for control_id in control_ids:
+            child_control_details[control_id].append(
+                recomputed_per_query.get(control_id, {})
+            )
+            child_control_results[control_id].append(
+                recomputed_controls.get(control_id, {})
+            )
+    if len(signatures) != 1:
+        failures.append("remote_split_cross_request_signature_mismatch:nt_nonviral")
+    for control_id in control_ids:
+        details = child_control_details[control_id]
+        results = child_control_results[control_id]
+        if (
+            len(details) != len(CANDIDATES)
+            or any(value != details[0] for value in details[1:])
+            or root_per_query.get(control_id) != details[0]
+        ):
+            failures.append(f"remote_split_control_summary_aggregation_mismatch:{control_id}")
+        if (
+            len(results) != len(CANDIDATES)
+            or any(value != results[0] for value in results[1:])
+            or root_controls.get(control_id) != results[0]
+        ):
+            failures.append(f"remote_split_control_result_aggregation_mismatch:{control_id}")
+    try:
+        if (remote_root / "RESULT_ARCHIVES.sha256").read_text(errors="strict") != "".join(
+            archive_manifest_lines
+        ):
+            failures.append("remote_split_archive_manifest_mismatch:nt_nonviral")
+    except (OSError, UnicodeError):
+        failures.append("remote_split_archive_manifest_missing:nt_nonviral")
+    try:
+        expected_hits = "".join(line + "\n" for line in aggregate_hit_lines)
+        if (remote_root / "HITS.tsv").read_text(errors="strict") != expected_hits:
+            failures.append("remote_split_hit_aggregation_mismatch:nt_nonviral")
+    except (OSError, UnicodeError):
+        failures.append("remote_split_aggregate_hits_unreadable:nt_nonviral")
+    return failures
+
+
 def validate_remote_contract(
     collected: Path, mode: str, status: dict,
 ) -> list[str]:
     """Bind one remote result to its exact trusted query and client argv."""
+
+    if mode == "protein_nonviral":
+        return validate_protein_nonviral_split_contract(collected, status)
+    if mode == "nt_nonviral":
+        return validate_nt_nonviral_split_contract(collected, status)
 
     failures: list[str] = []
     request = REMOTE_REQUEST_CONTRACT[mode]

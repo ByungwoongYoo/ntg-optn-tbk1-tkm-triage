@@ -39,10 +39,10 @@ def fasta_rows(payload):
 
 
 class FinalizerRemoteContractTests(unittest.TestCase):
-    def build_nt_nonviral_fixture(self, root):
+    def build_nt_panax_fixture(self, root):
         collected = root / "collected"
         preflight = collected / "panax-query-preflight"
-        remote = collected / "panax-remote-nt_nonviral"
+        remote = collected / "panax-remote-nt_panax"
         preflight.mkdir(parents=True)
         remote.mkdir(parents=True)
 
@@ -55,15 +55,14 @@ class FinalizerRemoteContractTests(unittest.TestCase):
         query_bytes = b"".join([
             candidate_fasta,
             (source / "remote_partition_controls.fna").read_bytes(),
-            (source / "remote_nonpanax_control.fna").read_bytes(),
         ])
         (remote / "SEARCH_QUERIES.fna").write_bytes(query_bytes)
 
-        mode = "nt_nonviral"
+        mode = "nt_panax"
         argv = FINALIZER.expected_remote_argv(mode)
         (remote / "COMMAND.txt").write_text(shlex.join(argv) + "\n")
         query_sha = hashlib.sha256(query_bytes).hexdigest()
-        query_argument = "remote-nt_nonviral/SEARCH_QUERIES.fna"
+        query_argument = "remote-nt_panax/SEARCH_QUERIES.fna"
         (remote / "QUERY_SHA256.txt").write_text(
             f"{query_sha}  {query_argument}\n"
         )
@@ -109,10 +108,10 @@ class FinalizerRemoteContractTests(unittest.TestCase):
 
     def test_exact_command_expected_and_preflight_fasta_contract_passes(self):
         with tempfile.TemporaryDirectory() as tmp:
-            collected, _, status = self.build_nt_nonviral_fixture(Path(tmp))
+            collected, _, status = self.build_nt_panax_fixture(Path(tmp))
             self.assertEqual(
                 FINALIZER.validate_remote_contract(
-                    collected, "nt_nonviral", status
+                    collected, "nt_panax", status
                 ),
                 [],
             )
@@ -120,25 +119,25 @@ class FinalizerRemoteContractTests(unittest.TestCase):
     def test_entrez_deletion_and_replacement_are_rejected(self):
         for mutation in ("delete", "replace"):
             with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as tmp:
-                collected, remote, status = self.build_nt_nonviral_fixture(Path(tmp))
-                argv = FINALIZER.expected_remote_argv("nt_nonviral")
+                collected, remote, status = self.build_nt_panax_fixture(Path(tmp))
+                argv = FINALIZER.expected_remote_argv("nt_panax")
                 index = argv.index("-entrez_query")
                 if mutation == "delete":
                     del argv[index:index + 2]
                 else:
-                    argv[index + 1] = "txid44586[ORGN]"
+                    argv[index + 1] = "all[filter] NOT txid10239[ORGN]"
                 (remote / "COMMAND.txt").write_text(shlex.join(argv) + "\n")
                 failures = FINALIZER.validate_remote_contract(
-                    collected, "nt_nonviral", status
+                    collected, "nt_panax", status
                 )
                 self.assertIn(
-                    "remote_command_contract_mismatch:nt_nonviral", failures
+                    "remote_command_contract_mismatch:nt_panax", failures
                 )
 
     def test_expected_sequence_hash_and_id_mutations_are_rejected(self):
         for mutation in ("hash", "id"):
             with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as tmp:
-                collected, remote, status = self.build_nt_nonviral_fixture(Path(tmp))
+                collected, remote, status = self.build_nt_panax_fixture(Path(tmp))
                 path = remote / "EXPECTED_QUERIES.json"
                 expected = json.loads(path.read_text())
                 if mutation == "hash":
@@ -147,41 +146,41 @@ class FinalizerRemoteContractTests(unittest.TestCase):
                     expected["queries"][0]["id"] = "PNX_Picorna_MUTATED"
                 path.write_text(json.dumps(expected, indent=2) + "\n")
                 failures = FINALIZER.validate_remote_contract(
-                    collected, "nt_nonviral", status
+                    collected, "nt_panax", status
                 )
                 self.assertIn(
-                    "remote_expected_query_contract_mismatch:nt_nonviral",
+                    "remote_expected_query_contract_mismatch:nt_panax",
                     failures,
                 )
 
     def test_expected_control_spec_mutation_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
-            collected, remote, status = self.build_nt_nonviral_fixture(Path(tmp))
+            collected, remote, status = self.build_nt_panax_fixture(Path(tmp))
             path = remote / "EXPECTED_QUERIES.json"
             expected = json.loads(path.read_text())
             expected["validation_controls"][0]["min_identity"] = 50.0
             path.write_text(json.dumps(expected, indent=2) + "\n")
             failures = FINALIZER.validate_remote_contract(
-                collected, "nt_nonviral", status
+                collected, "nt_panax", status
             )
             self.assertIn(
-                "remote_expected_query_contract_mismatch:nt_nonviral", failures
+                "remote_expected_query_contract_mismatch:nt_panax", failures
             )
 
     def test_status_and_preflight_fasta_mutations_are_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
-            collected, _, status = self.build_nt_nonviral_fixture(Path(tmp))
+            collected, _, status = self.build_nt_panax_fixture(Path(tmp))
             status["query_sha256"] = "0" * 64
             failures = FINALIZER.validate_remote_contract(
-                collected, "nt_nonviral", status
+                collected, "nt_panax", status
             )
             self.assertIn(
-                "remote_status_contract_mismatch:nt_nonviral:query_sha256",
+                "remote_status_contract_mismatch:nt_panax:query_sha256",
                 failures,
             )
 
         with tempfile.TemporaryDirectory() as tmp:
-            collected, _, status = self.build_nt_nonviral_fixture(Path(tmp))
+            collected, _, status = self.build_nt_panax_fixture(Path(tmp))
             preflight_query = (
                 collected / "panax-query-preflight" / "panax_three_contigs.fna"
             )
@@ -189,11 +188,11 @@ class FinalizerRemoteContractTests(unittest.TestCase):
                 preflight_query.read_text().replace("ACGT", "TGCA", 1)
             )
             failures = FINALIZER.validate_remote_contract(
-                collected, "nt_nonviral", status
+                collected, "nt_panax", status
             )
-            self.assertIn("remote_constructed_query_mismatch:nt_nonviral", failures)
+            self.assertIn("remote_constructed_query_mismatch:nt_panax", failures)
             self.assertIn(
-                "remote_expected_query_contract_mismatch:nt_nonviral", failures
+                "remote_expected_query_contract_mismatch:nt_panax", failures
             )
 
 

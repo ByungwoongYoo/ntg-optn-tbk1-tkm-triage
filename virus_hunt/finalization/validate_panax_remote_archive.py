@@ -285,8 +285,16 @@ def validate(
     expected_path: Path,
     mode: str,
     hits_path: Path,
+    *,
+    query_path_override: Path | None = None,
 ) -> tuple[list[str], list[str], int]:
-    """Return structural errors, control errors, and observed report count."""
+    """Return structural errors, control errors, and observed report count.
+
+    ``query_path_override`` is only for independently validating a relocated
+    evidence bundle.  It changes where the immutable query bytes are read,
+    while the logical ``query_file`` value and its hash remain governed by the
+    supplied expectation JSON.
+    """
 
     try:
         payload = json.loads(result_path.read_text())
@@ -304,11 +312,24 @@ def validate(
     if not isinstance(queries, list) or not queries:
         raise ValueError("local expectation JSON has no nonempty queries list")
     expected_ids = [item.get("id") for item in queries if isinstance(item, dict)]
-    if len(expected_ids) != len(queries) or len(expected_ids) != len(set(expected_ids)):
+    if (
+        len(expected_ids) != len(queries)
+        or any(not isinstance(query_id, str) or not query_id for query_id in expected_ids)
+        or len(expected_ids) != len(set(expected_ids))
+    ):
         raise ValueError("local expectation JSON has malformed or duplicate query IDs")
-    expected_lengths = {item["id"]: int(item["length"]) for item in queries}
-    expected_hashes = {item["id"]: str(item.get("sequence_sha256", "")) for item in queries}
-    query_path = Path(str(expected_payload.get("query_file", "")))
+    try:
+        expected_lengths = {item["id"]: int(item["length"]) for item in queries}
+        expected_hashes = {
+            item["id"]: str(item.get("sequence_sha256", "")) for item in queries
+        }
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("local expectation JSON has malformed query metadata") from exc
+    query_path = (
+        Path(query_path_override)
+        if query_path_override is not None
+        else Path(str(expected_payload.get("query_file", "")))
+    )
     if not query_path.is_file():
         raise ValueError(f"expected local query FASTA is absent: {query_path}")
     observed_query_file_hash = hashlib.sha256(query_path.read_bytes()).hexdigest()
@@ -343,10 +364,26 @@ def validate(
         raise ValueError(f"unsupported remote-search mode in validator: {mode}")
     required_control_contract = MODE_CONTROL_CONTRACT[mode]
     search_contract = MODE_SEARCH_CONTRACT[mode]
-    if set(expected_lengths) != CANDIDATES | set(required_control_contract):
+    split_candidate_id = expected_payload.get("split_candidate_id")
+    if split_candidate_id is None:
+        required_candidates = CANDIDATES
+    elif (
+        mode in {"protein_nonviral", "nt_nonviral"}
+        and isinstance(split_candidate_id, str)
+        and split_candidate_id in CANDIDATES
+        and expected_payload.get("candidate_ids") == [split_candidate_id]
+    ):
+        # The NCBI nr/nt complement backends reproducibly returned structurally
+        # empty archives for combined nonviral A1+A2+B requests.  This narrowly
+        # scoped contract permits one candidate plus every mode-required
+        # positive control; no other mode or candidate subset is accepted.
+        required_candidates = {split_candidate_id}
+    else:
+        raise ValueError("invalid nonviral split-candidate contract")
+    if set(expected_lengths) != required_candidates | set(required_control_contract):
         raise ValueError(
             "local expectation query set does not match the mode-specific "
-            "A1/A2/B plus control contract"
+            "candidate plus control contract"
         )
     if (
         not isinstance(control_specs, list)
