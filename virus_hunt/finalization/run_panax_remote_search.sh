@@ -1,30 +1,34 @@
 #!/usr/bin/env bash
 # Current NCBI remote-database audit for immutable Panax A1/A2/B queries.
 # A zero-hit result is accepted only when BLAST produced a valid archive,
-# recovered every exact query, and reported nonzero statistics. Modes with
-# embedded positive controls must also recover both controls.
+# recovered every exact query, and reported nonzero statistics. Entrez-
+# partitioned modes also carry a same-request positive control so an empty
+# candidate result cannot be confused with a silently invalid remote search.
 set -Eeuo pipefail
 
 MODE="${1:?search mode required}"
 QUERY_ROOT="${2:?query directory required}"
 OUT="${3:?output directory required}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mkdir -p "$OUT"
 if find "$OUT" -mindepth 1 -maxdepth 1 -print -quit | grep -q .; then
   echo "output directory must be empty: $OUT" >&2
   exit 2
 fi
 
-# Standard-task nr/nt coverage is split into explicit viral and nonviral
-# Entrez partitions. The unfiltered remote service can emit zero-statistic
+# Standard-task nr/nt coverage is split into explicit viral and cellular-
+# organism Entrez partitions. The unfiltered remote service can emit zero-statistic
 # archives that look successful but contain no usable search result.
 case "$MODE" in
   protein_viral)
     program=blastp; query="$QUERY_ROOT/panax_candidates_plus_controls_orfs.faa"; database=nr
     extra=(-entrez_query 'txid10239[ORGN]' -seg yes -comp_based_stats 2)
     ;;
-  protein_nonviral)
-    program=blastp; query="$QUERY_ROOT/panax_three_partial_orfs.faa"; database=nr
-    extra=(-entrez_query 'NOT txid10239[ORGN]' -seg yes -comp_based_stats 2)
+  protein_cellular)
+    program=blastp; candidate_query="$QUERY_ROOT/panax_three_partial_orfs.faa"
+    partition_control="$SCRIPT_DIR/remote_partition_controls.faa"
+    query="$OUT/SEARCH_QUERIES.faa"; database=nr
+    extra=(-entrez_query 'txid131567[ORGN]' -seg yes -comp_based_stats 2)
     ;;
   protein_tsa)
     program=blastp; query="$QUERY_ROOT/panax_three_partial_orfs.faa"; database=tsa_nr
@@ -38,16 +42,20 @@ case "$MODE" in
     program=blastn; query="$QUERY_ROOT/panax_candidates_plus_controls_contigs.fna"; database=nt
     extra=(-task blastn -entrez_query 'txid10239[ORGN]' -dust yes -soft_masking true)
     ;;
-  nt_nonviral)
-    program=blastn; query="$QUERY_ROOT/panax_three_contigs.fna"; database=nt
-    extra=(-task blastn -entrez_query 'NOT txid10239[ORGN]' -dust yes -soft_masking true)
+  nt_cellular)
+    program=blastn; candidate_query="$QUERY_ROOT/panax_three_contigs.fna"
+    partition_control="$SCRIPT_DIR/remote_partition_controls.fna"
+    query="$OUT/SEARCH_QUERIES.fna"; database=nt
+    extra=(-task blastn -entrez_query 'txid131567[ORGN]' -dust yes -soft_masking true)
     ;;
   nt_megablast)
     program=blastn; query="$QUERY_ROOT/panax_candidates_plus_controls_contigs.fna"; database=nt
     extra=(-task megablast -dust yes -soft_masking true)
     ;;
   nt_panax)
-    program=blastn; query="$QUERY_ROOT/panax_three_contigs.fna"; database=nt
+    program=blastn; candidate_query="$QUERY_ROOT/panax_three_contigs.fna"
+    partition_control="$SCRIPT_DIR/remote_partition_controls.fna"
+    query="$OUT/SEARCH_QUERIES.fna"; database=nt
     extra=(-task blastn -entrez_query 'txid44586[ORGN]' -dust yes -soft_masking true)
     ;;
   nt_tsa)
@@ -60,11 +68,57 @@ case "$MODE" in
     ;;
 esac
 
+if [[ -n "${partition_control:-}" ]]; then
+  control_manifest="$SCRIPT_DIR/remote_partition_controls.json"
+  python - "$control_manifest" "$partition_control" "$MODE" <<'PY'
+from pathlib import Path
+import hashlib,json,sys
+manifest_path=Path(sys.argv[1]); fasta_path=Path(sys.argv[2]); mode=sys.argv[3]
+manifest=json.loads(manifest_path.read_text())
+controls=[
+    row for row in manifest.get('controls',[])
+    if mode in row.get('required_modes',[])
+]
+if len(controls) != 1:
+    raise SystemExit(f'expected one partition control for {mode}, found {len(controls)}')
+row=controls[0]
+fasta=Path(fasta_path)
+if fasta.name != row.get('fasta_file'):
+    raise SystemExit(f'control FASTA mismatch for {mode}: {fasta.name}')
+if hashlib.sha256(fasta.read_bytes()).hexdigest() != row.get('fasta_file_sha256'):
+    raise SystemExit(f'control FASTA hash mismatch for {mode}')
+records={}; name=None
+for raw in fasta.read_text().splitlines():
+    line=raw.strip()
+    if not line:
+        continue
+    if line.startswith('>'):
+        name=line[1:].split()[0]
+        if name in records:
+            raise SystemExit(f'duplicate partition control: {name}')
+        records[name]=''
+    elif name is None:
+        raise SystemExit('sequence before partition-control header')
+    else:
+        records[name]+=line.upper()
+if set(records) != {row['control']}:
+    raise SystemExit(f'partition-control ID mismatch: {sorted(records)}')
+seq=records[row['control']]
+if len(seq) != int(row['length']):
+    raise SystemExit(f'partition-control length mismatch: {row["control"]}')
+if hashlib.sha256(seq.encode()).hexdigest() != row['sequence_sha256']:
+    raise SystemExit(f'partition-control sequence hash mismatch: {row["control"]}')
+PY
+  cat "$candidate_query" "$partition_control" > "$query"
+  cp "$partition_control" "$OUT/"
+  cp "$control_manifest" "$OUT/REMOTE_PARTITION_CONTROLS.json"
+fi
+
 # Emit immutable expected query metadata before making a network request.
-python - "$query" "$program" "$OUT/EXPECTED_QUERIES.json" <<'PY'
+python - "$query" "$program" "$MODE" "$OUT/EXPECTED_QUERIES.json" <<'PY'
 from pathlib import Path
 import hashlib,json,re,sys
-p=Path(sys.argv[1]); program=sys.argv[2]; out=Path(sys.argv[3])
+p=Path(sys.argv[1]); program=sys.argv[2]; mode=sys.argv[3]; out=Path(sys.argv[4])
 records={}; name=None
 for raw in p.read_text().splitlines():
     line=raw.strip()
@@ -79,7 +133,39 @@ for raw in p.read_text().splitlines():
         records[name]+=line.upper()
 expected={'PNX_Picorna_A1','PNX_Picorna_A2','PNX_Picorna_B'}
 controls={'PNX_Duplo_A_control','PNX_Duplo_B_control'}
-required=(expected|controls) if p.name.startswith('panax_candidates_plus_controls_') else expected
+mode_controls={
+    'protein_viral': controls,
+    'nt_viral': controls,
+    'nt_megablast': controls,
+    'protein_cellular': {'PNX_Panax_L2_control'},
+    'nt_cellular': {'PNX_Panax_cpDNA_control'},
+    'nt_panax': {'PNX_Panax_cpDNA_control'},
+}
+validation_controls=mode_controls.get(mode,set())
+exact_control_expectations={
+    'protein_cellular': {
+        'PNX_Panax_L2_control': {
+            'expected_accession': 'YP_009121238.1',
+            'min_query_coverage': 99.0,
+            'min_identity': 99.0,
+        },
+    },
+    'nt_cellular': {
+        'PNX_Panax_cpDNA_control': {
+            'expected_accession': 'NC_026447.1',
+            'min_query_coverage': 99.0,
+            'min_identity': 99.0,
+        },
+    },
+    'nt_panax': {
+        'PNX_Panax_cpDNA_control': {
+            'expected_accession': 'NC_026447.1',
+            'min_query_coverage': 99.0,
+            'min_identity': 99.0,
+        },
+    },
+}
+required=expected|validation_controls
 if set(records)!=required:
     raise SystemExit(f'query set mismatch: observed={sorted(records)}, required={sorted(required)}')
 allowed=r'[ACGTN]+' if program=='blastn' else r'[ABCDEFGHIKLMNPQRSTVWXYZ]+'
@@ -87,6 +173,11 @@ for name,seq in records.items():
     if not seq or not re.fullmatch(allowed,seq):
         raise SystemExit(f'empty or invalid query sequence: {name}')
 payload={'query_file':str(p),'query_file_sha256':hashlib.sha256(p.read_bytes()).hexdigest(),
+         'candidate_ids':sorted(expected),'validation_control_ids':sorted(validation_controls),
+         'validation_controls':[
+             {'id':control,**exact_control_expectations.get(mode,{}).get(control,{})}
+             for control in sorted(validation_controls)
+         ],
          'queries':[{'id':k,'length':len(v),'sequence_sha256':hashlib.sha256(v.encode()).hexdigest()}
                     for k,v in records.items()]}
 out.write_text(json.dumps(payload,indent=2)+'\n')
@@ -111,13 +202,16 @@ validate_remote_archive() {
   local result_json="$1"
   local expected_json="$2"
   local mode="$3"
-  python - "$result_json" "$expected_json" "$mode" <<'PY'
+  local hits_tsv="$4"
+  python - "$result_json" "$expected_json" "$mode" "$hits_tsv" <<'PY'
 from pathlib import Path
 import json,math,sys
 result_path=Path(sys.argv[1]); expected_path=Path(sys.argv[2]); mode=sys.argv[3]
+hits_path=Path(sys.argv[4])
 payload=json.loads(result_path.read_text())
 expected_payload=json.loads(expected_path.read_text())
 expected_lengths={x['id']:int(x['length']) for x in expected_payload['queries']}
+control_specs=expected_payload.get('validation_controls',[])
 reports=payload.get('BlastOutput2',[])
 errors=[]; observed={}; hit_counts={}
 if not isinstance(reports,list) or not reports:
@@ -143,6 +237,13 @@ else:
             continue
         observed[qid]=qlen
         stat=search.get('stat') or {}
+        for key in ('db_num','db_len'):
+            try:
+                value=int(stat.get(key,0))
+            except Exception:
+                value=0
+            if value <= 0:
+                errors.append(f'{qid} has invalid database statistic: {key}={stat.get(key)!r}')
         bad_stats=[]
         for key in ('kappa','lambda','entropy'):
             try:
@@ -157,14 +258,36 @@ else:
         if not isinstance(hits,list):
             errors.append(f'{qid} has a malformed hit list')
             hits=[]
+        if not hits and search.get('message') != 'No hits found':
+            errors.append(f'{qid} has no hits without the expected completion message')
         hit_counts[qid]=len(hits)
 if observed != expected_lengths:
     errors.append(f'query reports mismatch: observed={observed}, expected={expected_lengths}')
-control_modes={'protein_viral','nt_viral','nt_megablast'}
-if mode in control_modes:
-    for control in ('PNX_Duplo_A_control','PNX_Duplo_B_control'):
-        if hit_counts.get(control,0) < 1:
-            errors.append(f'positive control has no hit: {control}')
+hit_rows=[]
+for raw in hits_path.read_text(errors='replace').splitlines():
+    fields=raw.split('\t')
+    if len(fields) >= 13:
+        hit_rows.append({
+            'qseqid':fields[0], 'saccver':fields[1], 'pident':float(fields[2]),
+            'qcovs':float(fields[12]),
+        })
+for spec in control_specs:
+    control=spec['id']
+    if hit_counts.get(control,0) < 1:
+        errors.append(f'positive control has no hit: {control}')
+        continue
+    accession=spec.get('expected_accession')
+    if accession:
+        matches=[
+            row for row in hit_rows
+            if row['qseqid']==control
+            and row['pident']>=float(spec['min_identity'])
+            and row['qcovs']>=float(spec['min_query_coverage'])
+        ]
+        if not matches:
+            errors.append(
+                f'positive control did not recover a near-exact match: {control}'
+            )
 if errors:
     print('remote archive validation failed:', file=sys.stderr)
     for error in errors:
@@ -192,7 +315,7 @@ for attempt in 1 2; do
        -outfmt '6 qseqid saccver pident length qlen slen qstart qend sstart send evalue bitscore qcovs staxids sscinames stitle sseq' \
        -out "$OUT/HITS.tsv" >> "$attempt_stdout" 2>> "$attempt_stderr" && \
      [[ -s "$OUT/RESULTS.json" ]] && \
-     validate_remote_archive "$OUT/RESULTS.json" "$OUT/EXPECTED_QUERIES.json" "$MODE" \
+     validate_remote_archive "$OUT/RESULTS.json" "$OUT/EXPECTED_QUERIES.json" "$MODE" "$OUT/HITS.tsv" \
        >> "$attempt_stdout" 2>> "$attempt_stderr"; then
     success=1
     success_attempt="$attempt"
@@ -214,6 +337,8 @@ import csv,hashlib,json,sys
 mode,query,database,out=sys.argv[1:]; out=Path(out); query=Path(query)
 expected=json.loads((out/'EXPECTED_QUERIES.json').read_text())
 expected_lengths={x['id']:x['length'] for x in expected['queries']}
+validation_controls=expected.get('validation_control_ids',[])
+validation_control_specs=expected.get('validation_controls',[])
 fields=['qseqid','saccver','pident','length','qlen','slen','qstart','qend','sstart','send',
         'evalue','bitscore','qcovs','staxids','sscinames','stitle','sseq']
 rows=[]
@@ -263,10 +388,29 @@ for candidate in expected_lengths:
         'near_identical_qcov80_pident95_count':sum(float(r['qcovs'])>=80 and float(r['pident'])>=95 for r in hits),
         'top_hit':None if top is None else {k:top[k] for k in fields if k!='sseq'},
     }
+control_results={}
+for spec in validation_control_specs:
+    control=spec['id']
+    accession=spec.get('expected_accession')
+    matches=[
+        row for row in rows
+        if row['qseqid']==control
+        and float(row['pident'])>=float(spec.get('min_identity',0))
+        and float(row['qcovs'])>=float(spec.get('min_query_coverage',0))
+    ]
+    control_results[control]={
+        'expected_accession':accession,
+        'min_query_coverage':spec.get('min_query_coverage'),
+        'min_identity':spec.get('min_identity'),
+        'validated_accessions':sorted({row['saccver'] for row in matches})[:10],
+        'validated':bool(matches),
+    }
 status={
     'generated_utc':datetime.now(timezone.utc).isoformat(), 'mode':mode, 'database':database,
     'query_file':str(query), 'query_sha256':hashlib.sha256(query.read_bytes()).hexdigest(),
     'query_count':len(expected_lengths), 'query_ids':list(expected_lengths),
+    'validation_control_ids':validation_controls,
+    'validation_control_results':control_results,
     'expected_query_lengths':expected_lengths, 'json_query_lengths':json_queries,
     'command_completed_successfully':success, 'result_archive_valid':valid_json,
     'fatal_stderr_markers':fatal_markers, 'unexpected_result_query_ids':unexpected,

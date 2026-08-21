@@ -1,0 +1,40 @@
+{
+  "retrieved_utc": "2026-08-21T05:23:32Z",
+  "source": "NCBI RefSeq",
+  "controls": [
+    {
+      "control": "PNX_Panax_L2_control",
+      "molecule": "protein",
+      "accession": "YP_009121238.1",
+      "coordinates_1based": "1-274",
+      "taxid": 44586,
+      "organism": "Panax notoginseng",
+      "length": 274,
+      "sequence_sha256": "144cbb38d5d2f972b68c863eddcfd2092722dfe2001ca2ef468cf315b2be6b13",
+      "fasta_file": "remote_partition_controls.faa",
+      "fasta_file_sha256": "6c20fa25232e774460a6b30555ffa0825243adb6db6d4e117cd3513a43f671bb",
+      "source_url": "https://www.ncbi.nlm.nih.gov/protein/YP_009121238.1",
+      "required_modes": [
+        "protein_cellular"
+      ]
+    },
+    {
+      "control": "PNX_Panax_cpDNA_control",
+      "molecule": "nucleotide",
+      "accession": "NC_026447.1",
+      "coordinates_1based": "1-1000",
+      "taxid": 44586,
+      "organism": "Panax notoginseng",
+      "length": 1000,
+      "sequence_sha256": "160579e78873b5151337a3b843de28dbcc2acfea753b0480f6e38f5943d55e99",
+      "fasta_file": "remote_partition_controls.fna",
+      "fasta_file_sha256": "14e7bb0094fd8cfd64aabe1f55268644027b3d224a330f9758cd6adf90577fb0",
+      "source_url": "https://www.ncbi.nlm.nih.gov/nuccore/NC_026447.1",
+      "required_modes": [
+        "nt_cellular",
+        "nt_panax"
+      ]
+    }
+  ],
+  "validation_role": "Same-request positive controls for fail-closed validation of Entrez-partitioned remote searches; controls are excluded from candidate interpretation."
+}

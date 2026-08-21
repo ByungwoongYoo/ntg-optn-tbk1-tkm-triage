@@ -12,11 +12,18 @@ from pathlib import Path
 
 CANDIDATES = ("PNX_Picorna_A1", "PNX_Picorna_A2", "PNX_Picorna_B")
 CONTROLS = ("PNX_Duplo_A_control", "PNX_Duplo_B_control")
+MODE_CONTROLS = {
+    "protein_viral": CONTROLS,
+    "nt_viral": CONTROLS,
+    "nt_megablast": CONTROLS,
+    "protein_cellular": ("PNX_Panax_L2_control",),
+    "nt_cellular": ("PNX_Panax_cpDNA_control",),
+    "nt_panax": ("PNX_Panax_cpDNA_control",),
+}
 REMOTE_MODES = (
-    "protein_viral", "protein_nonviral", "protein_tsa", "protein_environmental",
-    "nt_viral", "nt_nonviral", "nt_megablast", "nt_panax", "nt_tsa",
+    "protein_viral", "protein_cellular", "protein_tsa", "protein_environmental",
+    "nt_viral", "nt_cellular", "nt_megablast", "nt_panax", "nt_tsa",
 )
-CONTROL_MODES = {"protein_viral", "nt_viral", "nt_megablast"}
 
 
 def sha(path: Path) -> str:
@@ -160,13 +167,22 @@ def main() -> int:
             failures, f"SEARCH_STATUS:{mode}",
         )
         remote_status[mode] = status
-        expected_ids = set(CANDIDATES) | (set(CONTROLS) if mode in CONTROL_MODES else set())
+        expected_controls = set(MODE_CONTROLS.get(mode, ()))
+        expected_ids = set(CANDIDATES) | expected_controls
         observed_ids = set(status.get("query_ids", []))
+        observed_controls = set(status.get("validation_control_ids", []))
+        control_results = status.get("validation_control_results", {})
+        controls_valid = bool(
+            set(control_results) == expected_controls
+            and all(control_results.get(control, {}).get("validated") for control in expected_controls)
+        ) if expected_controls else control_results in ({}, None)
         per_query = status.get("per_query", {})
         observed_per_query = set(per_query) if isinstance(per_query, dict) else set()
         complete = bool(
             status.get("technical_complete") and status.get("mode") == mode
             and observed_ids == expected_ids and observed_per_query == expected_ids
+            and observed_controls == expected_controls
+            and controls_valid
         )
         remote_complete[mode] = complete
         if not complete:
@@ -184,8 +200,8 @@ def main() -> int:
                 "top_evalue": (details.get("top_hit") or {}).get("evalue", ""),
                 "top_title": (details.get("top_hit") or {}).get("stitle", ""),
             })
-        if mode in CONTROL_MODES and complete:
-            for control in CONTROLS:
+        if expected_controls and complete:
+            for control in sorted(expected_controls):
                 if not status.get("per_query", {}).get(control, {}).get("hit_count"):
                     failures.append(f"pipeline_control_no_hit:{mode}:{control}")
     write_tsv(args.out / "REMOTE_COMPLETENESS.tsv", remote_rows)
@@ -237,14 +253,14 @@ def main() -> int:
         "technical_complete": technical_complete, "failures": failures,
         "expected_artifacts": expected_artifacts, "observed_artifacts": observed_artifacts,
         "upstream_results": upstream,
-        "database_coverage_caveat": "Standard-task nr/nt coverage is split into explicit viral and nonviral Entrez partitions because the unfiltered remote service returned structurally invalid zero-statistic archives. Records without usable taxonomy can fall outside those partitions. NCBI nt also excludes bulk WGS and some project-based TSA/environmental sequence; therefore absence of a near-identical hit is not an exhaustive GenBank novelty proof.",
+        "database_coverage_caveat": "Standard-task nr/nt coverage is split into explicit viral and cellular-organism Entrez partitions because the unfiltered remote service returned structurally invalid zero-statistic archives. Records outside those taxonomic roots or without usable taxonomy can fall outside the partitions. NCBI nt also excludes bulk WGS and some project-based TSA/environmental sequence; therefore absence of a near-identical hit is not an exhaustive GenBank novelty proof.",
         "claim_boundary": "A passing result retains a hash-locked partial Picornavirales-like sequence candidate for read-support analysis. It does not establish a formal new species, true Panax host, active replication, root-rot association, causality, pathogenicity, transmission, or agricultural/medical effect.",
     }
     (args.out / "TECHNICAL_COMPLETENESS.json").write_text(json.dumps(completeness, indent=2) + "\n")
     (args.out / "CLAIM_BOUNDARY.md").write_text(
         "# Claim boundary\n\n"
         "A passing sequence gate supports only this statement: hash-locked partial RNA-sequence candidates with Picornavirales-like PF00680/RdRP evidence were recovered from Panax notoginseng-associated root RNA-seq data. It does not establish formal virus species, the true biological host, active replication, root-rot association or causation, pathogenicity, transmission, or agricultural/medical effects. No-hit and sequence divergence are not taxonomic novelty proofs.\n\n"
-        "Standard-task nr/nt coverage is partitioned into explicit viral and nonviral Entrez searches because the unfiltered remote service returned structurally invalid zero-statistic archives. Records lacking usable taxonomy can fall outside those partitions. The NCBI nucleotide collection also does not provide one universal remote alias covering all bulk WGS, TSA, and environmental project sequence; these coverage gaps are retained explicitly rather than hidden.\n"
+        "Standard-task nr/nt coverage is partitioned into explicit viral and cellular-organism Entrez searches because the unfiltered remote service returned structurally invalid zero-statistic archives. Records outside those taxonomic roots or lacking usable taxonomy can fall outside the partitions. The NCBI nucleotide collection also does not provide one universal remote alias covering all bulk WGS, TSA, and environmental project sequence; these coverage gaps are retained explicitly rather than hidden.\n"
     )
     report = [
         "# Panax A1/A2/B final sequence gate", "",
