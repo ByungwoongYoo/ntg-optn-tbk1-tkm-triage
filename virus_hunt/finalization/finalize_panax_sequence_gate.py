@@ -16,13 +16,13 @@ MODE_CONTROLS = {
     "protein_viral": CONTROLS,
     "nt_viral": CONTROLS,
     "nt_megablast": CONTROLS,
-    "protein_cellular": ("PNX_Panax_L2_control",),
-    "nt_cellular": ("PNX_Panax_cpDNA_control",),
+    "protein_nonviral": ("PNX_Panax_L2_control",),
+    "nt_nonviral": ("PNX_Panax_cpDNA_control",),
     "nt_panax": ("PNX_Panax_cpDNA_control",),
 }
 REMOTE_MODES = (
-    "protein_viral", "protein_cellular", "protein_tsa", "protein_environmental",
-    "nt_viral", "nt_cellular", "nt_megablast", "nt_panax", "nt_tsa",
+    "protein_viral", "protein_nonviral", "protein_tsa", "protein_environmental",
+    "nt_viral", "nt_nonviral", "nt_megablast", "nt_panax", "nt_tsa",
 )
 
 
@@ -253,14 +253,14 @@ def main() -> int:
         "technical_complete": technical_complete, "failures": failures,
         "expected_artifacts": expected_artifacts, "observed_artifacts": observed_artifacts,
         "upstream_results": upstream,
-        "database_coverage_caveat": "Standard-task nr/nt coverage is split into explicit viral and cellular-organism Entrez partitions because the unfiltered remote service returned structurally invalid zero-statistic archives. Records outside those taxonomic roots or without usable taxonomy can fall outside the partitions. NCBI nt also excludes bulk WGS and some project-based TSA/environmental sequence; therefore absence of a near-identical hit is not an exhaustive GenBank novelty proof.",
+        "database_coverage_caveat": "Standard-task nr/nt coverage is split into an explicit viral Entrez partition and an indexed complement defined at run time as all[filter] NOT txid10239[ORGN], because the unfiltered remote service returned structurally invalid zero-statistic archives. Entrez indexing or taxonomy gaps can still affect that operational complement. NCBI nt also excludes bulk WGS and some project-based TSA/environmental sequence; therefore absence of a near-identical hit is not an exhaustive GenBank novelty proof.",
         "claim_boundary": "A passing result retains a hash-locked partial Picornavirales-like sequence candidate for read-support analysis. It does not establish a formal new species, true Panax host, active replication, root-rot association, causality, pathogenicity, transmission, or agricultural/medical effect.",
     }
     (args.out / "TECHNICAL_COMPLETENESS.json").write_text(json.dumps(completeness, indent=2) + "\n")
     (args.out / "CLAIM_BOUNDARY.md").write_text(
         "# Claim boundary\n\n"
         "A passing sequence gate supports only this statement: hash-locked partial RNA-sequence candidates with Picornavirales-like PF00680/RdRP evidence were recovered from Panax notoginseng-associated root RNA-seq data. It does not establish formal virus species, the true biological host, active replication, root-rot association or causation, pathogenicity, transmission, or agricultural/medical effects. No-hit and sequence divergence are not taxonomic novelty proofs.\n\n"
-        "Standard-task nr/nt coverage is partitioned into explicit viral and cellular-organism Entrez searches because the unfiltered remote service returned structurally invalid zero-statistic archives. Records outside those taxonomic roots or lacking usable taxonomy can fall outside the partitions. The NCBI nucleotide collection also does not provide one universal remote alias covering all bulk WGS, TSA, and environmental project sequence; these coverage gaps are retained explicitly rather than hidden.\n"
+        "Standard-task nr/nt coverage is partitioned into an explicit viral Entrez search and an indexed complement defined at run time as `all[filter] NOT txid10239[ORGN]`, because the unfiltered remote service returned structurally invalid zero-statistic archives. Entrez indexing or taxonomy gaps can still affect that operational complement. The NCBI nucleotide collection also does not provide one universal remote alias covering all bulk WGS, TSA, and environmental project sequence; these coverage gaps are retained explicitly rather than hidden.\n"
     )
     report = [
         "# Panax A1/A2/B final sequence gate", "",

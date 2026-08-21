@@ -16,19 +16,20 @@ if find "$OUT" -mindepth 1 -maxdepth 1 -print -quit | grep -q .; then
   exit 2
 fi
 
-# Standard-task nr/nt coverage is split into explicit viral and cellular-
-# organism Entrez partitions. The unfiltered remote service can emit zero-statistic
-# archives that look successful but contain no usable search result.
+# Standard-task nr/nt coverage is split into explicit viral and indexed-
+# complement Entrez partitions. The complement uses an all-record left operand
+# before NOT; the unfiltered remote service can emit zero-statistic archives that
+# look successful but contain no usable search result.
 case "$MODE" in
   protein_viral)
     program=blastp; query="$QUERY_ROOT/panax_candidates_plus_controls_orfs.faa"; database=nr
     extra=(-entrez_query 'txid10239[ORGN]' -seg yes -comp_based_stats 2)
     ;;
-  protein_cellular)
+  protein_nonviral)
     program=blastp; candidate_query="$QUERY_ROOT/panax_three_partial_orfs.faa"
     partition_control="$SCRIPT_DIR/remote_partition_controls.faa"
     query="$OUT/SEARCH_QUERIES.faa"; database=nr
-    extra=(-entrez_query 'txid131567[ORGN]' -seg yes -comp_based_stats 2)
+    extra=(-entrez_query 'all[filter] NOT txid10239[ORGN]' -seg yes -comp_based_stats 2)
     ;;
   protein_tsa)
     program=blastp; query="$QUERY_ROOT/panax_three_partial_orfs.faa"; database=tsa_nr
@@ -42,11 +43,11 @@ case "$MODE" in
     program=blastn; query="$QUERY_ROOT/panax_candidates_plus_controls_contigs.fna"; database=nt
     extra=(-task blastn -entrez_query 'txid10239[ORGN]' -dust yes -soft_masking true)
     ;;
-  nt_cellular)
+  nt_nonviral)
     program=blastn; candidate_query="$QUERY_ROOT/panax_three_contigs.fna"
     partition_control="$SCRIPT_DIR/remote_partition_controls.fna"
     query="$OUT/SEARCH_QUERIES.fna"; database=nt
-    extra=(-task blastn -entrez_query 'txid131567[ORGN]' -dust yes -soft_masking true)
+    extra=(-task blastn -entrez_query 'all[filter] NOT txid10239[ORGN]' -dust yes -soft_masking true)
     ;;
   nt_megablast)
     program=blastn; query="$QUERY_ROOT/panax_candidates_plus_controls_contigs.fna"; database=nt
@@ -137,20 +138,20 @@ mode_controls={
     'protein_viral': controls,
     'nt_viral': controls,
     'nt_megablast': controls,
-    'protein_cellular': {'PNX_Panax_L2_control'},
-    'nt_cellular': {'PNX_Panax_cpDNA_control'},
+    'protein_nonviral': {'PNX_Panax_L2_control'},
+    'nt_nonviral': {'PNX_Panax_cpDNA_control'},
     'nt_panax': {'PNX_Panax_cpDNA_control'},
 }
 validation_controls=mode_controls.get(mode,set())
 exact_control_expectations={
-    'protein_cellular': {
+    'protein_nonviral': {
         'PNX_Panax_L2_control': {
             'expected_accession': 'YP_009121238.1',
             'min_query_coverage': 99.0,
             'min_identity': 99.0,
         },
     },
-    'nt_cellular': {
+    'nt_nonviral': {
         'PNX_Panax_cpDNA_control': {
             'expected_accession': 'NC_026447.1',
             'min_query_coverage': 99.0,

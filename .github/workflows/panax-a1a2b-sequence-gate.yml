@@ -108,11 +108,11 @@ jobs:
       matrix:
         mode:
           - protein_viral
-          - protein_cellular
+          - protein_nonviral
           - protein_tsa
           - protein_environmental
           - nt_viral
-          - nt_cellular
+          - nt_nonviral
           - nt_megablast
           - nt_panax
           - nt_tsa

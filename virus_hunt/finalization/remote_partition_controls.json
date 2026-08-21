@@ -15,7 +15,7 @@
       "fasta_file_sha256": "6c20fa25232e774460a6b30555ffa0825243adb6db6d4e117cd3513a43f671bb",
       "source_url": "https://www.ncbi.nlm.nih.gov/protein/YP_009121238.1",
       "required_modes": [
-        "protein_cellular"
+        "protein_nonviral"
       ]
     },
     {
@@ -31,7 +31,7 @@
       "fasta_file_sha256": "14e7bb0094fd8cfd64aabe1f55268644027b3d224a330f9758cd6adf90577fb0",
       "source_url": "https://www.ncbi.nlm.nih.gov/nuccore/NC_026447.1",
       "required_modes": [
-        "nt_cellular",
+        "nt_nonviral",
         "nt_panax"
       ]
     }
