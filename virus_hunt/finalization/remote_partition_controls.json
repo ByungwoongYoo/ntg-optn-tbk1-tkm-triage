@@ -34,6 +34,22 @@
         "nt_nonviral",
         "nt_panax"
       ]
+    },
+    {
+      "control": "PNX_NonPanax_mtDNA_control",
+      "molecule": "nucleotide",
+      "accession": "NC_012920.1",
+      "coordinates_1based": "1-1000",
+      "taxid": 9606,
+      "organism": "Homo sapiens mitochondrion",
+      "length": 1000,
+      "sequence_sha256": "a7ba68873aead8a142592796b80c36b11d552a29d43209dfc0f1ca1164fddbbd",
+      "fasta_file": "remote_nonpanax_control.fna",
+      "fasta_file_sha256": "e9ffa200c3f94a1c3f2ddddddd1d94b464d375f5823f75bc3fc14851905497a4",
+      "source_url": "https://www.ncbi.nlm.nih.gov/nuccore/NC_012920.1",
+      "required_modes": [
+        "nt_nonviral"
+      ]
     }
   ],
   "validation_role": "Same-request positive controls for fail-closed validation of Entrez-partitioned remote searches; controls are excluded from candidate interpretation."

@@ -10,11 +10,86 @@ MODE="${1:?search mode required}"
 QUERY_ROOT="${2:?query directory required}"
 OUT="${3:?output directory required}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+partition_controls=()
 mkdir -p "$OUT"
 if find "$OUT" -mindepth 1 -maxdepth 1 -print -quit | grep -q .; then
   echo "output directory must be empty: $OUT" >&2
   exit 2
 fi
+
+# Once the empty output directory is under our control, every nonzero exit must
+# leave a checksummed diagnostic artifact. This includes failures before the
+# remote-search loop, such as a missing tool/query, bad environment value,
+# malformed control manifest, or an internal status-builder error.
+finalization_complete=0
+failure_line=unknown
+failure_command=explicit_exit
+capture_error() {
+  failure_line="$1"
+  failure_command="$2"
+}
+finalize_incomplete() {
+  local rc="$1"
+  trap - ERR EXIT
+  set +e
+  [[ -f "$OUT/STARTED_UTC.txt" ]] || date -u +%FT%TZ > "$OUT/STARTED_UTC.txt"
+  printf '0\n' > "$OUT/SEARCH_SUCCESS.txt"
+  [[ -f "$OUT/ATTEMPT_COUNT.txt" ]] || printf '0\n' > "$OUT/ATTEMPT_COUNT.txt"
+  [[ -f "$OUT/SUCCESS_ATTEMPT.txt" ]] || printf '0\n' > "$OUT/SUCCESS_ATTEMPT.txt"
+  [[ -f "$OUT/SEARCH_BUDGET_SECONDS.txt" ]] || printf '0\n' > "$OUT/SEARCH_BUDGET_SECONDS.txt"
+  printf 'preflight_or_internal_failure\n' > "$OUT/TERMINATION_REASON.txt"
+  [[ -f "$OUT/HITS.tsv" ]] || : > "$OUT/HITS.tsv"
+  [[ -f "$OUT/STDOUT.txt" ]] || : > "$OUT/STDOUT.txt"
+  {
+    [[ -f "$OUT/STDERR.txt" ]] && cat "$OUT/STDERR.txt"
+    printf 'runner_exit_code=%s\nfailure_line=%s\nfailure_command=%s\n' \
+      "$rc" "$failure_line" "$failure_command"
+  } > "$OUT/STDERR.finalization.tmp"
+  mv "$OUT/STDERR.finalization.tmp" "$OUT/STDERR.txt"
+  [[ -f "$OUT/REMOTE_ATTEMPTS.tsv" ]] || \
+    printf 'attempt\tstart_utc\tend_utc\tbackoff_before_seconds\tattempt_timeout_seconds\tblast_rc\tjson_formatter_rc\ttsv_formatter_rc\tvalidator_rc\tfailure_stage\tfailure_class\tretryable\tresult_archive_bytes\tresult_archive_sha256\n' \
+      > "$OUT/REMOTE_ATTEMPTS.tsv"
+  python - "$OUT/SEARCH_STATUS.json" "$MODE" "$rc" "$failure_line" "$failure_command" <<'PY'
+from datetime import datetime, timezone
+from pathlib import Path
+import json, sys
+path, mode, rc, line, command = sys.argv[1:]
+payload = {
+    "generated_utc": datetime.now(timezone.utc).isoformat(),
+    "mode": mode,
+    "command_completed_successfully": False,
+    "result_archive_valid": False,
+    "technical_complete": False,
+    "failure_stage": "preflight_or_internal",
+    "runner_exit_code": int(rc),
+    "failure_line": line,
+    "failure_command": command,
+    "query_ids": [],
+    "validation_control_ids": [],
+    "validation_control_results": {},
+    "per_query": {},
+    "interpretation_boundary": (
+        "No biological or sequence-level inference is permitted from this "
+        "incomplete diagnostic artifact."
+    ),
+}
+Path(path).write_text(json.dumps(payload, indent=2) + "\n")
+PY
+  date -u +%FT%TZ > "$OUT/FINISHED_UTC.txt"
+  (
+    cd "$OUT" || exit 0
+    find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | \
+      xargs -0 sha256sum > SHA256SUMS.txt
+  )
+}
+on_exit() {
+  local rc="$1"
+  if (( rc != 0 && finalization_complete == 0 )); then
+    finalize_incomplete "$rc"
+  fi
+}
+trap 'capture_error "$LINENO" "$BASH_COMMAND"' ERR
+trap 'on_exit "$?"' EXIT
 
 # Standard-task nr/nt coverage is split into explicit viral and indexed-
 # complement Entrez partitions. The complement uses an all-record left operand
@@ -27,7 +102,7 @@ case "$MODE" in
     ;;
   protein_nonviral)
     program=blastp; candidate_query="$QUERY_ROOT/panax_three_partial_orfs.faa"
-    partition_control="$SCRIPT_DIR/remote_partition_controls.faa"
+    partition_controls+=("$SCRIPT_DIR/remote_partition_controls.faa")
     query="$OUT/SEARCH_QUERIES.faa"; database=nr
     extra=(-entrez_query 'all[filter] NOT txid10239[ORGN]' -seg yes -comp_based_stats 2)
     ;;
@@ -45,7 +120,8 @@ case "$MODE" in
     ;;
   nt_nonviral)
     program=blastn; candidate_query="$QUERY_ROOT/panax_three_contigs.fna"
-    partition_control="$SCRIPT_DIR/remote_partition_controls.fna"
+    partition_controls+=("$SCRIPT_DIR/remote_partition_controls.fna")
+    partition_controls+=("$SCRIPT_DIR/remote_nonpanax_control.fna")
     query="$OUT/SEARCH_QUERIES.fna"; database=nt
     extra=(-task blastn -entrez_query 'all[filter] NOT txid10239[ORGN]' -dust yes -soft_masking true)
     ;;
@@ -55,7 +131,7 @@ case "$MODE" in
     ;;
   nt_panax)
     program=blastn; candidate_query="$QUERY_ROOT/panax_three_contigs.fna"
-    partition_control="$SCRIPT_DIR/remote_partition_controls.fna"
+    partition_controls+=("$SCRIPT_DIR/remote_partition_controls.fna")
     query="$OUT/SEARCH_QUERIES.fna"; database=nt
     extra=(-task blastn -entrez_query 'txid44586[ORGN]' -dust yes -soft_masking true)
     ;;
@@ -69,49 +145,58 @@ case "$MODE" in
     ;;
 esac
 
-if [[ -n "${partition_control:-}" ]]; then
+if (( ${#partition_controls[@]} > 0 )); then
   control_manifest="$SCRIPT_DIR/remote_partition_controls.json"
-  python - "$control_manifest" "$partition_control" "$MODE" <<'PY'
+  python - "$control_manifest" "$MODE" "${partition_controls[@]}" <<'PY'
 from pathlib import Path
 import hashlib,json,sys
-manifest_path=Path(sys.argv[1]); fasta_path=Path(sys.argv[2]); mode=sys.argv[3]
+manifest_path=Path(sys.argv[1]); mode=sys.argv[2]; fasta_paths=[Path(x) for x in sys.argv[3:]]
 manifest=json.loads(manifest_path.read_text())
 controls=[
     row for row in manifest.get('controls',[])
     if mode in row.get('required_modes',[])
 ]
-if len(controls) != 1:
-    raise SystemExit(f'expected one partition control for {mode}, found {len(controls)}')
-row=controls[0]
-fasta=Path(fasta_path)
-if fasta.name != row.get('fasta_file'):
-    raise SystemExit(f'control FASTA mismatch for {mode}: {fasta.name}')
-if hashlib.sha256(fasta.read_bytes()).hexdigest() != row.get('fasta_file_sha256'):
-    raise SystemExit(f'control FASTA hash mismatch for {mode}')
-records={}; name=None
-for raw in fasta.read_text().splitlines():
-    line=raw.strip()
-    if not line:
-        continue
-    if line.startswith('>'):
-        name=line[1:].split()[0]
-        if name in records:
-            raise SystemExit(f'duplicate partition control: {name}')
-        records[name]=''
-    elif name is None:
-        raise SystemExit('sequence before partition-control header')
-    else:
-        records[name]+=line.upper()
-if set(records) != {row['control']}:
-    raise SystemExit(f'partition-control ID mismatch: {sorted(records)}')
-seq=records[row['control']]
-if len(seq) != int(row['length']):
-    raise SystemExit(f'partition-control length mismatch: {row["control"]}')
-if hashlib.sha256(seq.encode()).hexdigest() != row['sequence_sha256']:
-    raise SystemExit(f'partition-control sequence hash mismatch: {row["control"]}')
+if len(controls) != len(fasta_paths) or {
+    row.get('fasta_file') for row in controls
+} != {path.name for path in fasta_paths}:
+    raise SystemExit(
+        f'partition-control file set mismatch for {mode}: '
+        f'controls={[row.get("fasta_file") for row in controls]}, '
+        f'files={[path.name for path in fasta_paths]}'
+    )
+rows_by_file={row['fasta_file']:row for row in controls}
+if len(rows_by_file) != len(controls):
+    raise SystemExit(f'duplicate partition-control FASTA contract for {mode}')
+for fasta in fasta_paths:
+    row=rows_by_file[fasta.name]
+    if hashlib.sha256(fasta.read_bytes()).hexdigest() != row.get('fasta_file_sha256'):
+        raise SystemExit(f'control FASTA hash mismatch for {mode}: {fasta.name}')
+    records={}; name=None
+    for raw in fasta.read_text().splitlines():
+        line=raw.strip()
+        if not line:
+            continue
+        if line.startswith('>'):
+            name=line[1:].split()[0]
+            if name in records:
+                raise SystemExit(f'duplicate partition control: {name}')
+            records[name]=''
+        elif name is None:
+            raise SystemExit('sequence before partition-control header')
+        else:
+            records[name]+=line.upper()
+    if set(records) != {row['control']}:
+        raise SystemExit(f'partition-control ID mismatch: {sorted(records)}')
+    seq=records[row['control']]
+    if len(seq) != int(row['length']):
+        raise SystemExit(f'partition-control length mismatch: {row["control"]}')
+    if hashlib.sha256(seq.encode()).hexdigest() != row['sequence_sha256']:
+        raise SystemExit(f'partition-control sequence hash mismatch: {row["control"]}')
 PY
-  cat "$candidate_query" "$partition_control" > "$query"
-  cp "$partition_control" "$OUT/"
+  cat "$candidate_query" "${partition_controls[@]}" > "$query"
+  for partition_control in "${partition_controls[@]}"; do
+    cp "$partition_control" "$OUT/"
+  done
   cp "$control_manifest" "$OUT/REMOTE_PARTITION_CONTROLS.json"
 fi
 
@@ -139,7 +224,9 @@ mode_controls={
     'nt_viral': controls,
     'nt_megablast': controls,
     'protein_nonviral': {'PNX_Panax_L2_control'},
-    'nt_nonviral': {'PNX_Panax_cpDNA_control'},
+    'nt_nonviral': {
+        'PNX_Panax_cpDNA_control', 'PNX_NonPanax_mtDNA_control',
+    },
     'nt_panax': {'PNX_Panax_cpDNA_control'},
 }
 validation_controls=mode_controls.get(mode,set())
@@ -154,6 +241,11 @@ exact_control_expectations={
     'nt_nonviral': {
         'PNX_Panax_cpDNA_control': {
             'expected_accession': 'NC_026447.1',
+            'min_query_coverage': 99.0,
+            'min_identity': 99.0,
+        },
+        'PNX_NonPanax_mtDNA_control': {
+            'expected_accession': 'NC_012920.1',
             'min_query_coverage': 99.0,
             'min_identity': 99.0,
         },
@@ -200,117 +292,7 @@ printf '\n' >> "$OUT/COMMAND.txt"
 : > "$OUT/STDERR.txt"
 
 validate_remote_archive() {
-  local result_json="$1"
-  local expected_json="$2"
-  local mode="$3"
-  local hits_tsv="$4"
-  python - "$result_json" "$expected_json" "$mode" "$hits_tsv" <<'PY'
-from pathlib import Path
-import json,math,sys
-result_path=Path(sys.argv[1]); expected_path=Path(sys.argv[2]); mode=sys.argv[3]
-hits_path=Path(sys.argv[4])
-payload=json.loads(result_path.read_text())
-expected_payload=json.loads(expected_path.read_text())
-expected_lengths={x['id']:int(x['length']) for x in expected_payload['queries']}
-control_specs=expected_payload.get('validation_controls',[])
-reports=payload.get('BlastOutput2',[])
-errors=[]; observed={}; hit_counts={}
-if not isinstance(reports,list) or not reports:
-    errors.append('missing BlastOutput2 reports')
-else:
-    for index,item in enumerate(reports,1):
-        try:
-            search=item['report']['results']['search']
-        except Exception as exc:
-            errors.append(f'report {index} has no search payload: {exc}')
-            continue
-        title=str(search.get('query_title','')).strip()
-        qid=title.split()[0] if title else ''
-        try:
-            qlen=int(search.get('query_len',0))
-        except Exception:
-            qlen=0
-        if not qid:
-            errors.append(f'report {index} has no query title')
-            continue
-        if qid in observed:
-            errors.append(f'duplicate query report: {qid}')
-            continue
-        observed[qid]=qlen
-        stat=search.get('stat') or {}
-        for key in ('db_num','db_len'):
-            try:
-                value=int(stat.get(key,0))
-            except Exception:
-                value=0
-            if value <= 0:
-                errors.append(f'{qid} has invalid database statistic: {key}={stat.get(key)!r}')
-        bad_stats=[]
-        for key in ('kappa','lambda','entropy'):
-            try:
-                value=float(stat.get(key,0))
-            except Exception:
-                value=0.0
-            if not math.isfinite(value) or value <= 0:
-                bad_stats.append(f'{key}={stat.get(key)!r}')
-        if bad_stats:
-            errors.append(f'{qid} has invalid result statistics: {", ".join(bad_stats)}')
-        hits=search.get('hits',[])
-        if not isinstance(hits,list):
-            errors.append(f'{qid} has a malformed hit list')
-            hits=[]
-        if not hits and search.get('message') != 'No hits found':
-            errors.append(f'{qid} has no hits without the expected completion message')
-        hit_counts[qid]=len(hits)
-if observed != expected_lengths:
-    errors.append(f'query reports mismatch: observed={observed}, expected={expected_lengths}')
-hit_rows=[]
-hit_fields=['qseqid','saccver','sallacc','sallseqid','pident','length','qlen','slen',
-            'qstart','qend','sstart','send','evalue','bitscore','qcovs','staxids',
-            'sscinames','stitle','sseq']
-for raw in hits_path.read_text(errors='replace').splitlines():
-    values=raw.split('\t')
-    if len(values) != len(hit_fields):
-        errors.append(f'malformed BLAST result row with {len(values)} fields')
-        continue
-    row=dict(zip(hit_fields,values))
-    try:
-        row['pident']=float(row['pident'])
-        row['qcovs']=float(row['qcovs'])
-    except ValueError:
-        errors.append('malformed numeric value in BLAST result row')
-        continue
-    hit_rows.append(row)
-def exact_accessions(row):
-    accessions={row['saccver']}
-    for identifier in row['sallseqid'].split(';'):
-        accessions.update(token for token in identifier.split('|') if token)
-    return accessions
-for spec in control_specs:
-    control=spec['id']
-    if hit_counts.get(control,0) < 1:
-        errors.append(f'positive control has no hit: {control}')
-        continue
-    accession=spec.get('expected_accession')
-    if accession:
-        matches=[
-            row for row in hit_rows
-            if row['qseqid']==control
-            and accession in exact_accessions(row)
-            and row['pident']>=float(spec['min_identity'])
-            and row['qcovs']>=float(spec['min_query_coverage'])
-        ]
-        if not matches:
-            errors.append(
-                f'positive control did not recover a near-exact match: {control}'
-            )
-if errors:
-    print('remote archive validation failed:', file=sys.stderr)
-    for error in errors:
-        print(f'- {error}', file=sys.stderr)
-    raise SystemExit(1)
-print(f'validated {len(observed)} query reports with nonzero statistics')
-PY
+  python "$SCRIPT_DIR/validate_panax_remote_archive.py" "$@"
 }
 
 success=0
@@ -328,8 +310,12 @@ max_attempts="${PANAX_REMOTE_MAX_ATTEMPTS:-8}"
   exit 2
 }
 attempt_timeout_seconds="${PANAX_REMOTE_ATTEMPT_TIMEOUT_SECONDS:-6300}"
-[[ "$attempt_timeout_seconds" =~ ^[0-9]+$ ]] && \
-  (( attempt_timeout_seconds >= 60 && attempt_timeout_seconds <= 6300 )) || {
+[[ "$attempt_timeout_seconds" =~ ^(0|[1-9][0-9]{0,4})$ ]] || {
+  echo "PANAX_REMOTE_ATTEMPT_TIMEOUT_SECONDS must be a canonical integer from 60 through 6300" >&2
+  exit 2
+}
+attempt_timeout_seconds=$((10#$attempt_timeout_seconds))
+(( attempt_timeout_seconds >= 60 && attempt_timeout_seconds <= 6300 )) || {
   echo "PANAX_REMOTE_ATTEMPT_TIMEOUT_SECONDS must be an integer from 60 through 6300" >&2
   exit 2
 }
@@ -337,8 +323,12 @@ attempt_timeout_seconds="${PANAX_REMOTE_ATTEMPT_TIMEOUT_SECONDS:-6300}"
 # five-hour internal budget so logs, status, checksums, and the failure artifact
 # are always finalized before the outer 360-minute job timeout.
 search_budget_seconds="${PANAX_REMOTE_SEARCH_BUDGET_SECONDS:-18000}"
-[[ "$search_budget_seconds" =~ ^[0-9]+$ ]] && \
-  (( search_budget_seconds >= 300 && search_budget_seconds <= 19800 )) || {
+[[ "$search_budget_seconds" =~ ^(0|[1-9][0-9]{0,4})$ ]] || {
+  echo "PANAX_REMOTE_SEARCH_BUDGET_SECONDS must be a canonical integer from 300 through 19800" >&2
+  exit 2
+}
+search_budget_seconds=$((10#$search_budget_seconds))
+(( search_budget_seconds >= 300 && search_budget_seconds <= 19800 )) || {
   echo "PANAX_REMOTE_SEARCH_BUDGET_SECONDS must be an integer from 300 through 19800" >&2
   exit 2
 }
@@ -420,7 +410,7 @@ for attempt in $(seq 1 "$max_attempts"); do
     else
       tsv_formatter_rc=0
       blast_formatter -archive "$OUT/RESULTS.asn" \
-        -outfmt '6 qseqid saccver sallacc sallseqid pident length qlen slen qstart qend sstart send evalue bitscore qcovs staxids sscinames stitle sseq' \
+        -outfmt '6 qseqid saccver sallacc sallseqid pident length qlen slen qstart qend sstart send evalue bitscore qcovs staxids sscinames stitle qseq sseq' \
         -out "$OUT/HITS.tsv" >> "$attempt_stdout" 2>> "$attempt_stderr" || tsv_formatter_rc=$?
       if (( tsv_formatter_rc != 0 )); then
         failure_stage=tsv_formatter
@@ -432,12 +422,22 @@ for attempt in $(seq 1 "$max_attempts"); do
           >> "$attempt_stdout" 2>> "$attempt_stderr" || validator_rc=$?
         if (( validator_rc != 0 )); then
           failure_stage=validator
-          if grep -Eiq 'positive control' "$attempt_stderr"; then
-            failure_class=deterministic_control_failure
-            retryable=0
-          else
-            failure_class=structural_remote_archive
-          fi
+          case "$validator_rc" in
+            20)
+              failure_class=structural_remote_archive
+              ;;
+            21)
+              failure_class=deterministic_control_failure
+              retryable=0
+              ;;
+            *)
+              # An unexpected validator exit is a local/code failure, not a
+              # remote no-hit result.  Preserve it fail-closed without burning
+              # the search budget on identical local failures.
+              failure_class=validator_internal_error
+              retryable=0
+              ;;
+          esac
         fi
       fi
     fi
@@ -478,26 +478,51 @@ printf '%s\n' "$success_attempt" > "$OUT/SUCCESS_ATTEMPT.txt"
 python - "$MODE" "$query" "$database" "$OUT" <<'PY'
 from pathlib import Path
 from datetime import datetime,timezone
-import csv,hashlib,json,sys
+import csv,hashlib,json,math,sys
 mode,query,database,out=sys.argv[1:]; out=Path(out); query=Path(query)
 expected=json.loads((out/'EXPECTED_QUERIES.json').read_text())
 expected_lengths={x['id']:x['length'] for x in expected['queries']}
 validation_controls=expected.get('validation_control_ids',[])
 validation_control_specs=expected.get('validation_controls',[])
 fields=['qseqid','saccver','sallacc','sallseqid','pident','length','qlen','slen','qstart','qend','sstart','send',
-        'evalue','bitscore','qcovs','staxids','sscinames','stitle','sseq']
+        'evalue','bitscore','qcovs','staxids','sscinames','stitle','qseq','sseq']
 rows=[]
-for values in csv.reader((out/'HITS.tsv').open(errors='replace'),delimiter='\t'):
+tsv_validation_errors=[]
+for line_number,values in enumerate(
+    csv.reader((out/'HITS.tsv').open(errors='replace'),delimiter='\t'), 1
+):
     if not values: continue
     if len(values) != len(fields):
-        raise SystemExit(f'malformed BLAST result row with {len(values)} fields')
-    rows.append(dict(zip(fields,values)))
+        tsv_validation_errors.append(
+            f'line {line_number}: expected {len(fields)} fields, observed {len(values)}'
+        )
+        continue
+    row=dict(zip(fields,values))
+    try:
+        int(row['qlen'])
+        int(row['slen'])
+        int(row['length'])
+        for key in ('pident','evalue','bitscore','qcovs'):
+            value=float(row[key])
+            if not math.isfinite(value):
+                raise ValueError(f'{key} is not finite')
+    except (TypeError,ValueError) as exc:
+        tsv_validation_errors.append(f'line {line_number}: malformed numeric field: {exc}')
+        continue
+    rows.append(row)
 with (out/'REMOTE_ATTEMPTS.tsv').open(errors='replace') as handle:
     attempt_history=list(csv.DictReader(handle,delimiter='\t'))
 success=(out/'SEARCH_SUCCESS.txt').read_text().strip()=='1'
+archive_structurally_valid=success or any(
+    row.get('blast_rc')=='0'
+    and row.get('json_formatter_rc')=='0'
+    and row.get('tsv_formatter_rc')=='0'
+    and row.get('validator_rc') in {'0','21'}
+    for row in attempt_history
+)
 json_queries={}
 json_error=''
-if success:
+if archive_structurally_valid:
     try:
         payload=json.loads((out/'RESULTS.json').read_text())
         reports=payload.get('BlastOutput2',[])
@@ -519,10 +544,17 @@ success_attempt=(out/'SUCCESS_ATTEMPT.txt').read_text().strip()
 stderr_path=out/f'STDERR.attempt{success_attempt}.txt' if success_attempt!='0' else out/'STDERR.txt'
 stderr=stderr_path.read_text(errors='replace')
 fatal_markers=[x for x in ('Query is Empty','BLAST Database error','Error:','FATAL') if x.lower() in stderr.lower()]
-command_valid=bool(success and valid_json and not unexpected and not bad_qlen and not fatal_markers)
+command_valid=bool(
+    success and valid_json and not tsv_validation_errors
+    and not unexpected and not bad_qlen and not fatal_markers
+)
+# A failed attempt may still leave a partial or even superficially plausible
+# formatted table. Preserve its raw row count for diagnostics, but never publish
+# hit/control annotations from rows that did not pass the archive validator.
+trusted_rows=rows if command_valid else []
 per_query={}
 for candidate in expected_lengths:
-    hits=[r for r in rows if r['qseqid']==candidate]
+    hits=[r for r in trusted_rows if r['qseqid']==candidate]
     hits.sort(key=lambda r:float(r['bitscore']),reverse=True)
     distinct={}
     for hit in hits:
@@ -533,11 +565,14 @@ for candidate in expected_lengths:
         'query_length':expected_lengths[candidate], 'hit_count':len(hits),
         'near_identical_qcov80_pident90_count':sum(float(r['qcovs'])>=80 and float(r['pident'])>=90 for r in hits),
         'near_identical_qcov80_pident95_count':sum(float(r['qcovs'])>=80 and float(r['pident'])>=95 for r in hits),
-        'top_hit':None if top is None else {k:top[k] for k in fields if k!='sseq'},
+        'top_hit':None if top is None else {
+            k:top[k] for k in fields if k not in {'qseq','sseq','sscinames'}
+        },
     }
 control_results={}
 def exact_accessions(row):
     accessions={row['saccver']}
+    accessions.update(token for token in row.get('sallacc','').split(';') if token)
     for identifier in row['sallseqid'].split(';'):
         accessions.update(token for token in identifier.split('|') if token)
     return accessions
@@ -545,7 +580,7 @@ for spec in validation_control_specs:
     control=spec['id']
     accession=spec.get('expected_accession')
     matches=[
-        row for row in rows
+        row for row in trusted_rows
         if row['qseqid']==control
         and (not accession or accession in exact_accessions(row))
         and float(row['pident'])>=float(spec.get('min_identity',0))
@@ -568,16 +603,26 @@ status={
     'validation_control_ids':validation_controls,
     'validation_control_results':control_results,
     'expected_query_lengths':expected_lengths, 'json_query_lengths':json_queries,
-    'command_completed_successfully':success, 'result_archive_valid':valid_json,
+    'command_completed_successfully':success,
+    'result_archive_valid':bool(archive_structurally_valid and valid_json),
     'attempt_count':len(attempt_history), 'attempt_history':attempt_history,
     'termination_reason':(out/'TERMINATION_REASON.txt').read_text().strip(),
     'search_budget_seconds':int((out/'SEARCH_BUDGET_SECONDS.txt').read_text().strip()),
     'fatal_stderr_markers':fatal_markers, 'unexpected_result_query_ids':unexpected,
     'result_query_length_mismatches':bad_qlen, 'technical_complete':command_valid,
-    'result_row_count':len(rows), 'per_query':per_query,
+    'result_row_count':len(trusted_rows),
+    'unvalidated_diagnostic_row_count':len(rows) if not command_valid else 0,
+    'per_query':per_query,
+    'annotation_validation':(
+        'subject accession/version, title, and taxonomy ID are JSON/TSV-bound; '
+        'sscinames is retained only in raw HITS.tsv and is not asserted'
+        if command_valid else
+        'no hit or control annotation is asserted because archive validation failed'
+    ),
     'interpretation_boundary':'An empty hit table is evidence only when technical_complete is true; no-hit or divergence does not establish a new taxon.',
 }
 if json_error: status['json_validation_error']=json_error
+if tsv_validation_errors: status['tsv_validation_errors']=tsv_validation_errors
 (out/'SEARCH_STATUS.json').write_text(json.dumps(status,indent=2)+'\n')
 print(json.dumps(status,indent=2))
 PY
@@ -589,6 +634,7 @@ date -u +%FT%TZ > "$OUT/FINISHED_UTC.txt"
 )
 # Preserve the complete failure artifact; the workflow uploads it with
 # `if: always()` and then fails this matrix cell when technical_complete=false.
+finalization_complete=1
 python - "$OUT/SEARCH_STATUS.json" <<'PY'
 import json,sys
 raise SystemExit(0 if json.load(open(sys.argv[1]))['technical_complete'] else 1)

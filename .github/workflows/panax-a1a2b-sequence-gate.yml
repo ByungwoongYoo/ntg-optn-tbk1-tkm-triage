@@ -32,6 +32,12 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
+      - name: Test remote archive failure classification
+        run: |
+          python -m unittest discover \
+            -s virus_hunt/finalization/tests \
+            -p 'test_*.py' -v
+
       - name: Rebuild and verify A1 A2 B queries
         shell: bash
         run: |
@@ -264,7 +270,8 @@ jobs:
           (cd local-evidence && sha256sum -c SHA256SUMS.txt)
           bash virus_hunt/finalization/run_panax_phylogeny.sh \
             local-evidence/RDRP_CORES.faa \
-            virus_hunt/finalization/panax_rdrp_curated_references.tsv phylogeny
+            virus_hunt/finalization/panax_rdrp_curated_references.tsv \
+            virus_hunt/finalization/current_nr_top_hit_proteins.tsv phylogeny
 
       - name: Upload phylogeny whether pass or fail
         if: always()

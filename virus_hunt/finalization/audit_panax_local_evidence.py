@@ -20,6 +20,10 @@ from typing import Iterable
 
 CANDIDATES = ("PNX_Picorna_A1", "PNX_Picorna_A2", "PNX_Picorna_B")
 CONTROLS = ("PNX_Duplo_A_control", "PNX_Duplo_B_control")
+CURRENT_PANEL_FIELDS = (
+    "accession", "context_group", "expected_title", "expected_length",
+    "sequence_sha256", "expected_queries", "distinct_rank",
+)
 BLAST_FIELDS = (
     "qseqid", "saccver", "pident", "length", "qlen", "slen", "qstart",
     "qend", "sstart", "send", "evalue", "bitscore", "qcovs", "staxids",
@@ -41,6 +45,15 @@ def sha_file(path: Path) -> str:
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             h.update(block)
     return h.hexdigest()
+
+
+def canonical_panel_sha(rows: list[dict[str, str]]) -> str:
+    payload = [
+        {field: row[field] for field in CURRENT_PANEL_FIELDS}
+        for row in sorted(rows, key=lambda item: item["accession"])
+    ]
+    encoded = json.dumps(payload, ensure_ascii=True, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def canonical_accession(header: str) -> str:
@@ -143,6 +156,68 @@ def extract_references(args: argparse.Namespace) -> int:
     if sum(row["role"] == "rooting_sensitivity_reference" for row in manifest) != 2:
         raise SystemExit("curated reference manifest must contain exactly two rooting-sensitivity references")
 
+    with args.current_panel_manifest.open(newline="", errors="replace") as handle:
+        panel_reader = csv.DictReader(handle, delimiter="\t")
+        current_panel = list(panel_reader)
+    if tuple(panel_reader.fieldnames or ()) != CURRENT_PANEL_FIELDS:
+        raise SystemExit(
+            "current nr panel schema mismatch: "
+            f"observed={panel_reader.fieldnames}, expected={list(CURRENT_PANEL_FIELDS)}"
+        )
+    if len(current_panel) != 6 or any(
+        not row.get(field, "").strip()
+        for row in current_panel for field in CURRENT_PANEL_FIELDS
+    ):
+        raise SystemExit("current nr panel must contain exactly six complete contract rows")
+    panel_accessions = [row["accession"] for row in current_panel]
+    if len(panel_accessions) != len(set(panel_accessions)):
+        raise SystemExit("duplicate accession in current nr panel")
+    current_manifest = {
+        row["accession"]: row for row in manifest
+        if row["role"] == "current_nr_top_hit_context"
+    }
+    if set(current_manifest) != set(panel_accessions):
+        raise SystemExit(
+            "current nr panel/curated manifest accession mismatch: "
+            f"panel={sorted(panel_accessions)}, curated={sorted(current_manifest)}"
+        )
+    observed_ranks: dict[str, list[int]] = defaultdict(list)
+    for panel_row in current_panel:
+        accession = panel_row["accession"]
+        curated_row = current_manifest[accession]
+        if panel_row["context_group"] != curated_row["context_group"]:
+            raise SystemExit(f"current nr context-group mismatch for {accession}")
+        if int(panel_row["expected_length"]) != int(curated_row["expected_aa_length"]):
+            raise SystemExit(f"current nr expected-length mismatch for {accession}")
+        if panel_row["sequence_sha256"] != curated_row.get("expected_sequence_sha256", ""):
+            raise SystemExit(f"current nr sequence-hash mismatch for {accession}")
+        if re.fullmatch(r"[0-9a-f]{64}", panel_row["sequence_sha256"]) is None:
+            raise SystemExit(f"invalid current nr sequence hash for {accession}")
+        normalized_panel_title = normalize_title(panel_row["expected_title"])
+        if normalize_title(curated_row["expected_title_fragment"]) not in normalized_panel_title:
+            raise SystemExit(f"current nr title-contract mismatch for {accession}")
+        if normalize_title(curated_row["expected_product_fragment"]) not in normalized_panel_title:
+            raise SystemExit(f"current nr product-contract mismatch for {accession}")
+        try:
+            rank = int(panel_row["distinct_rank"])
+        except ValueError as exc:
+            raise SystemExit(f"invalid current nr distinct rank for {accession}") from exc
+        query_contract = panel_row["expected_queries"]
+        if query_contract not in {
+            "PNX_Picorna_A1;PNX_Picorna_A2", "PNX_Picorna_B",
+        }:
+            raise SystemExit(f"invalid current nr expected query set for {accession}")
+        queries = query_contract.split(";")
+        for query in queries:
+            observed_ranks[query].append(rank)
+    expected_ranks = {
+        "PNX_Picorna_A1": [1, 2],
+        "PNX_Picorna_A2": [1, 2],
+        "PNX_Picorna_B": [1, 2, 3, 4],
+    }
+    if {query: sorted(ranks) for query, ranks in observed_ranks.items()} != expected_ranks:
+        raise SystemExit(f"current nr distinct-rank contract mismatch: {dict(observed_ranks)}")
+
     found_seq: dict[str, str] = {}
     found_header: dict[str, str] = {}
     wanted = set(accessions)
@@ -151,12 +226,21 @@ def extract_references(args: argparse.Namespace) -> int:
             if accession not in wanted:
                 continue
             if accession in found_seq:
-                raise SystemExit(f"curated accession appears in multiple RefSeq files: {accession}")
+                raise SystemExit(f"curated accession appears in multiple protein inputs: {accession}")
             found_seq[accession] = sequence.upper()
             found_header[accession] = header
     missing = sorted(set(accessions) - set(found_seq))
     if missing:
-        raise SystemExit(f"curated RefSeq accessions absent from current release: {missing}")
+        raise SystemExit(f"curated accessions absent from supplied protein inputs: {missing}")
+    for panel_row in current_panel:
+        accession = panel_row["accession"]
+        observed_title = found_header[accession].split(maxsplit=1)
+        observed_title = observed_title[1] if len(observed_title) == 2 else ""
+        if panel_row["expected_title"] != observed_title:
+            raise SystemExit(
+                f"current nr exact title mismatch for {accession}: "
+                f"observed={observed_title!r}, expected={panel_row['expected_title']!r}"
+            )
 
     args.out.mkdir(parents=True, exist_ok=True)
     records: list[tuple[str, str, str]] = []
@@ -168,13 +252,13 @@ def extract_references(args: argparse.Namespace) -> int:
         fragment = normalize_title(row["expected_title_fragment"])
         if fragment not in normalize_title(header):
             raise SystemExit(
-                f"current RefSeq title mismatch for {accession}: expected fragment "
+                f"current protein title mismatch for {accession}: expected fragment "
                 f"{row['expected_title_fragment']!r}; observed {header!r}"
             )
         product_fragment = normalize_title(row["expected_product_fragment"])
         if product_fragment not in normalize_title(header):
             raise SystemExit(
-                f"current RefSeq product mismatch for {accession}: expected fragment "
+                f"current protein product mismatch for {accession}: expected fragment "
                 f"{row['expected_product_fragment']!r}; observed {header!r}"
             )
         if not re.fullmatch(r"[ABCDEFGHIKJLMNPQRSTVWXYZ*]+", sequence):
@@ -182,14 +266,24 @@ def extract_references(args: argparse.Namespace) -> int:
         sequence = sequence.rstrip("*")
         if "*" in sequence or len(sequence) < 300 or len(sequence) != int(row["expected_aa_length"]):
             raise SystemExit(f"curated reference is not a usable polyprotein/protein: {accession}")
+        expected_sequence_sha256 = (row.get("expected_sequence_sha256") or "").strip()
+        if expected_sequence_sha256 and sha_text(sequence) != expected_sequence_sha256:
+            raise SystemExit(
+                f"curated reference sequence hash mismatch for {accession}: "
+                f"observed={sha_text(sequence)}, expected={expected_sequence_sha256}"
+            )
         records.append((accession, f"context_group={row['context_group']}; role={row['role']}", sequence))
         provenance.append({
-            **row, "observed_refseq_header": header, "protein_length": len(sequence),
+            **row, "observed_protein_header": header, "protein_length": len(sequence),
             "sequence_sha256": sha_text(sequence),
         })
     write_fasta(args.out / "CURATED_REFERENCE_FULL.faa", records)
     write_tsv(args.out / "CURATED_REFERENCE_PROVENANCE.tsv", provenance)
     (args.out / "CURATED_REFERENCE_PROVENANCE.json").write_text(json.dumps(provenance, indent=2) + "\n")
+    write_tsv(args.out / "CURRENT_NR_REFERENCE_CONTRACT.tsv", current_panel)
+    (args.out / "CURRENT_NR_REFERENCE_CONTRACT.json").write_text(
+        json.dumps(current_panel, indent=2) + "\n"
+    )
     return 0
 
 
@@ -267,6 +361,36 @@ def finalize(args: argparse.Namespace) -> int:
     reference_meta = {row["accession"]: row for row in read_tsv(args.reference_provenance)}
     if set(references) != set(reference_meta):
         raise SystemExit("curated reference FASTA/provenance mismatch")
+    current_nr_ids = sorted(
+        accession for accession, row in reference_meta.items()
+        if row.get("role") == "current_nr_top_hit_context"
+    )
+    if len(current_nr_ids) != 6:
+        raise SystemExit(
+            f"local evidence requires exactly six current-nr context references: {current_nr_ids}"
+        )
+    with args.current_panel_contract.open(newline="", errors="replace") as handle:
+        panel_reader = csv.DictReader(handle, delimiter="\t")
+        current_panel = list(panel_reader)
+    if tuple(panel_reader.fieldnames or ()) != CURRENT_PANEL_FIELDS:
+        raise SystemExit("final local current-nr panel schema mismatch")
+    panel_by_accession = {row.get("accession", ""): row for row in current_panel}
+    if len(current_panel) != 6 or set(panel_by_accession) != set(current_nr_ids):
+        raise SystemExit("final local current-nr panel accession mismatch")
+    for accession in current_nr_ids:
+        row = reference_meta[accession]
+        panel_row = panel_by_accession[accession]
+        if not row.get("expected_sequence_sha256") or row.get("sequence_sha256") != row.get("expected_sequence_sha256"):
+            raise SystemExit(f"current-nr provenance hash contract failed for {accession}")
+        observed_title = str(row.get("observed_protein_header", "")).split(maxsplit=1)
+        observed_title = observed_title[1] if len(observed_title) == 2 else ""
+        if (
+            panel_row["context_group"] != row.get("context_group")
+            or panel_row["expected_title"] != observed_title
+            or int(panel_row["expected_length"]) != int(row.get("protein_length", 0))
+            or panel_row["sequence_sha256"] != row.get("sequence_sha256")
+        ):
+            raise SystemExit(f"current-nr full-row contract failed for {accession}")
 
     dom_rows = [row for row in parse_domtbl(args.domtbl)
                 if str(row["target_accession"]).split(".")[0] == "PF00680"]
@@ -421,6 +545,16 @@ def finalize(args: argparse.Namespace) -> int:
     candidate_status = {}
     domain_by_id = {str(row["sequence_id"]): row for row in domain_gate}
     contamination_by_id = {str(row["candidate"]): row for row in contamination_rows}
+    current_nr_contract = {
+        accession: {
+            "role": reference_meta[accession]["role"],
+            "context_group": reference_meta[accession]["context_group"],
+            "sequence_sha256": reference_meta[accession]["sequence_sha256"],
+            "PF00680_gate_pass": domain_by_id.get(accession, {}).get("domain_gate_pass") == "true",
+            "PF00680_core_sha256": domain_by_id.get(accession, {}).get("core_sha256", ""),
+        }
+        for accession in current_nr_ids
+    }
     for candidate in CANDIDATES:
         p, n = protein_summary[candidate], nucleotide_summary[candidate]
         candidate_status[candidate] = {
@@ -443,6 +577,12 @@ def finalize(args: argparse.Namespace) -> int:
         "failures": technical_failures,
         "candidate_status": candidate_status,
         "candidate_count": len(CANDIDATES), "curated_reference_count": len(references),
+        "current_nr_reference_count": len(current_nr_ids),
+        "current_nr_panel_contract_sha256": canonical_panel_sha(current_panel),
+        "current_nr_reference_contract": current_nr_contract,
+        "current_nr_all_PF00680_gates_pass": all(
+            row["PF00680_gate_pass"] for row in current_nr_contract.values()
+        ),
         "rooting_sensitivity_reference_count": sum(row["role"] == "rooting_sensitivity_reference" for row in reference_meta.values()),
         "exact_duplicate_core_groups": duplicate_cores,
         "database_provenance_sha256": sha_file(args.database_provenance),
@@ -483,6 +623,7 @@ def main() -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     extract = sub.add_parser("extract-references")
     extract.add_argument("--manifest", type=Path, required=True)
+    extract.add_argument("--current-panel-manifest", type=Path, required=True)
     extract.add_argument("--protein-fasta", type=Path, action="append", required=True)
     extract.add_argument("--out", type=Path, required=True)
     extract.set_defaults(function=extract_references)
@@ -490,6 +631,7 @@ def main() -> int:
     final.add_argument("--query-root", type=Path, required=True)
     final.add_argument("--reference-full", type=Path, required=True)
     final.add_argument("--reference-provenance", type=Path, required=True)
+    final.add_argument("--current-panel-contract", type=Path, required=True)
     final.add_argument("--domtbl", type=Path, required=True)
     final.add_argument("--refseq-blastp", type=Path, required=True)
     final.add_argument("--refseq-blastn", type=Path, required=True)

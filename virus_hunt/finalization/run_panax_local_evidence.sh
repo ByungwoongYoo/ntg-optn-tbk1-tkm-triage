@@ -8,6 +8,9 @@ CURATED_MANIFEST="${2:?curated reference manifest required}"
 OUT="${3:?output directory required}"
 CACHE="${4:?cache/work directory required}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CURRENT_HIT_FASTA="$SCRIPT_DIR/current_nr_top_hit_proteins.faa"
+CURRENT_HIT_MANIFEST="$SCRIPT_DIR/current_nr_top_hit_proteins.tsv"
+CURRENT_HIT_PANEL_SHA256="$SCRIPT_DIR/current_nr_top_hit_proteins.sha256"
 mkdir -p "$OUT" "$CACHE"
 if find "$OUT" -mindepth 1 -maxdepth 1 -print -quit | grep -q .; then
   echo "output directory must be empty: $OUT" >&2
@@ -18,6 +21,10 @@ for command in curl python md5sum sha256sum gzip makeblastdb blastp blastn \
                dustmasker segmasker hmmpress hmmscan; do
   command -v "$command" >/dev/null || { echo "missing required command: $command" >&2; exit 2; }
 done
+for fixed_input in "$CURRENT_HIT_FASTA" "$CURRENT_HIT_MANIFEST" "$CURRENT_HIT_PANEL_SHA256"; do
+  [[ -s "$fixed_input" ]] || { echo "missing fixed current-hit reference input: $fixed_input" >&2; exit 2; }
+done
+(cd "$SCRIPT_DIR" && sha256sum -c "$(basename "$CURRENT_HIT_PANEL_SHA256")")
 
 download() {
   local url="$1" destination="$2"
@@ -134,10 +141,20 @@ blastn -query "$QUERY_ROOT/panax_candidates_plus_controls_contigs.fna" -db "$CAC
 
 mkdir -p "$CACHE/references"
 python "$SCRIPT_DIR/audit_panax_local_evidence.py" extract-references \
-  --manifest "$CURATED_MANIFEST" --protein-fasta "$CACHE/refseq_viral.protein.faa" \
+  --manifest "$CURATED_MANIFEST" \
+  --current-panel-manifest "$CURRENT_HIT_MANIFEST" \
+  --protein-fasta "$CACHE/refseq_viral.protein.faa" \
+  --protein-fasta "$CURRENT_HIT_FASTA" \
   --out "$CACHE/references"
 cp "$CACHE/references/CURATED_REFERENCE_FULL.faa" "$OUT/CURATED_REFERENCE_FULL.faa"
 cp "$CACHE/references/CURATED_REFERENCE_PROVENANCE.json" "$OUT/CURATED_REFERENCE_PROVENANCE.json"
+cp "$CACHE/references/CURRENT_NR_REFERENCE_CONTRACT.tsv" "$OUT/CURRENT_NR_REFERENCE_CONTRACT.tsv"
+cp "$CACHE/references/CURRENT_NR_REFERENCE_CONTRACT.json" "$OUT/CURRENT_NR_REFERENCE_CONTRACT.json"
+# Preserve the original basenames so the copied SHA-256 manifest remains
+# directly checkable inside the evidence artifact.
+cp "$CURRENT_HIT_FASTA" "$OUT/$(basename "$CURRENT_HIT_FASTA")"
+cp "$CURRENT_HIT_MANIFEST" "$OUT/$(basename "$CURRENT_HIT_MANIFEST")"
+cp "$CURRENT_HIT_PANEL_SHA256" "$OUT/$(basename "$CURRENT_HIT_PANEL_SHA256")"
 
 # UniVec has no checksum sidecar in its current public directory, so retain the
 # HTTPS headers and an observed SHA-256 rather than inventing an official hash.
@@ -196,6 +213,7 @@ python "$SCRIPT_DIR/audit_panax_local_evidence.py" finalize \
   --query-root "$QUERY_ROOT" \
   --reference-full "$CACHE/references/CURATED_REFERENCE_FULL.faa" \
   --reference-provenance "$CACHE/references/CURATED_REFERENCE_PROVENANCE.tsv" \
+  --current-panel-contract "$CACHE/references/CURRENT_NR_REFERENCE_CONTRACT.tsv" \
   --domtbl "$OUT/PFAM_DOMAINS.domtblout" \
   --refseq-blastp "$OUT/LOCAL_REFSEQ_VIRAL_BLASTP.tsv" \
   --refseq-blastn "$OUT/LOCAL_REFSEQ_VIRAL_BLASTN.tsv" \

@@ -4,7 +4,8 @@ set -Eeuo pipefail
 
 CORES="${1:?PF00680 core FASTA required}"
 MANIFEST="${2:?curated reference manifest required}"
-OUT="${3:?output directory required}"
+CURRENT_PANEL_MANIFEST="${3:?current nr panel manifest required}"
+OUT="${4:?output directory required}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mkdir -p "$OUT"
 if find "$OUT" -mindepth 1 -maxdepth 1 -print -quit | grep -q .; then
@@ -27,6 +28,7 @@ fi
 date -u +%FT%TZ > "$OUT/STARTED_UTC.txt"
 cp "$CORES" "$OUT/RDRP_CORES.faa"
 cp "$MANIFEST" "$OUT/CURATED_REFERENCE_MANIFEST.tsv"
+cp "$CURRENT_PANEL_MANIFEST" "$OUT/CURRENT_NR_REFERENCE_CONTRACT.tsv"
 {
   printf 'mafft\t'; mafft --version 2>&1 | sed -n '1p'
   printf 'trimal\t'; trimal --version 2>&1 | sed -n '1p'
@@ -55,7 +57,9 @@ done
 
 date -u +%FT%TZ > "$OUT/FINISHED_UTC.txt"
 python "$SCRIPT_DIR/audit_panax_phylogeny.py" \
+  --cores "$OUT/RDRP_CORES.faa" \
   --manifest "$OUT/CURATED_REFERENCE_MANIFEST.tsv" \
+  --current-panel-manifest "$OUT/CURRENT_NR_REFERENCE_CONTRACT.tsv" \
   --untrimmed-alignment "$OUT/RDRP_CORES.untrimmed.aln.faa" \
   --trimmed-alignment "$OUT/RDRP_CORES.trimmed.aln.faa" \
   --untrimmed-tree "$OUT/untrimmed.treefile" --trimmed-tree "$OUT/trimmed.treefile" \
